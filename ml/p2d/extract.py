@@ -39,6 +39,7 @@ class Extraction:
     yticks: list[dict] = field(default_factory=list)
     series: list[Series] = field(default_factory=list)
     raw: dict | None = None
+    loose_labels: list[list[float]] = field(default_factory=list)  # tick-label text no tick claimed, source px
 
 
 def prepare(img: np.ndarray) -> tuple[torch.Tensor, np.ndarray]:
@@ -128,10 +129,63 @@ def label_boxes(sem: np.ndarray, thr: float = 0.5) -> list[list[float]]:
     boxes = []
     for i in range(1, n):
         x, y, w, h, a = stats[i]
-        if a < 6:
+        # Glyphs, not specks: the class bleeds onto tick marks next to the labels, and a
+        # tick mark is a sliver (the dilation above adds 2 to the height and 4 to the width).
+        if a < 12 or h < 6 or w < 6:
             continue
         boxes.append([x + 0.5, y + 0.5, x + w - 1.5, y + h - 1.5])  # undo the dilation's growth
     return boxes
+
+
+def group_labels(ticks: list[tuple[float, float, float]], boxes: list[list[float]], horizontal: bool):
+    """The label box of each tick: the union of the text pieces that belong to it.
+
+    A label's glyphs can come apart into several pieces. Each piece goes to the
+    tick nearest it along the axis (labels are centred on, or at least closest
+    to, their own tick), provided it sits in that tick's label row or column;
+    the union of a tick's pieces is its label. Pieces of one row are kept to the
+    row of the piece nearest the tick, so an axis title below cannot join.
+    """
+    out: list[list[float] | None] = [None] * len(ticks)
+    if not ticks or not boxes:
+        return out
+    along = np.array([t[0] if horizontal else t[1] for t in ticks])
+    across = np.array([t[1] if horizontal else t[0] for t in ticks])
+    members: dict[int, list[list[float]]] = {}
+    for b in boxes:
+        c_al = (b[0] + b[2]) / 2 if horizontal else (b[1] + b[3]) / 2
+        c_ac = (b[1] + b[3]) / 2 if horizontal else (b[0] + b[2]) / 2
+        i = int(np.argmin(np.abs(along - c_al)))
+        if abs(c_ac - across[i]) > (60 if horizontal else 220):
+            continue
+        # A piece reaching the axis line is a tick mark the text class bled onto: labels sit a padding away.
+        lo_ac, hi_ac = (b[1], b[3]) if horizontal else (b[0], b[2])
+        if lo_ac - 1 <= across[i] <= hi_ac + 1:
+            continue
+        members.setdefault(i, []).append(b)
+    # Specks much smaller than this axis's typical piece of text are bits of tick marks the
+    # text class bled onto, not glyphs.
+    areas = [(b[2] - b[0]) * (b[3] - b[1]) for bs in members.values() for b in bs]
+    floor = 0.3 * float(np.median(areas)) if areas else 0.0
+    for i, bs in members.items():
+        bs = [b for b in bs if (b[2] - b[0]) * (b[3] - b[1]) >= floor] or bs
+        # Start from the piece nearest the tick, then take the pieces in the same row.
+        key = (lambda b: abs((b[0] + b[2]) / 2 - along[i]) + abs((b[1] + b[3]) / 2 - across[i])) if horizontal else \
+              (lambda b: abs((b[1] + b[3]) / 2 - along[i]) + 0.2 * abs((b[0] + b[2]) / 2 - across[i]))
+        bs = sorted(bs, key=key)
+        a = list(bs[0])
+        for b in bs[1:]:
+            h = max(a[3] - a[1], b[3] - b[1])
+            if horizontal:
+                same_row = min(a[3], b[3]) - max(a[1], b[1]) > 0.4 * h
+                near = b[0] - a[2] < 1.2 * h and a[0] - b[2] < 1.2 * h
+            else:
+                same_row = min(a[3], b[3]) - max(a[1], b[1]) > 0.4 * h
+                near = b[0] - a[2] < 1.2 * h and a[0] - b[2] < 1.2 * h
+            if same_row and near:
+                a = [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]
+        out[i] = a
+    return out
 
 
 def cluster_embeddings(e: np.ndarray, weight: np.ndarray, radius: float = 1.5, min_support: int = 20,
@@ -204,27 +258,23 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
         p = apply(Mi, [[frame[0], frame[1]], [frame[2], frame[3]]])
         ex.plot_area = [p[0, 0], p[0, 1], p[1, 0], p[1, 1]]
     boxes = label_boxes(sem)
+    claimed: list[list[float]] = []
     for ch, key in ((H_XTICK, "xticks"), (H_YTICK, "yticks")):
-        for x, y, s in peaks(heat[ch], 0.3, nms=3):
+        pk = peaks(heat[ch], 0.3, nms=3)
+        for (x, y, sc), lb in zip(pk, group_labels(pk, boxes, key == "xticks")):
             src = apply(Mi, [[x, y]])[0]
-            # The tick label nearest along the axis, on either side of it.
-            best, bd = None, 1e9
-            for b in boxes:
-                cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
-                if key == "xticks":
-                    d = abs(cx - x) + 0.25 * abs(cy - y)
-                    ok = abs(cy - y) < 80 and b[0] - 6 <= x <= b[2] + 6
-                else:
-                    d = abs(cy - y) + 0.25 * abs(cx - x)
-                    ok = abs(cx - x) < 200 and b[1] - 6 <= y <= b[3] + 6
-                if ok and d < bd:
-                    best, bd = b, d
-            lb = None
-            if best is not None:
-                q = apply(Mi, [[best[0], best[1]], [best[2], best[3]]])
+            if lb is not None:
+                claimed.append(lb)
+                q = apply(Mi, [[lb[0], lb[1]], [lb[2], lb[3]]])
                 lb = [q[0, 0], q[0, 1], q[1, 0], q[1, 1]]
             getattr(ex, key).append(dict(pos=float(src[0] if key == "xticks" else src[1]), anchor=src.tolist(),
-                                         score=s, label_box=lb))
+                                         score=sc, label_box=lb))
+
+    # Label text no tick took: where an axis multiplier ("1e6") or offset is printed.
+    for b in boxes:
+        if not any(b[0] >= c[0] - 1 and b[2] <= c[2] + 1 and b[1] >= c[1] - 1 and b[3] <= c[3] + 1 for c in claimed):
+            q = apply(Mi, [[b[0], b[1]], [b[2], b[3]]])
+            ex.loose_labels.append([q[0, 0], q[0, 1], q[1, 0], q[1, 1]])
 
     # --- series ---
     H, W = heat.shape[1:]
@@ -653,10 +703,14 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0) -> Extrac
     The network places a tick from everything around it, labels included, and a
     label's offset from its tick is a house style that differs between charting
     libraries. The mark itself does not: where a short line is drawn across the
-    axis within a couple of pixels of the estimate, its centre is the tick. The
-    profile across the band is a median over the band, so a data line crossing
-    part of it cannot pass for a tick. With no clear line (labels-only axes) the
-    estimate stands.
+    axis within a couple of pixels of the estimate, its centre is the tick.
+
+    Two places are searched: a narrow band hugging the axis on the outside,
+    where a tick mark is and a label's padding keeps glyphs out, and the whole
+    extent of the plot, where a gridline runs. A line must darken most of the
+    band (the profile is a low percentile across it), so a glyph, or a data
+    line crossing the band, cannot pass for one. With no clear line (a
+    labels-only axis) the estimate stands.
     """
     if ex.plot_area is None:
         return ex
@@ -674,23 +728,23 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0) -> Extrac
                 if lo < 0 or hi >= H:
                     continue
                 side = t["anchor"][0]
-                bands = [(int(side) - 8, int(side) - 1), (int(side) + 2, int(side) + 24)]
-                for a, b in bands:
+                out = (int(side) - 4, int(side)) if abs(side - x0) <= abs(side - x1) else (int(side) + 1, int(side) + 5)
+                for a, b, q in (out + (20,), (int(x0) + 2, int(x1) - 1, 35)):
                     a, b = max(0, a), min(W, b)
                     if b - a < 4:
                         continue
-                    prof = np.median(np.abs(g[lo:hi + 1, a:b] - paper), axis=1)
+                    prof = np.percentile(np.abs(g[lo:hi + 1, a:b] - paper), q, axis=1)
                     best = _pick_line(prof, lo, p, search, best)
             else:
                 if lo < 0 or hi >= W:
                     continue
                 side = t["anchor"][1]
-                bands = [(int(side) + 2, int(side) + 9), (int(side) - 24, int(side) - 1)]
-                for a, b in bands:
+                out = (int(side) + 1, int(side) + 5) if abs(side - y1) <= abs(side - y0) else (int(side) - 4, int(side))
+                for a, b, q in (out + (20,), (int(y0) + 2, int(y1) - 1, 35)):
                     a, b = max(0, a), min(H, b)
                     if b - a < 4:
                         continue
-                    prof = np.median(np.abs(g[a:b, lo:hi + 1] - paper), axis=0)
+                    prof = np.percentile(np.abs(g[a:b, lo:hi + 1] - paper), q, axis=0)
                     best = _pick_line(prof, lo, p, search, best)
             if best is not None:
                 t["pos_net"] = p

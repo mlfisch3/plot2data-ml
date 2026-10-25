@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass, field
 
 import cv2
@@ -60,6 +61,45 @@ def as_dates(reads, axis: str):
     return out, True
 
 
+_MULT = re.compile(r"^(?:x|\(x)?(?:1e([-+]?\d+)|10\^([-+]?\d+))\)?$")
+_OFFSET = re.compile(r"^([-+])(\d*\.?\d+(?:e[-+]?\d+)?)$")
+
+
+def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[float, float, str | None]:
+    """A printed multiplier or offset for an axis: value = label * scale + shift.
+
+    Matplotlib prints it at the top of the y axis and the right end of the x
+    axis, outside the plot area. It is surfaced as a warning, never applied
+    silently.
+    """
+    if reader is None or ex.plot_area is None or not ex.loose_labels:
+        return 1.0, 0.0, None
+    x0, y0, x1, y1 = ex.plot_area
+    w, h = x1 - x0, y1 - y0
+    cands = []
+    for b in ex.loose_labels:
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        if axis == "y" and b[3] <= y0 + 3 and y0 - cy < 0.15 * h + 30 and (abs(cx - x0) < 0.25 * w or abs(cx - x1) < 0.25 * w):
+            cands.append((abs(cx - x0) + (y0 - cy), b))
+        if axis == "x" and b[1] >= y1 - 3 and cy - y1 < 0.2 * h + 40 and cx > x1 - 0.3 * w:
+            cands.append((abs(cx - x1) + (cy - y1), b))
+    if not cands:
+        return 1.0, 0.0, None
+    cands.sort(key=lambda c: c[0])
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    text, conf = read_crops(reader, [crop(gray, cands[0][1])])[0]
+    t = text.replace(" ", "")
+    m = _MULT.match(t)
+    if m:
+        e = int(m.group(1) or m.group(2))
+        return 10.0 ** e, 0.0, t
+    m = _OFFSET.match(t)
+    if m:
+        v = float(m.group(2))
+        return 1.0, (v if m.group(1) == "+" else -v), t
+    return 1.0, 0.0, None
+
+
 def calibrate(ex: Extraction, reads_x, reads_y):
     xfit = fit_axis([r[0] for r in reads_x], [np.nan if r[3] is None else r[3] for r in reads_x], [r[1] for r in reads_x])
     yfit = fit_axis([r[0] for r in reads_y], [np.nan if r[3] is None else r[3] for r in reads_y], [r[1] for r in reads_y])
@@ -105,10 +145,18 @@ def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: 
     else:
         rx, xdate = as_dates(read_ticks(reader, img, ex.xticks), "x")
         ry, ydate = as_dates(read_ticks(reader, img, ex.yticks), "y")
+        factors = {}
+        for name, reads in (("x", rx), ("y", ry)):
+            scale, shift, text = axis_factor(reader, img, ex, name)
+            if text is not None:
+                factors[name] = text
+                reads[:] = [(p, t, c, None if v is None else v * scale + shift) for p, t, c, v in reads]
     xfit, yfit = calibrate(ex, rx, ry)
     res = Result(ex=ex, xfit=xfit, yfit=yfit, tick_reads={"x": rx, "y": ry})
     if oracle_ticks is None:
         res.date_axes = {"x": xdate, "y": ydate}
+        for name, text in factors.items():
+            res.warnings.append(f"{name} axis: values scaled by the printed '{text}'")
     for name, f in (("x", xfit), ("y", yfit)):
         if f is None:
             res.warnings.append(f"{name} axis: could not calibrate from the tick labels")
