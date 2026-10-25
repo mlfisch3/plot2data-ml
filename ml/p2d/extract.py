@@ -781,3 +781,65 @@ def _pick_line(prof: np.ndarray, lo: int, p: float, search: float, best):
     if best is None or strength > best[0]:
         return (strength, c)
     return best
+
+
+def refine_markers(img: np.ndarray, ex: Extraction, max_shift: float = 1.5, max_asym: float = 0.2) -> Extraction:
+    """Re-measure markers on the source pixels, where the shape makes the centre unambiguous.
+
+    For a shape symmetric under a half turn - circle, square, diamond, cross -
+    every charting library puts the data point at the centroid, so the
+    ink-weighted centroid of the blob is the measurement. For anything else (a
+    triangle, whose data point is the bounding-box centre in matplotlib and the
+    circumcentre in Chart.js) the network's estimate, learned from the drawing
+    conventions themselves, stands. Ink weight is position along the paper-to-
+    series-colour blend, so neighbouring markers of other colours weigh nothing.
+    """
+    paper = _paper_colour(img, ex.plot_area).astype(np.float32)
+    imf = img.astype(np.float32)
+    H, W = img.shape[:2]
+    for se in ex.series:
+        if not len(se.markers_px):
+            continue
+        d = np.array(se.color, np.float32) - paper
+        dd = float(d @ d)
+        if dd < 400:
+            continue
+        out = []
+        for mx, my in se.markers_px:
+            r = 9
+            x0, y0 = int(round(mx)) - r, int(round(my)) - r
+            if x0 < 0 or y0 < 0 or x0 + 2 * r + 1 > W or y0 + 2 * r + 1 > H:
+                out.append((mx, my))
+                continue
+            patch = imf[y0:y0 + 2 * r + 1, x0:x0 + 2 * r + 1] - paper
+            t = (patch @ d) / dd
+            off = np.linalg.norm(patch - t[..., None] * d, axis=-1) / math.sqrt(dd)
+            w = np.where(off < 0.3, np.clip(t, 0, 1), 0.0)
+            n, lab = cv2.connectedComponents((w > 0.5).astype(np.uint8), connectivity=8)
+            c0 = lab[r, r]
+            if c0 == 0:
+                # The estimate is between pixels of the blob: take the component nearest it.
+                ys, xs = np.nonzero(lab)
+                if not len(xs):
+                    out.append((mx, my))
+                    continue
+                c0 = lab[ys[np.argmin((xs - r) ** 2 + (ys - r) ** 2)], xs[np.argmin((xs - r) ** 2 + (ys - r) ** 2)]]
+            blob = cv2.dilate((lab == c0).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0  # keep the antialiased rim
+            if blob[0].any() or blob[-1].any() or blob[:, 0].any() or blob[:, -1].any():
+                out.append((mx, my))  # runs out of the window: touching other ink
+                continue
+            ww = np.where(blob, w, 0.0)
+            yy, xx = np.mgrid[0:2 * r + 1, 0:2 * r + 1]
+            s = ww.sum()
+            cx, cy = (ww * xx).sum() / s, (ww * yy).sum() / s
+            # Half-turn symmetry about the centroid.
+            M = cv2.getRotationMatrix2D((float(cx), float(cy)), 180, 1.0)
+            rot = cv2.warpAffine(ww.astype(np.float32), M, (2 * r + 1, 2 * r + 1), flags=cv2.INTER_LINEAR)
+            asym = float(np.abs(rot - ww).sum() / (2 * s))
+            nx, ny = x0 + cx, y0 + cy
+            if asym <= max_asym and math.hypot(nx - mx, ny - my) <= max_shift:
+                out.append((nx, ny))
+            else:
+                out.append((mx, my))
+        se.markers_px = np.array(out, float)
+    return ex

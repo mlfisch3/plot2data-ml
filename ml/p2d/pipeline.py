@@ -15,7 +15,7 @@ import numpy as np
 
 from .calibrate import AxisFit, fit_axis
 from .dates import resolve
-from .extract import Extraction, extract, refine_lines, refine_ticks, run_net
+from .extract import Extraction, extract, refine_lines, refine_markers, refine_ticks, run_net
 from .ocr import crop, parse_value, read_crops
 from .sampling import auto_step, resample
 
@@ -139,6 +139,7 @@ def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: 
     if refine:
         ex = refine_lines(img, ex)
         ex = refine_ticks(img, ex)
+        ex = refine_markers(img, ex)
     if oracle_ticks is not None:
         rx = [(p, "", 1.0, v) for p, v in oracle_ticks["x"]]
         ry = [(p, "", 1.0, v) for p, v in oracle_ticks["y"]]

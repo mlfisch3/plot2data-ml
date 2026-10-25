@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 import torch
 
-from .extract import extract, refine_lines, run_net
+from .extract import extract, refine_lines, refine_markers, run_net
 from .metrics import score, summarise_split
 from .model import PlotNet
 
@@ -152,7 +152,7 @@ def main() -> None:
             out, M = run_net(net, img)
             ex = extract(out, M, img)
             if a.refine:
-                ex = refine_lines(img, ex)
+                ex = refine_markers(img, refine_lines(img, ex))
         r = score(meta, ex, canvas_scale=math.hypot(M[0, 0], M[1, 0]))
         rows.append(r)
         if a.viz and i < 40:
