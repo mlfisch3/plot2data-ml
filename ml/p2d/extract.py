@@ -279,7 +279,8 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
         keep_lines = []
         for f in lines:
             d, _ = tree.query(np.column_stack([f["cols"], f["ys"]]))
-            if (d > 6.0).mean() >= 0.2:
+            # Only a weak ridge can be a row of markers: a drawn line through markers has a strong one.
+            if (d > 6.0).mean() >= 0.2 or f.get("q", 1.0) >= 0.6:
                 keep_lines.append(f)
         lines = keep_lines
     vpk = [p for p in peaks(heat[H_VERTEX], 0.3, nms=2) if roi[int(round(p[1])), int(round(p[0]))]]
@@ -440,7 +441,7 @@ def snap_vertices(f: dict, vpk: list[tuple[float, float, float]]) -> None:
     f["spans"] = [sp[i] for i in o]
 
 
-def drop_duplicates(lines: list[dict], min_cols: int = 12, tol: float = 3.0, min_q: float = 0.45,
+def drop_duplicates(lines: list[dict], min_cols: int = 12, tol: float = 3.0, min_q: float = 0.35,
                     window: int = 4) -> list[dict]:
     """Drop traces that are too short or too faint to be a series, or that run inside a longer one.
 
@@ -644,3 +645,85 @@ def refine_lines(img: np.ndarray, ex: Extraction, keep_vertex: float = 0.3) -> E
                 pts = pts[np.argsort(pts[:, 0], kind="stable")]
             se.line_px = pts
     return ex
+
+
+def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0) -> Extraction:
+    """Move each tick onto the tick mark or gridline drawn at it, when one is there.
+
+    The network places a tick from everything around it, labels included, and a
+    label's offset from its tick is a house style that differs between charting
+    libraries. The mark itself does not: where a short line is drawn across the
+    axis within a couple of pixels of the estimate, its centre is the tick. The
+    profile across the band is a median over the band, so a data line crossing
+    part of it cannot pass for a tick. With no clear line (labels-only axes) the
+    estimate stands.
+    """
+    if ex.plot_area is None:
+        return ex
+    g = img.astype(np.float32).mean(-1)
+    H, W = g.shape
+    paper = float(np.median(g[int(max(0, ex.plot_area[1])):int(min(H, ex.plot_area[3])),
+                              int(max(0, ex.plot_area[0])):int(min(W, ex.plot_area[2]))]))
+    x0, y0, x1, y1 = ex.plot_area
+    for key in ("xticks", "yticks"):
+        for t in getattr(ex, key):
+            p = t["pos"]
+            lo, hi = int(np.floor(p - search - 1)), int(np.ceil(p + search + 1))
+            best = None
+            if key == "yticks":
+                if lo < 0 or hi >= H:
+                    continue
+                side = t["anchor"][0]
+                bands = [(int(side) - 8, int(side) - 1), (int(side) + 2, int(side) + 24)]
+                for a, b in bands:
+                    a, b = max(0, a), min(W, b)
+                    if b - a < 4:
+                        continue
+                    prof = np.median(np.abs(g[lo:hi + 1, a:b] - paper), axis=1)
+                    best = _pick_line(prof, lo, p, search, best)
+            else:
+                if lo < 0 or hi >= W:
+                    continue
+                side = t["anchor"][1]
+                bands = [(int(side) + 2, int(side) + 9), (int(side) - 24, int(side) - 1)]
+                for a, b in bands:
+                    a, b = max(0, a), min(H, b)
+                    if b - a < 4:
+                        continue
+                    prof = np.median(np.abs(g[a:b, lo:hi + 1] - paper), axis=0)
+                    best = _pick_line(prof, lo, p, search, best)
+            if best is not None:
+                t["pos_net"] = p
+                t["pos"] = best[1]
+                if key == "yticks":
+                    t["anchor"] = [t["anchor"][0], best[1]]
+                else:
+                    t["anchor"] = [best[1], t["anchor"][1]]
+    return ex
+
+
+def _pick_line(prof: np.ndarray, lo: int, p: float, search: float, best):
+    """The centre of the strongest thin line in a 1-D contrast profile, if it is clear and near `p`."""
+    if len(prof) < 3:
+        return best
+    base = float(np.min(prof))
+    peak = int(np.argmax(prof))
+    strength = float(prof[peak] - base)
+    if strength < 12:  # grey levels: too faint to be a drawn line
+        return best
+    w = np.clip(prof - base - 0.25 * strength, 0, None)
+    # Only the run of the peak itself: one line, not a line and a neighbour.
+    a = peak
+    while a > 0 and w[a - 1] > 0:
+        a -= 1
+    b = peak
+    while b < len(w) - 1 and w[b + 1] > 0:
+        b += 1
+    if b - a > 3:  # a thick band, not a line
+        return best
+    c = lo + float((w[a:b + 1] * np.arange(a, b + 1)).sum() / w[a:b + 1].sum())
+    if abs(c - p) > search:
+        return best
+    if best is None or strength > best[0]:
+        return (strength, c)
+    return best

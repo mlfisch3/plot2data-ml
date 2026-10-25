@@ -83,14 +83,14 @@ def to_gt_pixels(meta: dict, res):
     ex.series = []
     from .extract import Series
 
+    def px(v):
+        if v is None:
+            return np.zeros((0, 2))
+        q = np.column_stack([gt_value_to_px(meta, "x", v[:, 0]), gt_value_to_px(meta, "y", v[:, 1])])
+        return q[np.all(np.isfinite(q), axis=1)]  # e.g. a negative value on a log axis
+
     for s, d in zip(res.ex.series, res.series):
-        line = d.get("line")
-        mk = d.get("markers")
-        ex.series.append(Series(
-            kind=s.kind,
-            line_px=np.column_stack([gt_value_to_px(meta, "x", line[:, 0]), gt_value_to_px(meta, "y", line[:, 1])]) if line is not None else np.zeros((0, 2)),
-            markers_px=np.column_stack([gt_value_to_px(meta, "x", mk[:, 0]), gt_value_to_px(meta, "y", mk[:, 1])]) if mk is not None else np.zeros((0, 2)),
-        ))
+        ex.series.append(Series(kind=s.kind, line_px=px(d.get("line")), markers_px=px(d.get("markers"))))
     return ex
 
 
