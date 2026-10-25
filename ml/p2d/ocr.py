@@ -26,7 +26,8 @@ from torch.utils.data import DataLoader, Dataset
 
 cv2.setNumThreads(1)
 
-CHARS = "0123456789.,-+eE%$kKMBGTbnx^() "
+# Digits and number decorations, plus what month names and dates need ("Jan '21", "2020-03", "Q1", "3/2020").
+CHARS = "0123456789.,-+eE%$kKMBGTbnx^() JFAprySOcNDalgutvoQ/'"
 BLANK = 0
 H = 32
 W = 192

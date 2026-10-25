@@ -103,7 +103,7 @@ def score(meta: dict, ex, canvas_scale: float) -> dict:
     P = [pred_curve(s.line_px, xs, max_gap=3.0 / canvas_scale) for s in preds]
     r["n_line_gt"] = len(gts)
     r["n_line_pred"] = len(preds)
-    line_rms, line_cov, peak_err = [], [], []
+    line_rms, line_cov, peak_err, line_good = [], [], [], []
     if G and P:
         C = np.zeros((len(G), len(P)))
         for i, g in enumerate(G):
@@ -120,12 +120,15 @@ def score(meta: dict, ex, canvas_scale: float) -> dict:
             ng = (~np.isnan(g)).sum()
             if i not in matched or ng == 0:
                 line_cov.append(0.0)
+                line_good.append(0.0)
                 continue
             p = P[matched[i]]
             both = ~np.isnan(g) & ~np.isnan(p)
             d = (p[both] - g[both]) / ph
             line_rms.append(float(np.sqrt(np.mean(d ** 2))))
             line_cov.append(both.sum() / ng)
+            # Columns of the true curve that the extraction got right, to within 1% of the plot height.
+            line_good.append(float((np.abs(d) < 0.01).sum() / ng))
             path = np.array(gts[i]["path_px"])
             pv = peak_vertices(path, min_prom=0.05 * ph)
             pv = pv[(pv[:, 0] >= pa[0]) & (pv[:, 0] <= pa[2]) & (pv[:, 1] >= pa[1]) & (pv[:, 1] <= pa[3])]
@@ -135,8 +138,10 @@ def score(meta: dict, ex, canvas_scale: float) -> dict:
                 peak_err += list(np.abs(yp[ok] - pv[ok, 1]) / ph)
     else:
         line_cov = [0.0] * len(G)
+        line_good = [0.0] * len(G)
     r["line_rms"] = line_rms
     r["line_cov"] = line_cov
+    r["line_good"] = line_good
     r["peak_err"] = peak_err
 
     # Markers: any predicted marker of any series, matched one to one by distance.
@@ -178,6 +183,7 @@ def summarise(rows: list[dict]) -> dict:
         "line_series": int(len(cov)),
         "line_found": float(np.mean(cov > 0.5)) if len(cov) else np.nan,
         "line_cov_mean": float(np.mean(cov)) if len(cov) else np.nan,
+        "line_good_cov_mean": float(np.mean(cat("line_good"))) if len(cov) else np.nan,
         "line_rms_median_pct": float(np.median(rms) * 100) if len(rms) else np.nan,
         "line_rms_mean_pct": float(np.mean(rms) * 100) if len(rms) else np.nan,
         "line_rms_p90_pct": float(np.quantile(rms, 0.9) * 100) if len(rms) else np.nan,

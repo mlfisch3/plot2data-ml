@@ -133,29 +133,61 @@ def label_boxes(sem: np.ndarray, thr: float = 0.5) -> list[list[float]]:
 
 
 def cluster_embeddings(e: np.ndarray, weight: np.ndarray, radius: float = 1.5, min_support: int = 20,
-                       max_k: int = 16) -> np.ndarray:
-    """Greedy mean-shift: seed at the strongest unassigned pixel, refine its centre, take its ball."""
-    lab = np.full(len(e), -1, np.int32)
-    k = 0
-    order = np.argsort(-weight)
-    while k < max_k:
-        free = order[lab[order] < 0]
-        if len(free) < min_support:
+                       max_k: int = 16, sample: int = 6000, max_seeds: int = 200) -> np.ndarray:
+    """Greedy mean-shift: seed at the strongest unassigned pixel, refine its centre, take its ball.
+
+    Centres are found on a weighted subsample, so the cost does not grow with the
+    image; a seed whose ball is too small is retired with its whole ball, so noise
+    cannot make the search quadratic. Every pixel then joins its nearest centre,
+    if one is within the radius.
+    """
+    n = len(e)
+    rng = np.random.default_rng(0)
+    if n > sample:
+        p = weight + 1e-6
+        idx = rng.choice(n, sample, replace=False, p=p / p.sum())
+    else:
+        idx = np.arange(n)
+    es, ws = e[idx], weight[idx]
+    scale = len(idx) / n
+    support = max(3, int(round(min_support * scale)))
+    taken = np.zeros(len(idx), bool)
+    order = np.argsort(-ws)
+    centres = []
+    seeds = 0
+    for s0 in order:
+        if len(centres) >= max_k or seeds >= max_seeds:
             break
-        c = e[free[0]]
-        for _ in range(5):
-            d = np.linalg.norm(e[free] - c, axis=1)
-            sel = free[d < radius]
-            if len(sel) == 0:
-                break
-            c = np.average(e[sel], axis=0, weights=weight[sel] + 1e-6)
-        d = np.linalg.norm(e[free] - c, axis=1)
-        sel = free[d < radius]
-        if len(sel) < min_support:
-            lab[free[0]] = -2  # a lone seed: retire it and move on
+        if taken[s0]:
             continue
-        lab[sel] = k
-        k += 1
+        seeds += 1
+        free = ~taken
+        c = es[s0]
+        for _ in range(5):
+            d = np.linalg.norm(es - c, axis=1)
+            sel = free & (d < radius)
+            if not sel.any():
+                break
+            c = np.average(es[sel], axis=0, weights=ws[sel] + 1e-6)
+        d = np.linalg.norm(es - c, axis=1)
+        sel = free & (d < radius)
+        taken |= sel
+        taken[s0] = True
+        if sel.sum() >= support:
+            centres.append(c)
+    lab = np.full(n, -1, np.int32)
+    if centres:
+        C = np.array(centres)
+        d = np.linalg.norm(e[:, None, :] - C[None], axis=2)
+        k = d.argmin(1)
+        ok = d[np.arange(n), k] < radius
+        lab[ok] = k[ok]
+        # A centre that ends up with too few pixels is dropped, and the labels renumbered.
+        counts = np.bincount(lab[lab >= 0], minlength=len(C))
+        keep = np.nonzero(counts >= min_support)[0]
+        remap = np.full(len(C), -1, np.int32)
+        remap[keep] = np.arange(len(keep))
+        lab = np.where(lab >= 0, remap[np.maximum(lab, 0)], -1)
     return lab
 
 
@@ -221,41 +253,187 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
     line_lab = lab[:n_line]
     mk_lab = lab[n_line + n_ink:]
 
+    # Lines: within each embedding cluster, follow continuous chains of ridge runs;
+    # then join chains end to end across clusters where the ends meet.
+    frags = []
     for k in range(lab.max() + 1):
         sel = line_lab == k
-        mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero(mk_lab == k)[0]]).reshape(-1, 2)
-        line_canvas = np.zeros((0, 2))
-        if sel.sum() >= 15:
-            mask = np.zeros((H, W), bool)
-            mask[pts[sel, 1], pts[sel, 0]] = True
-            # Grow into the faint shoulders of the ridge, so the parabola has its three samples.
-            grown = cv2.dilate(mask.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
-            hm = np.where(grown, lh, 0)
-            cols = np.nonzero(mask.any(0))[0]
-            line = []
-            for c in cols:
-                col = hm[:, c]
-                r = int(np.argmax(col))
-                if col[r] < line_thr:
-                    continue
-                lg = np.log(np.clip(col[max(r - 1, 0): r + 2], 1e-6, 1))
-                dy = _parabola_offset(*lg) if 0 < r < H - 1 and len(lg) == 3 else 0.0
-                line.append((float(c), r + dy))
-            line_canvas = np.array(line).reshape(-1, 2)
-        is_line = len(line_canvas) >= 8 and len(line_canvas) > 2 * len(mk)
-        if not is_line and len(mk) == 0:
+        if sel.sum() < 15:
             continue
-        color = (0, 0, 0)
-        if img is not None:
-            src = apply(Mi, line_canvas if is_line else mk)
-            xi = np.clip(np.round(src[:, 0]).astype(int), 0, img.shape[1] - 1)
-            yi = np.clip(np.round(src[:, 1]).astype(int), 0, img.shape[0] - 1)
-            color = tuple(int(v) for v in np.median(img[yi, xi], 0))
-        ex.series.append(Series(kind="line" if is_line else "scatter",
-                                line_px=apply(Mi, line_canvas) if is_line else np.zeros((0, 2)),
-                                markers_px=apply(Mi, mk) if len(mk) else np.zeros((0, 2)),
-                                color=color, support=int(sel.sum() + len(mk))))
+        mask = np.zeros((H, W), bool)
+        mask[pts[sel, 1], pts[sel, 0]] = True
+        for chain in peel_chains(column_runs(mask, lh)):
+            cols = np.array([c for c, _, _, _ in chain], float)
+            ys = np.array([y for _, y, _, _ in chain], float)
+            e_mean = emb[:, np.round(ys).astype(int).clip(0, H - 1), cols.astype(int)].mean(1)
+            frags.append({"cols": cols, "ys": ys, "emb": e_mean, "k": k,
+                          "spans": [(a, b) for _, _, a, b in chain]})
+    lines = merge_fragments(frags)
+    # Each marker goes to at most one line: one of its own cluster that it sits on.
+    # The rest form scatter series, one per cluster.
+    owner = np.full(len(mpk), -1)
+    for li, f in enumerate(lines):
+        for i in np.nonzero(np.isin(mk_lab, f["ks"]) & (owner < 0))[0]:
+            x, y = mpk[i][0], mpk[i][1]
+            if f["cols"][0] - 2 <= x <= f["cols"][-1] + 2 and abs(np.interp(x, f["cols"], f["ys"]) - y) < 4:
+                owner[i] = li
+    for li, f in enumerate(lines):
+        mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero(owner == li)[0]]).reshape(-1, 2)
+        ex.series.append(_make_series("line", np.column_stack([f["cols"], f["ys"]]), mk, Mi, img))
+    for k in range(lab.max() + 1):
+        mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero((mk_lab == k) & (owner < 0))[0]]).reshape(-1, 2)
+        if len(mk) >= 2:
+            ex.series.append(_make_series("scatter", np.zeros((0, 2)), mk, Mi, img))
     return ex
+
+
+def _make_series(kind: str, line_canvas: np.ndarray, mk: np.ndarray, Mi: np.ndarray, img) -> Series:
+    color = (0, 0, 0)
+    pts = line_canvas if len(line_canvas) else mk
+    if img is not None and len(pts):
+        src = apply(Mi, pts)
+        xi = np.clip(np.round(src[:, 0]).astype(int), 0, img.shape[1] - 1)
+        yi = np.clip(np.round(src[:, 1]).astype(int), 0, img.shape[0] - 1)
+        color = tuple(int(v) for v in np.median(img[yi, xi], 0))
+    return Series(kind=kind, line_px=apply(Mi, line_canvas) if len(line_canvas) else np.zeros((0, 2)),
+                  markers_px=apply(Mi, mk) if len(mk) else np.zeros((0, 2)), color=color,
+                  support=int(len(line_canvas) + len(mk)))
+
+
+def column_runs(mask: np.ndarray, heat: np.ndarray) -> dict[int, list[tuple[int, int, float, float]]]:
+    """Per column, the vertical runs of a series mask: (top, bottom, centre y, heat mass).
+
+    A short run is a crossing of a shallow stretch of line, and its centre is the
+    sub-pixel ridge (a parabola through the log heat). A long run is a steep
+    stretch passing through the whole column, and its centre is the middle of
+    the heat it holds.
+    """
+    out: dict[int, list] = {}
+    H = mask.shape[0]
+    for c in np.nonzero(mask.any(0))[0]:
+        col = mask[:, c]
+        d = np.diff(np.concatenate([[0], col.view(np.int8), [0]]))
+        starts, ends = np.nonzero(d == 1)[0], np.nonzero(d == -1)[0] - 1
+        runs = []
+        for a, b in zip(starts, ends):
+            h = heat[a:b + 1, c]
+            if b - a <= 5:
+                r = a + int(np.argmax(h))
+                y = float(r)
+                if 0 < r < H - 1:
+                    lg = np.log(np.clip(heat[r - 1:r + 2, c], 1e-6, 1))
+                    y += _parabola_offset(*lg)
+            else:
+                y = float((h * np.arange(a, b + 1)).sum() / max(h.sum(), 1e-9))
+            runs.append((int(a), int(b), y, float(h.sum())))
+        out[int(c)] = runs
+    return out
+
+
+def peel_chains(runs: dict, gap_pen: float = 0.5, skip_pen: float = 0.3, max_skip: int = 12,
+                min_cols: int = 8) -> list[list[tuple[int, float, int, int]]]:
+    """Best chains of runs, one run per column, by dynamic programming; repeated on what is left.
+
+    A chain's score is the heat it collects, minus `gap_pen` per pixel of vertical
+    gap between consecutive runs (touching runs cost nothing, as a continuous
+    curve's do) and `skip_pen` per empty column jumped over.
+    """
+    runs = {c: list(r) for c, r in runs.items() if r}
+    chains = []
+    while runs:
+        cols = sorted(runs)
+        best: dict[tuple[int, int], tuple[float, tuple[int, int] | None]] = {}
+        top = (-1.0, None)
+        for ci, c in enumerate(cols):
+            for i, (a, b, y, m) in enumerate(runs[c]):
+                score, back = m, None
+                for pj in range(ci - 1, -1, -1):
+                    pc = cols[pj]
+                    if c - pc - 1 > max_skip:
+                        break
+                    for j, (pa, pb, py, pm) in enumerate(runs[pc]):
+                        prev = best.get((pc, j))
+                        if prev is None:
+                            continue
+                        gap = max(0, a - pb - 1, pa - b - 1)
+                        cand = prev[0] + m - gap_pen * gap - skip_pen * (c - pc - 1)
+                        if cand > score:
+                            score, back = cand, (pc, j)
+                best[(c, i)] = (score, back)
+                if score > top[0]:
+                    top = (score, (c, i))
+        if top[1] is None:
+            break
+        chain = []
+        node = top[1]
+        while node is not None:
+            c, i = node
+            a, b, y, m = runs[c][i]
+            chain.append((c, y, a, b))
+            node = best[node][1]
+        chain.reverse()
+        if len(chain) < min_cols:
+            break
+        chains.append(chain)
+        for c, _, a, _b in chain:
+            runs[c] = [r for r in runs[c] if r[0] != a]
+            if not runs[c]:
+                del runs[c]
+    return chains
+
+
+def merge_fragments(frags: list[dict], emb_tol: float = 3.0) -> list[dict]:
+    """Join chains end to end: no x overlap to speak of, ends that meet, embeddings that agree."""
+    items = [{"cols": f["cols"], "ys": f["ys"], "emb": f["emb"], "ks": [f["k"]], "n": len(f["cols"]),
+              "spans": f["spans"]} for f in frags]
+    changed = True
+    while changed:
+        changed = False
+        items.sort(key=lambda f: f["cols"][0])
+        for i in range(len(items)):
+            A = items[i]
+            best = None
+            for j in range(len(items)):
+                if i == j:
+                    continue
+                B = items[j]
+                dx = B["cols"][0] - A["cols"][-1]
+                if dx > 60 or B["cols"][-1] <= A["cols"][-1]:
+                    continue
+                if dx <= 0:
+                    # Overlapping ends: only the same curve if they agree where they overlap.
+                    if dx < -8:
+                        continue
+                    ov = (A["cols"] >= B["cols"][0])
+                    if np.abs(A["ys"][ov] - np.interp(A["cols"][ov], B["cols"], B["ys"])).max() > 2.5:
+                        continue
+                    gap = 0
+                else:
+                    a0, a1 = A["spans"][-1]
+                    b0, b1 = B["spans"][0]
+                    gap = max(0, b0 - a1 - 1, a0 - b1 - 1)
+                if gap > 3 + 2.0 * dx:
+                    continue
+                de = float(np.linalg.norm(A["emb"] - B["emb"]))
+                if de > emb_tol:
+                    continue
+                cost = gap + abs(dx) + 5 * de
+                if best is None or cost < best[0]:
+                    best = (cost, j)
+            if best is not None:
+                B = items[best[1]]
+                keep = B["cols"] > A["cols"][-1]
+                w = A["n"] / (A["n"] + B["n"])
+                A["cols"] = np.concatenate([A["cols"], B["cols"][keep]])
+                A["ys"] = np.concatenate([A["ys"], B["ys"][keep]])
+                A["spans"] = A["spans"] + [s for s, k in zip(B["spans"], keep) if k]
+                A["emb"] = w * A["emb"] + (1 - w) * B["emb"]
+                A["ks"] = A["ks"] + B["ks"]
+                A["n"] += B["n"]
+                items.pop(best[1])
+                changed = True
+                break
+    return items
 
 
 def _paper_colour(img: np.ndarray, area: list[float] | None) -> np.ndarray:
