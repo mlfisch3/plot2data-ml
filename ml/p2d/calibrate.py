@@ -68,15 +68,21 @@ def fit_axis(pos, values, texts=None, tol_px: float = 3.0, hint: str | None = No
     lin = _ransac(pos, vals, tol_px)
     if lin:
         cands.append(("linear", lin))
-    if np.all(vals > 0):
-        lg = _ransac(pos, np.log10(vals), tol_px)
+    pos_ok = vals > 0
+    if pos_ok.sum() >= 2:
+        # A log axis is fitted on the positive labels; a stray "0" misread is just an outlier.
+        lg = _ransac(pos[pos_ok], np.log10(vals[pos_ok]), tol_px)
         if lg:
-            cands.append(("log", lg))
+            a_, b_, inl_ = lg
+            inl = np.zeros(len(pos), bool)
+            inl[np.nonzero(pos_ok)[0]] = inl_
+            cands.append(("log", (a_, b_, inl)))
     if not cands:
         return None
 
     def resid(scale, a, b, inl):
-        t = np.log10(vals) if scale == "log" else vals
+        with np.errstate(invalid="ignore", divide="ignore"):
+            t = np.log10(np.where(vals > 0, vals, np.nan)) if scale == "log" else vals
         return float(np.sqrt(np.mean(((t[inl] - a) / b - pos[inl]) ** 2)))
 
     warnings: list[str] = []

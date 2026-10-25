@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 import torch
+from scipy.spatial import cKDTree
 
 from .data import (CANVAS_H, CANVAS_W, H_CORNER, H_LINE, H_MARKER, H_VERTEX, H_XTICK, H_YTICK, MEAN, STD, apply,
                    fit_transform)
@@ -266,10 +267,21 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
         for chain in peel_chains(column_runs(mask, lh)):
             cols = np.array([c for c, _, _, _ in chain], float)
             ys = np.array([y for _, y, _, _ in chain], float)
-            e_mean = emb[:, np.round(ys).astype(int).clip(0, H - 1), cols.astype(int)].mean(1)
-            frags.append({"cols": cols, "ys": ys, "emb": e_mean, "k": k,
+            yi = np.round(ys).astype(int).clip(0, H - 1)
+            e_mean = emb[:, yi, cols.astype(int)].mean(1)
+            frags.append({"cols": cols, "ys": ys, "emb": e_mean, "k": k, "q": float(lh[yi, cols.astype(int)].mean()),
                           "spans": [(a, b) for _, _, a, b in chain]})
-    lines = merge_fragments(frags)
+    lines = drop_duplicates(merge_fragments(frags), min_cols=max(12, int(0.04 * (frame[2] - frame[0])) if frame else 12))
+    # A row of markers drawn touching looks like a line. A real line also runs between its markers.
+    if mpk:
+        mxy = np.array([[p[0], p[1]] for p in mpk])
+        tree = cKDTree(mxy)
+        keep_lines = []
+        for f in lines:
+            d, _ = tree.query(np.column_stack([f["cols"], f["ys"]]))
+            if (d > 6.0).mean() >= 0.2:
+                keep_lines.append(f)
+        lines = keep_lines
     vpk = [p for p in peaks(heat[H_VERTEX], 0.3, nms=2) if roi[int(round(p[1])), int(round(p[0]))]]
     for f in lines:
         snap_vertices(f, vpk)
@@ -287,10 +299,12 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
         if f.get("vertices"):
             se.vertices_px = apply(Mi, f["vertices"])
         ex.series.append(se)
+    scatters = []
     for k in range(lab.max() + 1):
         mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero((mk_lab == k) & (owner < 0))[0]]).reshape(-1, 2)
         if len(mk) >= 2:
-            ex.series.append(_make_series("scatter", np.zeros((0, 2)), mk, Mi, img))
+            scatters.append(_make_series("scatter", np.zeros((0, 2)), mk, Mi, img))
+    ex.series += merge_by_colour(scatters, img)
     return ex
 
 
@@ -426,10 +440,63 @@ def snap_vertices(f: dict, vpk: list[tuple[float, float, float]]) -> None:
     f["spans"] = [sp[i] for i in o]
 
 
+def drop_duplicates(lines: list[dict], min_cols: int = 12, tol: float = 3.0, min_q: float = 0.45,
+                    window: int = 4) -> list[dict]:
+    """Drop traces that are too short or too faint to be a series, or that run inside a longer one.
+
+    A thick or jagged stroke leaves runs beside the chain that took it - the far
+    flank of every spike - and they chain up into a ghost trace through the
+    valleys. Such a trace stays inside the envelope of the longer trace (its
+    extent over a few neighbouring columns), so that is the test. Text beside a
+    line can chain up into a scrap, which the ridge confidence gives away.
+    """
+    lines = [f for f in lines if len(f["cols"]) >= min_cols and f.get("q", 1.0) >= min_q]
+    lines.sort(key=lambda f: -len(f["cols"]))
+    kept: list[dict] = []
+    for f in lines:
+        dup = False
+        for g in kept:
+            inside = (f["cols"] >= g["cols"][0]) & (f["cols"] <= g["cols"][-1])
+            if inside.mean() < 0.6:
+                continue
+            gi = np.searchsorted(g["cols"], f["cols"][inside])
+            lo = np.array([g["ys"][max(0, i - window): i + window + 1].min() for i in gi])
+            hi = np.array([g["ys"][max(0, i - window): i + window + 1].max() for i in gi])
+            y = f["ys"][inside]
+            if ((y >= lo - tol) & (y <= hi + tol)).mean() >= 0.7:
+                dup = True
+                break
+        if not dup:
+            kept.append(f)
+    return kept
+
+
+def merge_by_colour(series: list[Series], img, tol: float = 45.0) -> list[Series]:
+    """Scatter clusters drawn in the same colour are one series.
+
+    Embeddings separate series well where they are drawn close together, but a
+    marker cloud spread over the whole plot can come apart into several clusters;
+    the colour it was drawn in does not.
+    """
+    if img is None or len(series) < 2:
+        return series
+    out: list[Series] = []
+    for s in sorted(series, key=lambda s: -len(s.markers_px)):
+        c = np.array(s.color, float)
+        for o in out:
+            if np.linalg.norm(np.array(o.color, float) - c) < tol:
+                o.markers_px = np.vstack([o.markers_px, s.markers_px])
+                o.support += s.support
+                break
+        else:
+            out.append(s)
+    return out
+
+
 def merge_fragments(frags: list[dict], emb_tol: float = 3.0) -> list[dict]:
     """Join chains end to end: no x overlap to speak of, ends that meet, embeddings that agree."""
     items = [{"cols": f["cols"], "ys": f["ys"], "emb": f["emb"], "ks": [f["k"]], "n": len(f["cols"]),
-              "spans": f["spans"]} for f in frags]
+              "spans": f["spans"], "q": f["q"]} for f in frags]
     changed = True
     while changed:
         changed = False
@@ -473,6 +540,7 @@ def merge_fragments(frags: list[dict], emb_tol: float = 3.0) -> list[dict]:
                 A["spans"] = A["spans"] + [s for s, k in zip(B["spans"], keep) if k]
                 A["emb"] = w * A["emb"] + (1 - w) * B["emb"]
                 A["ks"] = A["ks"] + B["ks"]
+                A["q"] = w * A["q"] + (1 - w) * B["q"]
                 A["n"] += B["n"]
                 items.pop(best[1])
                 changed = True

@@ -217,6 +217,8 @@ def parse_value(s: str) -> float | None:
     neg = False
     if t.startswith("-$"):
         neg, t = True, t[2:]
+    # "0^3" is a "10^3" whose "1" was cropped off; nothing else prints like that.
+    t = re.sub(r"^0\^", "10^", t)
     m = _POW.match(t)
     if m:
         mant = m.group(1)
