@@ -48,8 +48,17 @@ python -m p2d.evaluate --ckpt runs/v1/best.pt --data data/mpl-val --refine      
 python -m p2d.evaluate --ckpt runs/v1/best.pt --data data/mpl-val --oracle-ticks   # end to end, true tick values
 python -m p2d.evaluate --ckpt runs/v1/best.pt --data data/mpl-val --ocr runs/ocr1/best.pt   # fully end to end
 python -m p2d.eval_corpus --ckpt runs/v1/best.pt --ocr runs/ocr1/best.pt           # the Chart.js corpus, out of distribution
+python -m p2d.eval_calib --ckpt runs/v1/best.pt --ocr runs/ocr1/best.pt --data data/mpl-val   # calibration only
+python -m p2d.eval_real --ckpt runs/v1/best.pt --ocr runs/ocr1/best.pt             # ../examples/real, against hand-measured anchors
 node --experimental-strip-types ../tools/run-classical.ts data/mpl-val out/classical-val.json 300
 python -m p2d.score_classical --data data/mpl-val --pred out/classical-val.json    # the classical engine, same metric
+```
+
+## Trying it
+
+```sh
+python -m p2d.serve --ckpt runs/v2/best.pt --ocr runs/ocr1/best.pt   # http://localhost:8417: drop or paste a screenshot
+python -m p2d.pipeline chart.png --ckpt runs/v2/best.pt --ocr runs/ocr1/best.pt --csv out.csv --overlay out.png
 ```
 
 ## Results
