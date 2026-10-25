@@ -10,6 +10,9 @@ sample can be regenerated exactly.
 from __future__ import annotations
 
 import argparse
+import os as _os
+
+_os.environ.setdefault("OMP_NUM_THREADS", "1")
 import json
 import logging
 import os

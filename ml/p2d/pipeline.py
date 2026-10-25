@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 
 from .calibrate import AxisFit, fit_axis
-from .extract import Extraction, extract, run_net
+from .extract import Extraction, extract, refine_lines, run_net
 from .ocr import crop, parse_value, read_crops
 
 
@@ -59,10 +59,12 @@ def to_data(ex: Extraction, xfit: AxisFit | None, yfit: AxisFit | None) -> list[
     return out
 
 
-def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None) -> Result:
+def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: bool = True) -> Result:
     """`oracle_ticks` ({"x": [(pos, value)], "y": ...}) bypasses detection and reading, for ablations."""
     out, M = run_net(net, img)
     ex = extract(out, M, img)
+    if refine:
+        ex = refine_lines(img, ex)
     if oracle_ticks is not None:
         rx = [(p, "", 1.0, v) for p, v in oracle_ticks["x"]]
         ry = [(p, "", 1.0, v) for p, v in oracle_ticks["y"]]

@@ -8,6 +8,7 @@ heat around the maximum, which is exact for a Gaussian.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import cv2
@@ -254,4 +255,95 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
                                 line_px=apply(Mi, line_canvas) if is_line else np.zeros((0, 2)),
                                 markers_px=apply(Mi, mk) if len(mk) else np.zeros((0, 2)),
                                 color=color, support=int(sel.sum() + len(mk))))
+    return ex
+
+
+def _paper_colour(img: np.ndarray, area: list[float] | None) -> np.ndarray:
+    h, w = img.shape[:2]
+    if area is None:
+        area = [0, 0, w - 1, h - 1]
+    x0, y0 = max(0, int(area[0])), max(0, int(area[1]))
+    x1, y1 = min(w, int(area[2]) + 1), min(h, int(area[3]) + 1)
+    patch = img[y0:y1, x0:x1].reshape(-1, 3)
+    if len(patch) == 0:
+        patch = img.reshape(-1, 3)
+    q = (patch // 8).astype(np.int32)
+    key = q[:, 0] * 1024 + q[:, 1] * 32 + q[:, 2]
+    mode = np.bincount(key).argmax()
+    return patch[key == mode].mean(0)
+
+
+def refine_lines(img: np.ndarray, ex: Extraction, keep_vertex: float = 0.3) -> Extraction:
+    """Re-measure each traced line on the source pixels, one sample per source column.
+
+    The network says where a series runs and which ink is its; the exact centre
+    is then the ink-weighted centroid of the source column, where a pixel's ink
+    is how far along the paper-to-series-colour blend it lies. Pixels whose colour
+    is off that segment belong to something else and weigh nothing. At vertices
+    a column centroid is wrong by construction (it averages both flanks of a
+    peak), so there the network's own centre-line estimate stands.
+    """
+    if not ex.series:
+        return ex
+    imf = img.astype(np.float32)
+    H, W = img.shape[:2]
+    paper = _paper_colour(img, ex.plot_area)
+    Mi = inv_affine(ex.M)
+    s = math.hypot(ex.M[0, 0], ex.M[1, 0])
+    vh = ex.raw["heat"][H_VERTEX] if ex.raw is not None else None
+    for se in ex.series:
+        if se.kind != "line" or len(se.line_px) < 3:
+            continue
+        lp = se.line_px[np.argsort(se.line_px[:, 0])]
+        ink = np.array(se.color, np.float32)
+        d = ink - paper
+        dd = float(d @ d)
+        if dd < 400:  # ink indistinguishable from paper: nothing to refine against
+            continue
+        xs = np.arange(int(np.ceil(lp[0, 0])), int(np.floor(lp[-1, 0])) + 1)
+        y0 = np.interp(xs, lp[:, 0], lp[:, 1])
+        # Columns inside a gap of the trace stay out.
+        gi = np.clip(np.searchsorted(lp[:, 0], xs), 1, len(lp) - 1)
+        ok = (lp[gi, 0] - lp[gi - 1, 0]) <= 2.5 / s + 1
+        R = int(max(3, round(2.5 / s)))
+        out = []
+        for x, yc, good in zip(xs, y0, ok):
+            if not good or x < 0 or x >= W:
+                continue
+            ya, yb = max(0, int(round(yc)) - R - 4), min(H, int(round(yc)) + R + 5)
+            col = imf[ya:yb, x]
+            rel = col - paper
+            t = (rel @ d) / dd
+            off = np.linalg.norm(rel - t[:, None] * d[None], axis=1) / math.sqrt(dd)
+            w = np.where((off < 0.3) & (t > 0.15), np.clip(t, 0, 1), 0.0)
+            ys = np.arange(ya, yb, dtype=np.float32)
+            # The run of ink nearest the network's estimate.
+            on = w > 0.3
+            if not on.any():
+                out.append((x, yc))
+                continue
+            idx = np.nonzero(on)[0]
+            near = idx[np.argmin(np.abs(ys[idx] - yc))]
+            lo = hi = near
+            while lo > 0 and w[lo - 1] > 0.05:
+                lo -= 1
+            while hi < len(w) - 1 and w[hi + 1] > 0.05:
+                hi += 1
+            if lo == 0 or hi == len(w) - 1:
+                out.append((x, yc))  # the run continues past the window: steep or merged, trust the net
+                continue
+            ww = w[lo:hi + 1]
+            yr = float((ww * ys[lo:hi + 1]).sum() / ww.sum())
+            at_vertex = False
+            if vh is not None:
+                cx, cy = apply(ex.M, [[x, yc]])[0]
+                ix, iy = int(round(cx)), int(round(cy))
+                if 1 <= ix < vh.shape[1] - 1 and 1 <= iy < vh.shape[0] - 1:
+                    at_vertex = vh[iy - 1:iy + 2, ix - 1:ix + 2].max() > keep_vertex
+            if at_vertex or abs(yr - yc) > max(1.5, 1.0 / s):
+                out.append((x, yc))
+            else:
+                out.append((x, yr))
+        if out:
+            se.line_px = np.array(out, float)
     return ex

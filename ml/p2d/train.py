@@ -16,7 +16,7 @@ import time
 import torch
 from torch.utils.data import DataLoader
 
-from .data import PlotDataset
+from .data import PlotDataset, to_device
 from .losses import plotnet_loss
 from .model import PlotNet
 
@@ -29,7 +29,7 @@ def evaluate(net, loader, device, max_batches: int = 40) -> dict:
         for i, b in enumerate(loader):
             if i >= max_batches:
                 break
-            b = {k: v.to(device, non_blocking=True) if torch.is_tensor(v) else v for k, v in b.items()}
+            b = to_device(b, device)
             out = net(b["image"])
             loss, parts = plotnet_loss(out, b)
             parts["loss"] = loss.item()
@@ -83,13 +83,17 @@ def main() -> None:
     best = float("inf")
     t0 = time.time()
     run_parts: dict[str, float] = {}
+    t_data = t_step = 0.0
     while it < a.iters:
+        tw = time.time()
         for b in tl:
             if it >= a.iters:
                 break
+            ts = time.time()
+            t_data += ts - tw
             for g in opt.param_groups:
                 g["lr"] = lr_at(it)
-            b = {k: v.to(device, non_blocking=True) if torch.is_tensor(v) else v for k, v in b.items()}
+            b = to_device(b, device)
             img = b["image"].contiguous(memory_format=torch.channels_last)
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 out = net(img)
@@ -102,9 +106,11 @@ def main() -> None:
             for k, v in parts.items():
                 run_parts[k] = 0.98 * run_parts.get(k, v) + 0.02 * v
             it += 1
+            tw = time.time()
+            t_step += tw - ts
             if it % 100 == 0:
                 rate = it / (time.time() - t0)
-                print(f"it {it}  {rate:.2f} it/s  lr {lr_at(it):.2e}  " +
+                print(f"it {it}  {rate:.2f} it/s  data {t_data / it:.2f}s step {t_step / it:.2f}s  lr {lr_at(it):.2e}  " +
                       "  ".join(f"{k} {v:.4f}" for k, v in run_parts.items()), flush=True)
             if it % a.eval_every == 0 or it == a.iters:
                 v = evaluate(net, vl, device)

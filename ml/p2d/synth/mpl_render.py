@@ -31,6 +31,7 @@ from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 from matplotlib.text import Text  # noqa: E402
 
+from . import presets as P  # noqa: E402
 from . import series as S  # noqa: E402
 
 # Semantic classes of the per-pixel label map.
@@ -189,18 +190,21 @@ def _step_path(x: np.ndarray, y: np.ndarray, where: str) -> tuple[np.ndarray, np
 
 def generate(seed: int) -> Rendered:
     rng = np.random.default_rng(seed)
-    style = _pick(rng, STYLES)
+    preset = P.choose(rng)
+    style = _pick(rng, STYLES) if preset == "none" else "default"
     rc = {
         "font.family": str(rng.choice(FONTS)),
         "font.size": float(rng.uniform(7, 15)),
         "axes.unicode_minus": bool(rng.random() < 0.5),
         "path.simplify": False,
     }
+    rc.update(P.rc(preset, rng))
     with plt.style.context(style), plt.rc_context(rc):
-        return _generate(rng, seed, style, rc)
+        return _generate(rng, seed, style, rc, preset)
 
 
-def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rendered:
+def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict, preset: str = "none") -> Rendered:
+    pal = P.palette(preset)
     # --- figure size: pixel width 320..1800, aspect 0.35..0.95, capped area ---
     dpi = float(rng.choice([60, 72, 80, 96, 100, 110, 120, 144, 150, 200]))
     wpx = rng.uniform(320, 1800)
@@ -212,10 +216,10 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
     hpx = max(hpx, 220)
     fig = plt.figure(figsize=(wpx / dpi, hpx / dpi), dpi=dpi)
     canvas = FigureCanvasAgg(fig)
-    if rng.random() < 0.15:
+    if rng.random() < 0.15 and preset == "none":
         fig.patch.set_facecolor(tuple(rng.uniform(0.85, 1.0, 3)))
     ax = fig.add_subplot(111)
-    if rng.random() < 0.12:
+    if rng.random() < 0.12 and preset == "none":
         ax.set_facecolor(tuple(rng.uniform(0.88, 1.0, 3)))
 
     xlog = rng.random() < 0.07
@@ -236,9 +240,10 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
 
     series_meta = []
     data_artists = []
+    grid_extra_pre = []
     for k in range(n_series):
         if plot_kind == "line":
-            kind = "line+markers" if (rng.random() < 0.18 and n_line <= 80) else ("step" if rng.random() < 0.05 else "line")
+            kind = "line+markers" if (rng.random() < 0.18 and n_line <= 80) else ("step" if rng.random() < 0.05 else ("area" if rng.random() < 0.07 else "line"))
         elif plot_kind == "scatter":
             kind = "scatter"
         else:
@@ -281,7 +286,9 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
         ms = float(rng.uniform(2.5, 11))
         hollow = rng.random() < 0.15 and marker not in ("x", "+", ".")
         color = None
-        if rng.random() < 0.25:
+        if pal is not None:
+            color = pal[k % len(pal)]
+        elif rng.random() < 0.25:
             color = tuple(rng.uniform(0, 0.9, 3))
         label = f"Series {k + 1}" if rng.random() < 0.5 else str(rng.choice(["Revenue", "Women", "Men", "Control", "Model A", "Model B", "Baseline", "Measured", "Predicted", "Total", "Sales", "Temperature", "GDP", "Price", "Signal", "Noise", "Fit", "Theory", "Experiment", "2021", "2022", "North", "South", "East", "West"]))
         kw = dict(color=color, label=label, zorder=2 + k * 0.01)
@@ -293,6 +300,17 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
                              alpha=float(rng.uniform(0.6, 1)) if rng.random() < 0.15 else None)
             if hollow and color is None:
                 art.set_edgecolor(f"C{k}")
+        elif kind == "area":
+            # A filled area whose upper edge is the data, with or without a line drawn along it.
+            c = color if color is not None else f"C{k}"
+            base = (y.min() * 0.5 if ylog else (0.0 if y.min() > 0 else y.min() - 0.1 * (y.max() - y.min())))
+            fill = ax.fill_between(x, y, base, color=c, alpha=float(rng.uniform(0.2, 1.0)), lw=0, zorder=1.8 + k * 0.01)
+            if rng.random() < 0.5:
+                grid_extra_pre.append(fill)
+                (art,) = ax.plot(x, y, lw=lw, color=c, label=label, zorder=2 + k * 0.01)
+            else:
+                art = fill
+                art.set_label(label)
         elif kind == "step":
             where = str(rng.choice(["pre", "post", "mid"]))
             (art,) = ax.step(x, y, where=where, lw=lw, ls=ls, **kw)
@@ -307,7 +325,7 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
                                 marker=marker if kind in ("scatter", "line+markers") else None, ms=ms))
 
     # --- distractors: reference lines, bands, in-plot text ---
-    grid_extra = []
+    grid_extra = list(grid_extra_pre)
     text_extra = []
     if rng.random() < 0.15:
         yv = float(np.median(series_meta[0]["y"]))
@@ -385,7 +403,8 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
         ax.yaxis.tick_right()
     if rng.random() < 0.12:
         ax.tick_params(axis="x", labelrotation=float(rng.choice([30, 45, 90])))
-    grid = rng.random()
+    flags = P.post(preset, ax, rng) if preset != "none" else {"legend": "auto", "direct_labels": False}
+    grid = rng.random() if preset == "none" else 1.0
     if grid < 0.35:
         ax.grid(True, which="major", alpha=float(rng.uniform(0.3, 1)), ls=str(rng.choice(["-", "--", ":"])),
                 lw=float(rng.uniform(0.4, 1.2)), axis=str(rng.choice(["both", "both", "y", "x"])))
@@ -400,8 +419,24 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
     if rng.random() < 0.6:
         ax.set_ylabel(str(rng.choice(["Value", "Amplitude", "Sales ($M)", "Percent", "Count", "Loss", "Voltage (V)", "y"])))
 
+    if flags["direct_labels"]:
+        # Series named by text at the end of each line, in its colour, as news graphics do.
+        for m, art in zip(series_meta, data_artists):
+            c = art.get_color() if isinstance(art, Line2D) else None
+            if c is None:
+                continue
+            text_extra.append(ax.annotate(m["label"], (m["x"][-1], m["y"][-1]), xytext=(4, 0), textcoords="offset points",
+                                          color=c, va="center", fontsize=float(rng.uniform(8, 12)), annotation_clip=False))
     legend = None
-    if n_series > 1 and rng.random() < 0.65 or n_series == 1 and rng.random() < 0.15:
+    if flags["legend"] == "none":
+        pass
+    elif flags["legend"] in ("below", "outside") and n_series > 1:
+        kw = dict(frameon=False, fontsize=float(rng.uniform(7, 11)))
+        if flags["legend"] == "below":
+            legend = ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=min(n_series, 4), **kw)
+        else:
+            legend = ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), **kw)
+    elif n_series > 1 and rng.random() < 0.65 or n_series == 1 and rng.random() < 0.15:
         loc = str(rng.choice(["upper left", "upper right", "lower left", "lower right", "center left", "upper center", "outside"]))
         kw = dict(frameon=bool(rng.random() < 0.7), fontsize=float(rng.uniform(6, 12)))
         if loc == "outside":
@@ -522,6 +557,8 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
         path = _to_px(ax, H, px_x, px_y) if m["kind"] != "scatter" else np.zeros((0, 2))
         markers = _to_px(ax, H, x, y) if m["kind"] in ("scatter", "line+markers") else np.zeros((0, 2))
         color = art.get_color() if isinstance(art, Line2D) else art.get_facecolor()
+        if isinstance(color, np.ndarray) and color.size >= 4 and m["kind"] == "area":
+            color = np.asarray(color, float).reshape(-1)[:3]
         if not isinstance(color, str):
             c = np.asarray(color, float).reshape(-1)
             if c.size >= 3 and not (c.size >= 4 and c[3] == 0):
@@ -531,7 +568,7 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
                 color = matplotlib.colors.to_hex(ec[:4]) if ec.size >= 3 else "#000000"
         else:
             color = matplotlib.colors.to_hex(color)
-        lw_px = m["lw"] * fig.dpi / 72.0
+        lw_px = m["lw"] * fig.dpi / 72.0 if m["kind"] != "area" or isinstance(art, Line2D) else 1.0
         out_series.append(dict(kind=m["kind"], label=m["label"], color=color, linestyle=m["ls"],
                                linewidth_px=lw_px, marker=m["marker"], markersize_px=m["ms"] * fig.dpi / 72.0,
                                x=x.tolist(), y=y.tolist(), path_px=path.round(3).tolist(), markers_px=markers.round(3).tolist()))
@@ -542,7 +579,7 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
         leg_bbox = [e.x0 - 0.5, H - e.y1 - 0.5, e.x1 - 0.5, H - e.y0 - 0.5]
 
     meta = dict(
-        seed=seed, generator="matplotlib", style=style, font=rc["font.family"], width=W, height=H,
+        seed=seed, generator="matplotlib", style=style, preset=preset, font=rc["font.family"], width=W, height=H,
         plot_area=plot_area, xscale="log" if xlog else "linear", yscale="log" if ylog else "linear",
         xlim=list(map(float, xlim)), ylim=list(map(float, ylim)),
         xticks=xticks, yticks=yticks, series=out_series, legend_bbox=leg_bbox,

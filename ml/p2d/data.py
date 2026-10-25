@@ -167,7 +167,6 @@ class PlotDataset(Dataset):
                 R = cv2.getRotationMatrix2D((CANVAS_W / 2, CANVAS_H / 2), ang, 1.0)
                 M = np.vstack([R, [0, 0, 1]]) @ np.vstack([M, [0, 0, 1]])
                 M = M[:2]
-            img = augment_photometric(img, rng)
             bg = _background(rng, img)
         else:
             M = fit_transform(w, h)
@@ -181,16 +180,19 @@ class PlotDataset(Dataset):
         csem = cv2.warpAffine(sem, M, (CANVAS_W, CANVAS_H), flags=cv2.INTER_NEAREST)
         cinst = cv2.warpAffine(inst, M, (CANVAS_W, CANVAS_H), flags=cv2.INTER_NEAREST)
         cimg = np.clip(cimg, 0, 255)
+        if self.train:
+            # Photometric changes on the canvas, which is what the network sees.
+            cimg = augment_photometric(cimg.astype(np.uint8), rng).astype(np.float32)
 
         heat, region, aux = self.targets(meta, M)
         # Embedding targets: the region around each series' true path, else its ink.
         emb_id = np.where(region > 0, region, cinst).astype(np.int64)
-        x = (cimg - MEAN) / STD
+        # Normalised on the GPU (see `to_device`), so the batch crosses processes as bytes.
         return {
-            "image": torch.from_numpy(x.transpose(2, 0, 1).copy()),
-            "sem": torch.from_numpy(csem.astype(np.int64)),
-            "heat": torch.from_numpy(heat),
-            "emb_id": torch.from_numpy(emb_id),
+            "image": torch.from_numpy(np.ascontiguousarray(cimg.astype(np.uint8).transpose(2, 0, 1))),
+            "sem": torch.from_numpy(csem.astype(np.uint8)),
+            "heat": torch.from_numpy(heat.astype(np.float16)),
+            "emb_id": torch.from_numpy(emb_id.astype(np.uint8)),
             "index": i,
         }
 
@@ -203,8 +205,8 @@ class PlotDataset(Dataset):
         pa = apply(M, [[meta["plot_area"][0], meta["plot_area"][1]], [meta["plot_area"][2], meta["plot_area"][3]]])
         x0, y0 = pa.min(0) - 1.0
         x1, y1 = pa.max(0) + 1.0
-        yy, xx = np.mgrid[0:H, 0:W]
-        inside = (xx >= x0) & (xx <= x1) & (yy >= y0) & (yy <= y1)
+        inside = np.zeros((H, W), bool)
+        inside[max(0, int(np.ceil(y0))): max(0, int(np.floor(y1)) + 1), max(0, int(np.ceil(x0))): max(0, int(np.floor(x1)) + 1)] = True
 
         def gauss(d, sigma):
             return np.exp(-0.5 * (d / sigma) ** 2)
@@ -216,7 +218,9 @@ class PlotDataset(Dataset):
             path = apply(M, sr["path_px"]) if sr["path_px"] else np.zeros((0, 2))
             mk = apply(M, sr["markers_px"]) if sr["markers_px"] else np.zeros((0, 2))
             if len(path) >= 2:
-                d = splat_min_dist(densify(path), H, W, 4)
+                seg = np.diff(path, axis=0)
+                total = float(np.hypot(seg[:, 0], seg[:, 1]).sum())
+                d = splat_min_dist(densify(path, max(0.25, total / 200000)), H, W, 4)
                 line_d = np.minimum(line_d, d)
                 band = max(2.0, 0.5 * sr["linewidth_px"] * s + 0.5)
                 take = (d <= band) & (d < region_d)
@@ -250,3 +254,23 @@ class PlotDataset(Dataset):
         a = meta["plot_area"]
         heat[H_CORNER] = points_heat(apply(M, [[a[0], a[1]], [a[2], a[1]], [a[0], a[3]], [a[2], a[3]]]), SIGMA[H_CORNER], 7)
         return heat, region, None
+
+
+def to_device(b: dict, device) -> dict:
+    """Move a batch to the GPU and widen it: normalise the image, labels to int64, heat to float."""
+    out = {}
+    for k, v in b.items():
+        if not torch.is_tensor(v):
+            out[k] = v
+            continue
+        v = v.to(device, non_blocking=True)
+        if k == "image":
+            mean = torch.tensor(MEAN, device=device).view(1, 3, 1, 1)
+            std = torch.tensor(STD, device=device).view(1, 3, 1, 1)
+            v = (v.float() - mean) / std
+        elif k in ("sem", "emb_id"):
+            v = v.long()
+        elif k == "heat":
+            v = v.float()
+        out[k] = v
+    return out

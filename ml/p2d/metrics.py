@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-LINE_KINDS = ("line", "step", "line+markers")
+LINE_KINDS = ("line", "step", "line+markers", "area")
 
 
 def gt_curve(path: np.ndarray, xs: np.ndarray) -> np.ndarray:

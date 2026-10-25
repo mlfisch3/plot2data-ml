@@ -13,14 +13,15 @@ HEAT_WEIGHTS = [2.0, 1.5, 0.5, 1.5, 1.5, 1.0]
 def quality_focal(logits: torch.Tensor, target: torch.Tensor, beta: float = 2.0) -> torch.Tensor:
     """Focal loss for soft targets (Li et al., GFL): BCE scaled by |p - t|^beta.
 
-    Normalised per image and channel by the target mass, so a long curve and a
-    single tick weigh the same.
+    Normalised per channel by the target mass over the whole batch, so a long
+    curve and a few ticks weigh alike, and an image with nothing in a channel
+    (a scatter plot has no line) still counts without dividing by nothing.
     """
     p = torch.sigmoid(logits)
     bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
     loss = bce * (p - target).abs().pow(beta)
-    mass = target.sum(dim=(2, 3)).clamp(min=1.0)
-    return loss.sum(dim=(2, 3)) / mass  # B x C
+    mass = target.sum(dim=(0, 2, 3)).clamp(min=10.0)
+    return loss.sum(dim=(0, 2, 3)) / mass  # C
 
 
 def discriminative(emb: torch.Tensor, ids: torch.Tensor, dv: float = 0.5, dd: float = 3.0, stride: int = 2):
@@ -55,9 +56,8 @@ def discriminative(emb: torch.Tensor, ids: torch.Tensor, dv: float = 0.5, dd: fl
 def plotnet_loss(out: dict, batch: dict) -> tuple[torch.Tensor, dict]:
     sem_w = torch.tensor(SEM_WEIGHTS, device=out["sem"].device)
     l_sem = F.cross_entropy(out["sem"].float(), batch["sem"], weight=sem_w)
-    qf = quality_focal(out["heat"].float(), batch["heat"])  # B x C
-    hw = torch.tensor(HEAT_WEIGHTS, device=qf.device)
-    l_heat_c = qf.mean(0)
+    l_heat_c = quality_focal(out["heat"].float(), batch["heat"])  # C
+    hw = torch.tensor(HEAT_WEIGHTS, device=l_heat_c.device)
     l_heat = (l_heat_c * hw).sum()
     l_emb = discriminative(out["emb"], batch["emb_id"])
     loss = l_sem + l_heat + 0.5 * l_emb

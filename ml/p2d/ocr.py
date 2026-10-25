@@ -87,34 +87,55 @@ def crop(img: np.ndarray, box, pad: tuple[float, float, float, float] = (2, 2, 2
     return img[max(0, y0):min(hh, y1), max(0, x0):min(ww, x1)]
 
 
+MARGIN = 8
+
+
+def _cut_crops(path: str) -> list[tuple[np.ndarray, list[float], str]]:
+    """Every readable tick label of one chart, cut with a margin, box relative to the cut."""
+    m = json.load(open(path))
+    img = None
+    out = []
+    for t in m["xticks"] + m["yticks"]:
+        b = t["bbox"]
+        # Rotated labels are left out: their boxes hold diagonal text.
+        if (b[2] - b[0]) < (b[3] - b[1]) * 0.9 and len(t["text"]) > 1:
+            continue
+        if not t["text"] or encode(t["text"]) is None:
+            continue
+        if img is None:
+            img = cv2.imread(path[:-5] + ".png", cv2.IMREAD_GRAYSCALE)
+        if b[0] < 0 or b[1] < 0 or b[2] > img.shape[1] - 1 or b[3] > img.shape[0] - 1 or b[2] - b[0] < 2 or b[3] - b[1] < 2:
+            continue  # a label cut off by the figure edge
+        x0 = max(0, int(np.floor(b[0])) - MARGIN)
+        y0 = max(0, int(np.floor(b[1])) - MARGIN)
+        x1 = min(img.shape[1], int(np.ceil(b[2])) + MARGIN + 1)
+        y1 = min(img.shape[0], int(np.ceil(b[3])) + MARGIN + 1)
+        out.append((img[y0:y1, x0:x1].copy(), [b[0] - x0, b[1] - y0, b[2] - x0, b[3] - y0], t["text"]))
+    return out
+
+
 class LabelCrops(Dataset):
-    def __init__(self, roots, train: bool, limit_images: int | None = None):
+    """Tick-label crops, cut once from the charts and held in memory."""
+
+    def __init__(self, roots, train: bool, limit_images: int | None = None, workers: int = 8):
+        from multiprocessing import Pool
+
         roots = [roots] if isinstance(roots, str) else roots
         files = []
         for r in roots:
             files += sorted(glob.glob(os.path.join(r, "*.json")))
         if limit_images:
             files = files[:limit_images]
-        self.items = []
-        for f in files:
-            m = json.load(open(f))
-            for t in m["xticks"] + m["yticks"]:
-                b = t["bbox"]
-                # Rotated labels are left out: their boxes hold diagonal text.
-                if (b[2] - b[0]) < (b[3] - b[1]) * 0.9 and len(t["text"]) > 1:
-                    continue
-                if encode(t["text"]) is None or not t["text"]:
-                    continue
-                self.items.append((f[:-5] + ".png", b, t["text"]))
+        with Pool(workers) as pool:
+            parts = pool.map(_cut_crops, files, chunksize=64)
+        self.items = [c for p in parts for c in p]
         self.train = train
-        self._cache: dict[str, np.ndarray] = {}
 
     def __len__(self):
         return len(self.items)
 
     def __getitem__(self, i):
-        path, b, text = self.items[i]
-        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        img, b, text = self.items[i]
         if self.train:
             rng = random.Random()
             if rng.random() < 0.5:
@@ -189,7 +210,7 @@ SUFFIX = {"k": 1e3, "K": 1e3, "M": 1e6, "B": 1e9, "bn": 1e9, "G": 1e9, "T": 1e12
 
 def parse_value(s: str) -> float | None:
     """Printed tick text to a number: 1,000  -2.5  45%  $1.2M  3e5  10^3  2x10^4."""
-    t = s.strip().replace(" ", "")
+    t = s.strip().replace(" ", "").replace("\u2212", "-").replace("\u2013", "-")
     if not t:
         return None
     neg = False
