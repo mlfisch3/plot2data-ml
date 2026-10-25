@@ -127,7 +127,8 @@ def to_data(ex: Extraction, xfit: AxisFit | None, yfit: AxisFit | None, step_px:
                     d["step_px"] = float(step)
                     d["sampled"] = np.column_stack([xfit.to_value(gx), yfit.to_value(gy)])
             if len(s.markers_px):
-                d["markers"] = np.column_stack([xfit.to_value(s.markers_px[:, 0]), yfit.to_value(s.markers_px[:, 1])])
+                mk = s.markers_px[np.argsort(s.markers_px[:, 0], kind="stable")]
+                d["markers"] = np.column_stack([xfit.to_value(mk[:, 0]), yfit.to_value(mk[:, 1])])
         out.append(d)
     return out
 
