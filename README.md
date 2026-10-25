@@ -1,4 +1,14 @@
-# plot2data
+# plot2data-ml
+
+Extract numerical data from an image of a plot, with a network trained on synthetic charts doing the reading.
+
+This repository continues from the classical `plot2data` engine as a separate lineage.
+The learned pipeline is in [`ml/`](ml/README.md), with its measured results in [`ml/RESULTS.md`](ml/RESULTS.md).
+The browser app described below, and its classical engine, are inherited unchanged; the engine is kept as the baseline the learned pipeline is measured against, and the app is where the learned models will run.
+
+---
+
+## The inherited app
 
 Extract numerical data from an image of a plot, entirely in your browser.
 

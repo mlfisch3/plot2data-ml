@@ -16,7 +16,7 @@ import numpy as np
 import torch
 
 from .extract import extract, refine_lines, run_net
-from .metrics import score, summarise
+from .metrics import score, summarise_split
 from .model import PlotNet
 
 
@@ -61,6 +61,9 @@ def gt_value_to_px(meta: dict, axis: str, v):
     lim = meta["xlim"] if axis == "x" else meta["ylim"]
     log = meta["xscale" if axis == "x" else "yscale"] == "log"
     v = np.asarray(v, float)
+    if axis == "x" and meta.get("xdate") == "%Y" and np.nanmax(np.abs(v)) < 3000:
+        # Year labels read as plain numbers give decimal years; the chart's unit is days.
+        v = (v - 1970.0) * 365.2425
     with np.errstate(invalid="ignore", divide="ignore"):
         t = np.log10(v) if log else v
     t0, t1 = (np.log10(lim[0]), np.log10(lim[1])) if log else lim
@@ -154,7 +157,8 @@ def main() -> None:
         rows.append(r)
         if a.viz and i < 40:
             cv2.imwrite(os.path.join(a.viz, f"{meta['seed']}.png"), draw(img, ex, meta)[..., ::-1])
-    s = summarise(rows)
+    split = summarise_split(rows)
+    s = split["all"]
     if cal:
         for axis in ("x", "y"):
             v = np.array([c[axis] for c in cal], float)
@@ -162,7 +166,13 @@ def main() -> None:
             s[f"calib_{axis}_err_median_pct"] = float(np.nanmedian(v) * 100) if np.any(np.isfinite(v)) else np.nan
             s[f"calib_{axis}_within_0.5pct"] = float(np.mean(np.nan_to_num(v, nan=1) < 0.005))
             s[f"calib_{axis}_scale_ok"] = float(np.mean([c.get(axis + "_scale_ok", False) for c in cal]))
-    print(json.dumps(s, indent=1))
+    keys = [k for k in s if k != "images"]
+    simple = split["simple"]
+    print(f"{'metric':28s} {'all':>10s} {'simple':>10s}")
+    print(f"{'images':28s} {s['images']:>10d} {simple.get('images', 0):>10d}")
+    for k in keys:
+        a_, b_ = s.get(k, float('nan')), simple.get(k, float('nan'))
+        print(f"{k:28s} {a_:>10.4f} {b_:>10.4f}")
     if a.json:
         json.dump({"summary": s, "rows": rows}, open(a.json, "w"), default=float)
 

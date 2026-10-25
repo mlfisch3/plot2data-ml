@@ -231,6 +231,13 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict, preset:
     n_line = int(rng.choice([rng.integers(4, 25), rng.integers(25, 120), rng.integers(120, 600), rng.integers(600, 2500)],
                             p=[0.3, 0.3, 0.25, 0.15]))
     _, xbase = S.x_values(rng, n_line, xlog)
+    date_axis = None
+    if not xlog and rng.random() < 0.12:
+        # A time axis: x in days since 1970, labelled as dates.
+        from ..dates import date_axis as _date_axis
+
+        xbase, dloc, dfmt, dname = _date_axis(rng, n_line)
+        date_axis = (dloc, dfmt, dname)
     xr = (xbase.min(), xbase.max())
     yc, ys = S.y_scale(rng, ylog)
     ylog_lo = rng.uniform(-3, 4)
@@ -365,11 +372,16 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict, preset:
     if rng.random() < 0.3:
         ax.margins(x=float(rng.uniform(0, 0.03)))
 
-    if not xlog and rng.random() < 0.7:
+    if date_axis is not None:
+        ax.xaxis.set_major_locator(date_axis[0])
+    elif not xlog and rng.random() < 0.7:
         ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=int(rng.integers(3, 11)), steps=[1, 2, 2.5, 5, 10]))
     if not ylog and rng.random() < 0.7:
         ax.yaxis.set_major_locator(mticker.MaxNLocator(nbins=int(rng.integers(3, 11)), steps=[1, 2, 2.5, 5, 10]))
     for axis, is_log, vals in ((ax.xaxis, xlog, xbase), (ax.yaxis, ylog, np.concatenate([m["y"] for m in series_meta]))):
+        if axis is ax.xaxis and date_axis is not None:
+            axis.set_major_formatter(date_axis[1])
+            continue
         if is_log:
             c = rng.choice(["default", "plain", "suffix_log"], p=[0.6, 0.25, 0.15])
             if c == "plain":
@@ -580,7 +592,7 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict, preset:
 
     meta = dict(
         seed=seed, generator="matplotlib", style=style, preset=preset, font=rc["font.family"], width=W, height=H,
-        plot_area=plot_area, xscale="log" if xlog else "linear", yscale="log" if ylog else "linear",
+        plot_area=plot_area, xscale="log" if xlog else "linear", xdate=date_axis[2] if date_axis else None, yscale="log" if ylog else "linear",
         xlim=list(map(float, xlim)), ylim=list(map(float, ylim)),
         xticks=xticks, yticks=yticks, series=out_series, legend_bbox=leg_bbox,
         offset_text=[_clean_label(o.get_text()) for o in offset_texts],

@@ -61,6 +61,9 @@ def score(meta: dict, ex, canvas_scale: float) -> dict:
     ph = pa[3] - pa[1]
     pw = pa[2] - pa[0]
     r: dict = {"id": meta["seed"]}
+    # Difficulty: how many series, and the densest line's data points per pixel column.
+    r["n_series"] = len(meta["series"])
+    r["density"] = max([len(s["x"]) / max(pw, 1) for s in meta["series"] if s["kind"] in LINE_KINDS] or [0.0])
 
     # Frame.
     if ex.plot_area is not None:
@@ -164,6 +167,12 @@ def score(meta: dict, ex, canvas_scale: float) -> dict:
         r["marker_tp"] = 0
         r["marker_err"] = []
     return r
+
+
+def summarise_split(rows: list[dict]) -> dict:
+    """The summary over all charts, and over the simple ones: at most 3 series, resolvable data."""
+    simple = [r for r in rows if r["n_series"] <= 3 and r["density"] <= 0.5]
+    return {"all": summarise(rows), "simple": summarise(simple) if simple else {}}
 
 
 def summarise(rows: list[dict]) -> dict:

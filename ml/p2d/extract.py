@@ -27,6 +27,7 @@ class Series:
     markers_px: np.ndarray  # M x 2 in source pixels
     color: tuple[int, int, int] = (0, 0, 0)
     support: int = 0
+    vertices_px: np.ndarray | None = None  # sharp corners found by the vertex head, kept exactly
 
 
 @dataclass
@@ -269,6 +270,9 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
             frags.append({"cols": cols, "ys": ys, "emb": e_mean, "k": k,
                           "spans": [(a, b) for _, _, a, b in chain]})
     lines = merge_fragments(frags)
+    vpk = [p for p in peaks(heat[H_VERTEX], 0.3, nms=2) if roi[int(round(p[1])), int(round(p[0]))]]
+    for f in lines:
+        snap_vertices(f, vpk)
     # Each marker goes to at most one line: one of its own cluster that it sits on.
     # The rest form scatter series, one per cluster.
     owner = np.full(len(mpk), -1)
@@ -279,7 +283,10 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
                 owner[i] = li
     for li, f in enumerate(lines):
         mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero(owner == li)[0]]).reshape(-1, 2)
-        ex.series.append(_make_series("line", np.column_stack([f["cols"], f["ys"]]), mk, Mi, img))
+        se = _make_series("line", np.column_stack([f["cols"], f["ys"]]), mk, Mi, img)
+        if f.get("vertices"):
+            se.vertices_px = apply(Mi, f["vertices"])
+        ex.series.append(se)
     for k in range(lab.max() + 1):
         mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero((mk_lab == k) & (owner < 0))[0]]).reshape(-1, 2)
         if len(mk) >= 2:
@@ -380,6 +387,43 @@ def peel_chains(runs: dict, gap_pen: float = 0.5, skip_pen: float = 0.3, max_ski
             if not runs[c]:
                 del runs[c]
     return chains
+
+
+def snap_vertices(f: dict, vpk: list[tuple[float, float, float]]) -> None:
+    """Put each detected polyline vertex lying on this line into it, exactly.
+
+    In the column through a sharp peak the ridge run spans both flanks, and any
+    single number taken from it lands short of the tip. The vertex head marks
+    the tip itself; the samples it makes ambiguous (the long runs within a
+    column of it) are replaced by it.
+    """
+    if not vpk or len(f["cols"]) < 3:
+        return
+    cols, ys = f["cols"], f["ys"]
+    spans = f["spans"]
+    add_x, add_y, drop = [], [], np.zeros(len(cols), bool)
+    for vx, vy, _ in vpk:
+        i = int(np.argmin(np.abs(cols - vx)))
+        if abs(cols[i] - vx) > 1.0:
+            continue
+        a, b = spans[i]
+        if not (a - 2 <= vy <= b + 2):
+            continue
+        add_x.append(vx)
+        add_y.append(vy)
+        near = np.abs(cols - vx) <= 1.0
+        long_run = np.array([sb - sa > 3 for sa, sb in spans])
+        drop |= near & long_run
+    if not add_x:
+        return
+    keep = ~drop
+    x = np.concatenate([cols[keep], add_x])
+    y = np.concatenate([ys[keep], add_y])
+    sp = [sp for sp, k in zip(spans, keep) if k] + [(int(np.floor(v)), int(np.ceil(v))) for v in add_y]
+    o = np.argsort(x, kind="stable")
+    f["cols"], f["ys"] = x[o], y[o]
+    f["vertices"] = list(zip(add_x, add_y))
+    f["spans"] = [sp[i] for i in o]
 
 
 def merge_fragments(frags: list[dict], emb_tol: float = 3.0) -> list[dict]:
@@ -523,5 +567,12 @@ def refine_lines(img: np.ndarray, ex: Extraction, keep_vertex: float = 0.3) -> E
             else:
                 out.append((x, yr))
         if out:
-            se.line_px = np.array(out, float)
+            pts = np.array(out, float)
+            if se.vertices_px is not None and len(se.vertices_px):
+                # The exact corners stay; the column samples within a pixel of them go.
+                v = se.vertices_px
+                far = np.min(np.abs(pts[:, 0][:, None] - v[None, :, 0]), axis=1) > 1.0
+                pts = np.vstack([pts[far], v])
+                pts = pts[np.argsort(pts[:, 0], kind="stable")]
+            se.line_px = pts
     return ex

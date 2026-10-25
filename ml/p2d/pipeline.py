@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from .calibrate import AxisFit, fit_axis
+from .dates import resolve
 from .extract import Extraction, extract, refine_lines, run_net
 from .ocr import crop, parse_value, read_crops
 
@@ -25,6 +26,7 @@ class Result:
     tick_reads: dict = field(default_factory=dict)  # axis -> [(pos, text, conf, value)]
     series: list[dict] = field(default_factory=list)  # data units
     warnings: list[str] = field(default_factory=list)
+    date_axes: dict = field(default_factory=dict)  # axis -> True when its values are days since 1970
 
 
 def read_ticks(reader, img: np.ndarray, ticks: list[dict]) -> list[tuple[float, str, float, float | None]]:
@@ -38,6 +40,23 @@ def read_ticks(reader, img: np.ndarray, ticks: list[dict]) -> list[tuple[float, 
     for (pos, _), (text, conf) in zip(boxes, reads):
         out.append((pos, text, conf, parse_value(text)))
     return out
+
+
+def as_dates(reads, axis: str):
+    """If an axis's labels are mostly not numbers but are dates, re-read them as days since 1970."""
+    numeric = sum(r[3] is not None for r in reads)
+    if len(reads) < 2 or numeric >= len(reads) / 2:
+        return reads, False
+    # Dates run left to right on x and bottom to top on y.
+    order = sorted(range(len(reads)), key=lambda i: reads[i][0] if axis == "x" else -reads[i][0])
+    vals = resolve([reads[i][1] for i in order])
+    if sum(v is not None for v in vals) < 2:
+        return reads, False
+    out = list(reads)
+    for i, v in zip(order, vals):
+        p, t, c, _ = reads[i]
+        out[i] = (p, t, c, v)
+    return out, True
 
 
 def calibrate(ex: Extraction, reads_x, reads_y):
@@ -69,10 +88,12 @@ def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: 
         rx = [(p, "", 1.0, v) for p, v in oracle_ticks["x"]]
         ry = [(p, "", 1.0, v) for p, v in oracle_ticks["y"]]
     else:
-        rx = read_ticks(reader, img, ex.xticks)
-        ry = read_ticks(reader, img, ex.yticks)
+        rx, xdate = as_dates(read_ticks(reader, img, ex.xticks), "x")
+        ry, ydate = as_dates(read_ticks(reader, img, ex.yticks), "y")
     xfit, yfit = calibrate(ex, rx, ry)
     res = Result(ex=ex, xfit=xfit, yfit=yfit, tick_reads={"x": rx, "y": ry})
+    if oracle_ticks is None:
+        res.date_axes = {"x": xdate, "y": ydate}
     for name, f in (("x", xfit), ("y", yfit)):
         if f is None:
             res.warnings.append(f"{name} axis: could not calibrate from the tick labels")

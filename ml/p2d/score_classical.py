@@ -13,7 +13,7 @@ import numpy as np
 
 from .evaluate import gt_value_to_px
 from .extract import Extraction, Series
-from .metrics import score, summarise
+from .metrics import score, summarise_split
 
 
 def main() -> None:
@@ -42,9 +42,12 @@ def main() -> None:
                     ex.series.append(Series(kind="scatter", line_px=np.zeros((0, 2)), markers_px=px))
         # The classical engine works at source resolution: canvas scale 1.
         rows.append(score(meta, ex, canvas_scale=1.0))
-    s = summarise(rows)
-    s["engine_errors"] = errors
-    print(json.dumps(s, indent=1))
+    split = summarise_split(rows)
+    s, simple = split["all"], split["simple"]
+    print(f"engine errors: {errors}")
+    print(f"{'metric':28s} {'all':>10s} {'simple':>10s}")
+    for k in s:
+        print(f"{k:28s} {float(s[k]):>10.4f} {float(simple.get(k, float('nan'))):>10.4f}")
 
 
 if __name__ == "__main__":
