@@ -63,7 +63,7 @@ the three web builds, `android:check` (Android lint with `warningsAsErrors` + th
 (`KEYSTORE_B64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` - missing any one fails the release with a message naming it),
 publishes a GitHub Release and attaches both the signed APK and the single-file review build. `RELEASING.md` is the tagging recipe.
 
-The in-app updater (Kotlin only) checks `api.github.com/repos/mlfisch3/plot2data/releases/latest` 24h after the last check and
+The in-app updater (Kotlin only) checks `api.github.com/repos/mlfisch3/plot2data-ml/releases/latest` 24h after the last check and
 on a manual button in the Settings screen (`SettingsActivity`). The checker's host allow-list is a compile-time constant in
 `UpdateHttp.kt` and is pinned by `UpdateHttpTest.kt` - any change there must survive those tests. Comparison is by Android `versionCode`
 when the release body carries a `plot2data: versionCode=N` line (the release workflow writes one from `aapt2 dump badging`), with a

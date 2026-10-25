@@ -17,8 +17,8 @@ android {
         // Repo coordinates for the auto-update checker. Hard-coded here so
         // UpdateHttp's allow list can be a compile-time constant.
         buildConfigField("String", "P2D_REPO_OWNER", "\"mlfisch3\"")
-        buildConfigField("String", "P2D_REPO_NAME", "\"plot2data\"")
-        buildConfigField("String", "P2D_REPO", "\"mlfisch3/plot2data\"")
+        buildConfigField("String", "P2D_REPO_NAME", "\"plot2data-ml\"")
+        buildConfigField("String", "P2D_REPO", "\"mlfisch3/plot2data-ml\"")
     }
 
     buildFeatures {

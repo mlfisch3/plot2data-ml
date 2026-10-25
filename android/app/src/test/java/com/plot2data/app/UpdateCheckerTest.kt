@@ -14,7 +14,7 @@ class UpdateCheckerTest {
 
     private fun release(
         tag: String,
-        apkUrl: String = "https://github.com/mlfisch3/plot2data/releases/download/$tag/plot2data-${tag.removePrefix("v")}.apk",
+        apkUrl: String = "https://github.com/mlfisch3/plot2data-ml/releases/download/$tag/plot2data-${tag.removePrefix("v")}.apk",
         apkName: String = "plot2data-${tag.removePrefix("v")}.apk",
         prerelease: Boolean = false,
         draft: Boolean = false,
@@ -27,7 +27,7 @@ class UpdateCheckerTest {
           "draft": $draft,
           "body": ${quote(notes)},
           "assets": [
-            {"name": "plot2data-review-${tag.removePrefix("v")}.html", "browser_download_url": "https://github.com/mlfisch3/plot2data/releases/download/$tag/plot2data-review-${tag.removePrefix("v")}.html", "size": 5300000},
+            {"name": "plot2data-review-${tag.removePrefix("v")}.html", "browser_download_url": "https://github.com/mlfisch3/plot2data-ml/releases/download/$tag/plot2data-review-${tag.removePrefix("v")}.html", "size": 5300000},
             {"name": "$apkName", "browser_download_url": "$apkUrl", "size": $size}
           ]
         }

@@ -121,7 +121,7 @@ Everything beyond that was investigated.
 
 ## Auto-update
 
-The app checks the project's [GitHub Releases page](https://github.com/mlfisch3/plot2data/releases) for a newer version.
+The app checks the project's [GitHub Releases page](https://github.com/mlfisch3/plot2data-ml/releases) for a newer version.
 It is the only network call the app ever makes, and it is strictly scoped: the checker refuses any URL not on `api.github.com`,
 `github.com` or `*.githubusercontent.com` at the OkHttp interceptor level
 (see `UpdateHttp.kt` and `UpdateHttpTest.kt`), and the download URL has to be a release-asset path for this very repo.
@@ -129,7 +129,7 @@ It is the only network call the app ever makes, and it is strictly scoped: the c
 ### Flow
 
 1. **On launch**, if the last successful check is more than 24 hours ago, the app hits
-   `GET https://api.github.com/repos/mlfisch3/plot2data/releases/latest` in a background coroutine. Nothing more.
+   `GET https://api.github.com/repos/mlfisch3/plot2data-ml/releases/latest` in a background coroutine. Nothing more.
 2. **A cog in the page's masthead** opens the native settings screen, which has a "Check for updates now" button and the auto toggle.
    This path works offline-friendly: a background check that cannot reach GitHub makes no noise; a manual check that fails shows one line
    that says so.

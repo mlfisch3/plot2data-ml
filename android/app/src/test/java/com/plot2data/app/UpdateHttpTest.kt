@@ -55,7 +55,7 @@ class UpdateHttpTest {
 
     @Test
     fun `isReleaseAssetUrl accepts the canonical download URL`() {
-        val url = "https://github.com/mlfisch3/plot2data/releases/download/v0.2.0/plot2data-0.2.0.apk"
+        val url = "https://github.com/mlfisch3/plot2data-ml/releases/download/v0.2.0/plot2data-0.2.0.apk"
         assertTrue(UpdateHttp.isReleaseAssetUrl(url))
     }
 
@@ -73,21 +73,21 @@ class UpdateHttpTest {
 
     @Test
     fun `isReleaseAssetUrl rejects non-releases paths on github dot com`() {
-        val url = "https://github.com/mlfisch3/plot2data/raw/main/some-file.apk"
+        val url = "https://github.com/mlfisch3/plot2data-ml/raw/main/some-file.apk"
         assertFalse(UpdateHttp.isReleaseAssetUrl(url))
     }
 
     @Test
     fun `isReleaseAssetUrl rejects http and other hosts`() {
         assertFalse(UpdateHttp.isReleaseAssetUrl(null))
-        assertFalse(UpdateHttp.isReleaseAssetUrl("http://github.com/mlfisch3/plot2data/releases/download/v1/x.apk"))
-        assertFalse(UpdateHttp.isReleaseAssetUrl("https://evil.com/mlfisch3/plot2data/releases/download/v1/x.apk"))
+        assertFalse(UpdateHttp.isReleaseAssetUrl("http://github.com/mlfisch3/plot2data-ml/releases/download/v1/x.apk"))
+        assertFalse(UpdateHttp.isReleaseAssetUrl("https://evil.com/mlfisch3/plot2data-ml/releases/download/v1/x.apk"))
     }
 
     @Test
     fun `the latest-release URL points at this repo on the API host`() {
         assertEquals(
-            "https://api.github.com/repos/mlfisch3/plot2data/releases/latest",
+            "https://api.github.com/repos/mlfisch3/plot2data-ml/releases/latest",
             UpdateHttp.LATEST_RELEASE_URL,
         )
     }

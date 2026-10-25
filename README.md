@@ -34,7 +34,7 @@ Choosing a suitable image is the user's job. If the tool cannot read a plot conf
 ## Download
 
 Signed Android APKs and the standalone single-file review build are published on the project's
-[GitHub Releases page](https://github.com/mlfisch3/plot2data/releases).
+[GitHub Releases page](https://github.com/mlfisch3/plot2data-ml/releases).
 Each release carries two files:
 
 - `plot2data-<x.y.z>.apk` - sideload on a phone (see [ANDROID.md](ANDROID.md) for how, and what the two permissions it holds are for).
