@@ -431,14 +431,22 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict, preset:
     if rng.random() < 0.6:
         ax.set_ylabel(str(rng.choice(["Value", "Amplitude", "Sales ($M)", "Percent", "Count", "Loss", "Voltage (V)", "y"])))
 
-    if flags["direct_labels"]:
-        # Series named by text at the end of each line, in its colour, as news graphics do.
+    if flags["direct_labels"] or rng.random() < 0.04:
+        # Series named by text at the end of each line, in its colour, as news graphics do; often with the
+        # first and last values printed too ("12" ... "46"), which must not pass for tick labels.
+        values_too = rng.random() < 0.5
         for m, art in zip(series_meta, data_artists):
             c = art.get_color() if isinstance(art, Line2D) else None
             if c is None:
                 continue
+            fs = float(rng.uniform(8, 12))
             text_extra.append(ax.annotate(m["label"], (m["x"][-1], m["y"][-1]), xytext=(4, 0), textcoords="offset points",
-                                          color=c, va="center", fontsize=float(rng.uniform(8, 12)), annotation_clip=False))
+                                          color=c, va="center", fontsize=fs, annotation_clip=False))
+            if values_too:
+                for j, dx in ((0, -6), (-1, 6)):
+                    text_extra.append(ax.annotate(f"{m['y'][j]:.3g}", (m["x"][j], m["y"][j]), xytext=(dx, -12),
+                                                  textcoords="offset points", color=c, ha="center", fontsize=fs,
+                                                  fontweight="bold", annotation_clip=False))
     legend = None
     if flags["legend"] == "none":
         pass

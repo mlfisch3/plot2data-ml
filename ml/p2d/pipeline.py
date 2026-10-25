@@ -16,6 +16,7 @@ from .calibrate import AxisFit, fit_axis
 from .dates import resolve
 from .extract import Extraction, extract, refine_lines, run_net
 from .ocr import crop, parse_value, read_crops
+from .sampling import auto_step, resample
 
 
 @dataclass
@@ -65,13 +66,26 @@ def calibrate(ex: Extraction, reads_x, reads_y):
     return xfit, yfit
 
 
-def to_data(ex: Extraction, xfit: AxisFit | None, yfit: AxisFit | None) -> list[dict]:
+def to_data(ex: Extraction, xfit: AxisFit | None, yfit: AxisFit | None, step_px: float | None = None,
+            tol_px: float = 0.5) -> list[dict]:
+    """Series in data units. A line also gets `sampled`: uniform samples at `step_px` pixels, or by
+    default at the coarsest step whose linear reconstruction stays within `tol_px` of the trace.
+
+    The step is chosen in pixels, which makes it uniform in x on a linear axis and
+    uniform in log x on a log axis, as the axis is drawn.
+    """
     out = []
     for k, s in enumerate(ex.series):
         d = {"name": f"series_{k + 1}", "kind": s.kind, "color": s.color}
         if xfit and yfit:
             if len(s.line_px):
                 d["line"] = np.column_stack([xfit.to_value(s.line_px[:, 0]), yfit.to_value(s.line_px[:, 1])])
+                lp = s.line_px[np.argsort(s.line_px[:, 0], kind="stable")]
+                if len(lp) >= 3:
+                    step = step_px if step_px else auto_step(lp[:, 0], lp[:, 1], tol_px, min_step=1.0)
+                    gx, gy = resample(lp[:, 0], lp[:, 1], step=step)
+                    d["step_px"] = float(step)
+                    d["sampled"] = np.column_stack([xfit.to_value(gx), yfit.to_value(gy)])
             if len(s.markers_px):
                 d["markers"] = np.column_stack([xfit.to_value(s.markers_px[:, 0]), yfit.to_value(s.markers_px[:, 1])])
         out.append(d)
@@ -103,22 +117,61 @@ def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: 
     return res
 
 
+def write_csv(res: Result, path: str) -> None:
+    """One block per series: a curve as its uniform samples, markers as the points found."""
+    import csv
+    import datetime as dt
+
+    xdate = res.date_axes.get("x", False)
+
+    def fx(v: float) -> str:
+        if xdate:
+            return (dt.datetime(1970, 1, 1) + dt.timedelta(days=float(v))).isoformat(timespec="minutes")
+        return f"{v:.6g}"
+
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        for warn in res.warnings:
+            w.writerow([f"# {warn}"])
+        for s in res.series:
+            pts = s.get("sampled") if s["kind"] == "line" else s.get("markers")
+            if pts is None:
+                continue
+            note = f"uniform step {s['step_px']:.2f} px" if s["kind"] == "line" else "one point per marker"
+            w.writerow([f"# {s['name']} ({s['kind']}, {note})"])
+            w.writerow(["x", s["name"]])
+            for x, y in pts:
+                w.writerow([fx(x), f"{y:.6g}"])
+
+
 def main() -> None:
-    from .evaluate import load_net
+    from .evaluate import draw, load_net
     from .ocr import load_reader
 
     ap = argparse.ArgumentParser()
     ap.add_argument("image")
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--ocr", required=True)
+    ap.add_argument("--csv", help="write the extracted series here")
+    ap.add_argument("--overlay", help="write the extraction drawn over the image here")
+    ap.add_argument("--step-px", type=float, default=None, help="sampling step for curves (default: automatic)")
     a = ap.parse_args()
     img = cv2.imread(a.image)[..., ::-1].copy()
     res = run(load_net(a.ckpt), load_reader(a.ocr), img)
+    if a.step_px:
+        res.series = to_data(res.ex, res.xfit, res.yfit, step_px=a.step_px)
+    if a.csv:
+        write_csv(res, a.csv)
+    if a.overlay:
+        cv2.imwrite(a.overlay, draw(img, res.ex)[..., ::-1])
     print(json.dumps({
-        "x_axis": res.xfit and {"scale": res.xfit.scale, "ticks": [(r[1], r[3]) for r in res.tick_reads["x"]]},
+        "x_axis": res.xfit and {"scale": res.xfit.scale, "date": res.date_axes.get("x", False),
+                                "ticks": [(r[1], r[3]) for r in res.tick_reads["x"]]},
         "y_axis": res.yfit and {"scale": res.yfit.scale, "ticks": [(r[1], r[3]) for r in res.tick_reads["y"]]},
         "warnings": res.warnings,
-        "series": [{"name": s["name"], "kind": s["kind"], "points": len(s.get("line", s.get("markers", [])))} for s in res.series],
+        "series": [{"name": s["name"], "kind": s["kind"], "color": s["color"],
+                    "points": len(s.get("sampled", s.get("markers", []))),
+                    "step_px": s.get("step_px")} for s in res.series],
     }, indent=1, default=str))
 
 

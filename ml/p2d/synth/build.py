@@ -1,6 +1,7 @@
 """Write a synthetic dataset to disk.
 
     python -m p2d.synth.build --out data/mpl-v1 --start 0 --count 30000 --workers 14
+    python -m p2d.synth.build --out data/plotly-v1 --start 500000 --count 3000 --workers 3 --renderer plotly
 
 Each sample is `<id>.png` (the chart), `<id>.sem.png` and `<id>.inst.png` (label
 maps) and `<id>.json` (geometry and values). Seeds are the sample ids, so any
@@ -24,9 +25,12 @@ import cv2
 
 
 def _work(args):
-    out, seed = args
+    out, seed, renderer = args
     logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
-    from .mpl_render import generate
+    if renderer == "plotly":
+        from .plotly_render import generate
+    else:
+        from .mpl_render import generate
 
     stem = os.path.join(out, f"{seed:07d}")
     if os.path.exists(stem + ".json"):
@@ -50,9 +54,10 @@ def main() -> None:
     ap.add_argument("--start", type=int, default=0)
     ap.add_argument("--count", type=int, required=True)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
+    ap.add_argument("--renderer", choices=["matplotlib", "plotly"], default="matplotlib")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    jobs = [(a.out, s) for s in range(a.start, a.start + a.count)]
+    jobs = [(a.out, s, a.renderer) for s in range(a.start, a.start + a.count)]
     t0 = time.time()
     failed = 0
     with Pool(a.workers, maxtasksperchild=200) as pool:
