@@ -75,6 +75,19 @@ def main() -> None:
             idx = np.clip(np.searchsorted(bins, tx[inside]) - 1, 0, 9)
             prof = [f"{e[idx == k].mean():+.2f}" if (idx == k).any() else "  -  " for k in range(10)]
             print("    signed error by x decile (%): " + " ".join(prof))
+            # The same residual in pixels, through the pipeline's own fits: a tracing error shows here too,
+            # a calibration error does not (the fit maps the truth and the trace alike).
+            if res.xfit and res.yfit and "line" in s:
+                lp = s["line"]
+                src = np.column_stack([res.xfit.to_pos(lp[:, 0]), res.yfit.to_pos(lp[:, 1])])
+                o = np.argsort(src[:, 0])
+                tpx = res.xfit.to_pos(xs[inside] if not xlog else 10 ** tx[inside]) if True else None
+                tpy = res.yfit.to_pos(csv[name][inside])
+                ok = np.isfinite(tpx) & np.isfinite(tpy)
+                ep = np.interp(tpx[ok], src[o, 0], src[o, 1]) - tpy[ok]
+                ip = idx[ok]
+                profp = [f"{ep[ip == k].mean():+.2f}" if (ip == k).any() else "  -  " for k in range(10)]
+                print("    pixel residual of the trace by x decile (px, through the fits): " + " ".join(profp))
 
 
 if __name__ == "__main__":

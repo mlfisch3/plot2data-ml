@@ -111,7 +111,7 @@ def _labels(rng: np.random.Generator, vals: np.ndarray, log: bool, axis: str) ->
             elif style == "comma":
                 out.append((v, f"{v:,.0f}" if v >= 1 else f"{v:g}"))
             else:
-                out.append((v, f"{v:,.0f}" if v >= 1000 and rng.random() < 0.5 else f"{v:g}"))
+                out.append((v, f"{v:.0f}" if v >= 1 else f"{v:g}"))
         return out
     style = str(rng.choice(["chartjs", "plain", "thousands", "pct", "dollar", "suffix"],
                            p=[0.35, 0.2, 0.15, 0.1, 0.1, 0.1] if axis == "y" else [0.5, 0.3, 0.2, 0, 0, 0]))
