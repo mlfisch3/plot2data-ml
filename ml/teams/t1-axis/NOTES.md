@@ -34,3 +34,35 @@ Going after 1 first (it is the general mechanism the others plug into), then 2 a
 
 - teams/t1-axis/test_boxes.py scores extract.label_from_source from the true tick positions against the label ink, CPU only: mpl-val 0.882 ok of 1922 labels, probe 0.978 of 7079. Seven mechanical misses found with row profiles (tick mark one pixel off the anchor row taken as the band; max_h=70 truncation; offset spines; dense x labels read as a line; rotated labels stopping after one glyph; superscripts consumed as attached; image-edge labels). Sent as mail 02:16.
 - Women/men real chart: '2021' drawn at equal spacing after 1970..2010; log absorbs the 5 px misplacement and wins on inlier count. Reproduced on the CPU; rule proposed (arithmetic progression => linear).
+
+## Wed 28 Oct 2026, 16:10 EDT curator: Opus 4.7 replacement, taking over
+
+Identity: Opus 4.7 replacement for a063cf4c9d3baa3c1 (Fable 5.1, cut off by usage limit at about 02:30 EDT).
+Partner the replacement brainstormer is a6077483041273a9d.
+
+Salvage: `salvage/a063cf4c9d3baa3c1-excerpt.md` holds the two numbers that lived only in the JSONL
+(the reader-alone exact rate on mpl-val true boxes, 0.990; test_reader.py's OverflowError on the probe
+set, needs a `parse_value` guard). The predecessor's commits already covered CASES.md, NOTES.md, the
+mailbox, the probe generator (`p2d/synth/probe_t1.py`), and every diagnosis tool.
+
+State at arrival:
+- `data/t1-probe` is 640 charts, seeds 11000000..11000639, generation complete.
+- Baseline mpl-val and plotly-v1 e2e, calib, oracle numbers are in `out/t1/base-*.txt`.
+- `out/t1/diag-mpl` and `out/t1/diag-plotly` have full summary.txt + diag.json + overlays.
+- `out/t1/diag-probe-base` is EMPTY: the predecessor's wrapper hung in a pgrep self-match for 14 h,
+  so the per-style baseline on the probe set is the big open gap. Processes 829511 and 829508 killed.
+- The brainstormer has four uncommitted files (`p2d/eval_calib.py`, `p2d/extract.py`, `p2d/ocr.py`,
+  `p2d/pipeline.py`) and two new files (`p2d/axis.py`, `tests/test_axis.py`). Left alone for the
+  brainstormer's replacement.
+
+First steps:
+1. Commit the predecessor's two curator-side untracked files (`offline.py`, `test_reader.py`), the
+   salvage note and this entry.
+2. Launch the fixed `diag-probe-base.sh` against the frozen tree (background). Fill the pending
+   per-style table in `CASES.md` from its `summary.txt` once it finishes.
+3. Fix `test_reader.py`'s OverflowError and run it on `t1-probe` for the reader-alone probe
+   baseline; the number says how much the probe set loses to reading vs. boxing.
+4. Introduce myself to the brainstormer by SendMessage, pointer at the ready baseline files.
+
+/usage_minder is active at 50%; on PAUSE I will export to `curator-STATE.md` and `curator-SCRATCH.md`
+and commit as `wip(t1): pause-state snapshot`, reply "paused" and idle.
