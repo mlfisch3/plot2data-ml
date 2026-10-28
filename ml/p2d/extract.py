@@ -29,6 +29,8 @@ class Series:
     color: tuple[int, int, int] = (0, 0, 0)
     support: int = 0
     vertices_px: np.ndarray | None = None  # sharp corners found by the vertex head, kept exactly
+    fallback_frac: float = 1.0  # share of columns the source-pixel measurement left to the network
+    ridge_px: np.ndarray | None = None  # N x 3 (x, top, bottom): the vertical extent of the network's ridge per canvas column, source px
 
 
 @dataclass
@@ -349,6 +351,10 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
         se = _make_series("line", np.column_stack([f["cols"], f["ys"]]), mk, Mi, img)
         if f.get("vertices"):
             se.vertices_px = apply(Mi, f["vertices"])
+        sp = np.array(f["spans"], float).reshape(-1, 2)
+        top = apply(Mi, np.column_stack([f["cols"], sp[:, 0] - 0.5]))
+        bot = apply(Mi, np.column_stack([f["cols"], sp[:, 1] + 0.5]))
+        se.ridge_px = np.column_stack([top[:, 0], top[:, 1], bot[:, 1]])
         ex.series.append(se)
     scatters = []
     for k in range(lab.max() + 1):
@@ -614,8 +620,15 @@ def _paper_colour(img: np.ndarray, area: list[float] | None) -> np.ndarray:
     return patch[key == mode].mean(0)
 
 
-def refine_lines(img: np.ndarray, ex: Extraction, keep_vertex: float = 0.3) -> Extraction:
-    """Re-measure each traced line on the source pixels, one sample per source column.
+def refine_lines(img: np.ndarray, ex: Extraction) -> Extraction:
+    """Re-measure each traced line on the source pixels, every column (see `measure.py`)."""
+    from .measure import refine_lines as _refine
+
+    return _refine(img, ex)
+
+
+def refine_lines_v1(img: np.ndarray, ex: Extraction, keep_vertex: float = 0.3) -> Extraction:
+    """The first refinement, kept for comparison: one centroid per source column within a window.
 
     The network says where a series runs and which ink is its; the exact centre
     is then the ink-weighted centroid of the source column, where a pixel's ink

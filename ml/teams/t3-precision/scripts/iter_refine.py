@@ -58,8 +58,13 @@ def main():
         if a.mode == "new":
             ex = refine_lines(img, ex)
         elif a.mode == "old":
+            from p2d.data import H_VERTEX, N_HEAT
             from p2d.extract import refine_lines_v1
 
+            hv = ex.raw["heat_vertex"].astype(np.float32)
+            heat = np.zeros((N_HEAT,) + hv.shape, np.float32)
+            heat[H_VERTEX] = hv
+            ex.raw = {"heat": heat}
             ex = refine_lines_v1(img, ex)
         t_ref += time.time() - t0
         ex = refine_markers(img, ex)
