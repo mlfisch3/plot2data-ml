@@ -114,4 +114,47 @@ Regenerated after the first baseline with `markers_drawn_px` recorded beside `ma
 | t4-multi | 120 | 2-5 series in one cloud: close colours, one colour with different shapes, sizes, mixed | 14,005,000 |
 | t4-lines | 100 | noisy, spiky, dashed, thick dashed, step lines; no marker anywhere | 14,006,000 |
 
-Baseline numbers: pending (queued from the frozen tree: `out/t4/eval-<set>-v3.txt`, `out/t4/diag-<set>-v3/`).
+Baselines from the frozen tree (v3 with the drawn-centre probe GT): `out/t4/eval-<set>-v3d.txt`, `out/t4/diag-<set>-v3/summary.json`. Standard sets: `out/t4/base-val-refine-frozen.txt`, `base-plotly-refine-frozen.txt`, `base-val-e2e-frozen.txt`, `base-plotly-e2e-frozen.txt`.
+
+## After af04090 (`p2d/markers.py`)
+
+Measured in this worktree with the brainstormer's committed change (`af04090`), geometry only, `--refine`, same checkpoint `runs/v3/best.pt`, same probe sets. Eval outputs tagged `step23`: `out/t4/eval-<set>-step23.txt`, `rows-<set>-step23.json`; diagnosis `out/t4/diag-<set>-step23/summary.json`. Compare with `python teams/t4-markers/tools/diag_delta.py v3 step23`.
+
+### What the change does
+
+`p2d/markers.py` replaces `extract.refine_markers`. It measures each series' marker size from the series' ink, splits touching markers by a Gaussian mixture seeded at the heat peaks (one component per peak, sigma proportional to size), adds extra seeds to merged blobs whose area holds more markers than peaks, converges two seeds on one marker into one centre, drops a peak whose ink-blob is no wider than the owning line's stroke (dash veto), detects the matplotlib snap convention from the fractional parts of the isolated centres and backs it out, and detects triangles from the apex asymmetry of the isolated blobs and offsets to the bbox centre. A new `extract.loose_markers` carries peaks the embedding dropped; `markers.attach_loose` attaches them to a series by colour (and to a line's trace by distance) and forms new series by colour from what remains.
+
+### Standard sets (geometry only, `--refine`)
+
+| set | metric | v3 all / simple | af04090 all / simple | delta |
+| --- | --- | --- | --- | --- |
+| mpl-val 200 | marker_recall | 0.593 / 0.845 | 0.544 / 0.826 | -0.048 / -0.019 |
+| mpl-val 200 | marker_precision | 0.704 / 0.825 | 0.812 / 0.896 | +0.108 / +0.071 |
+| mpl-val 200 | marker_err_median_pct | 0.128 / 0.112 | 0.082 / 0.070 | -0.047 / -0.042 |
+| plotly 150 | marker_recall / precision / err | pending | pending | pending |
+
+The error cut by about a third, precision up by 10 points, recall down a touch (and most of that is on the rope charts in "all"). On "simple" (the one that describes screenshots) precision gains 7 points at the cost of 2 recall points.
+
+### Probe sets (per-marker diagnosis, measured and still landing)
+
+| set | recall v3 -> step23 | precision v3 -> step23 | err v3 -> step23 (raw %) | FP causes delta | FN stages delta |
+| --- | --- | --- | --- | --- | --- |
+| dense | 0.765 -> 0.812 (+0.046) | 0.856 -> 0.925 (+0.069) | 0.168 -> 0.105 | dup -2194, legend -28, marker_ink +51, grid +31 | peak_off -1518, taken -662, unlabelled -128, moved +978, dropped +13 |
+| shapes | pending | pending | pending | pending | pending |
+| row, labels, hollow, multi, lines | pending | pending | pending | pending | pending |
+
+### F10. Asymmetric shapes under the ink-centroid refinement, no isolated examples to measure the convention
+
+`measure_series` places a marker's centre at the centroid of its blob of ink, and corrects for the triangle convention (matplotlib: bbox centre; Plotly: centroid) only when there are enough **isolated** blobs to measure the apex direction and the centroid-to-bbox offset. On a chart whose triangles overlap (packed scatter, nn_rel < 1) there are no isolated blobs, no correction is measured, and the centre lands at the ink centroid - about `size / 6` below the drawn bbox centre for a "^" triangle. For a 17.5 px triangle this is 2.9 source px, borderline the 3 px matching tolerance.
+
+Example: `data/t4-dense/14000078.png`, one series of 200 "^" triangles at 17.5 px (nn_rel 0.93). v3 (network estimate kept): 200 gt, 168 TP, 54 FP. af04090 (centroid pulled down): 34 TP, 152 FP (`out/t4/diag-dense-step23/14000078.png`, `14000078-heat.png` - the heat is pristine). The old `extract.refine_markers` kept the network's estimate for anything not symmetric under a half turn, which is correct for the asymmetric case when the shape convention cannot be measured.
+
+Likely fix: in `measure_series`, when the triangle offset cannot be measured (fewer than 3 isolated apex blobs or the triangle-apex vote is weak), return the network's estimate for that series instead of the ink centroid. Equivalent to v3's behaviour on asymmetric blobs.
+
+### F11. `add_seeds` overshoots in merged blobs of packed symmetric markers
+
+For each connected component of a series' ink the add-seeds step adds `floor(area / area1 + 0.35) - k` extra seeds (where `k` is the number of heat peaks under the component and `area1` is the median isolated-blob area), up to 12. On a packed symmetric cloud (`o`/`s`/`v` at nn_rel < 0.5) a few merged blobs each get many extras, the mixture then has far more components than markers inside the mass, and its centres do not sit at the markers. FPs rise and TPs shift out of tolerance.
+
+Example: `data/t4-dense/14000064.png`, three series ("o", "v", "o") at 15.8 px, nn_rel 0.42. v3: 378 gt, 221 TP, 293 FP. af04090: 182 TP, 441 FP (overlay: `out/t4/diag-dense-step23/14000064.png`). Dense-set totals confirm: FP cause "dup" fell by 2,194 (the split-aware mixture working on honest ropes) but new TPs were "moved" out of tolerance by 978 (the overshoot).
+
+Likely fix: cap `add_seeds` at 2 per blob, require at least 5 isolated blobs for `area1` to be trusted, or only add seeds when the blob is clearly elongated (one row of markers), not a 2-D cluster.

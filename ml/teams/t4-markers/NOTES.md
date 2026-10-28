@@ -99,3 +99,16 @@ Resumed-work plan:
 5. If a regression shows up on simple, back off the offending veto and iterate.
 
 Pausing for background on the standard sets now.
+
+## Wed 28 Oct 2026, 16:12 EDT (curator, replacement, Opus 4.7)
+
+Took over for the predecessor (Fable 5.1, cut off by the usage limit at ~02:30 EDT). Partner replacement is `a1d4346bed4bd4f04`. Judge is `main`. Usage minder at 50%.
+
+Context recovered from BRIEF, ASSIGNMENT, README, RESULTS, CASES, both mailboxes and the branch log (through af04090). Honouring the probe-GT convention: `markers_px` is the exact value position; `markers_drawn_px` is the drawn centre beside it; `marker_diag` reports both.
+
+State on arrival:
+- Baselines complete (frozen tree, v3). Standard: `out/t4/base-val-refine-frozen.txt`, `base-plotly-refine-frozen.txt`, `base-val-e2e-frozen.txt`, `base-plotly-e2e-frozen.txt`. Probe set (regenerated with the drawn-centre GT): `out/t4/eval-<k>-v3d.txt`, `rows-<k>-v3d.json` for `k in {dense, row, labels, shapes, hollow, multi, lines}`. Per-marker diagnosis from the frozen tree: `out/t4/diag-<k>-v3/`. Bias check: `out/t4/bias-v3.{txt,json}`.
+- Brainstormer's committed change at `af04090`: `p2d/markers.py` (555 LOC, measures size, ink mixture centres, snap convention, dash veto, loose attach) replaces `extract.refine_markers`. Not yet measured by anyone.
+- Untracked: `ml/p2d/zoom.py` (brainstormer's step 1 WIP, higher-scale tile pass), `ml/tests/test_probe_t4.py` (predecessor's invariant test for the probe generator). The former is brainstormer's turf, left alone; the latter is mine, committing now.
+
+Next: launch the probe suite plus the two standard sets from this worktree at branch head on the GPU, tag `step23`, into `out/t4/*-step23*`; while that runs, slice the diagnosis of af04090 by stage and cause to tell real/false markers from "false markers that happened to touch a line" (per the predecessor's `line_dist` field), and update CASES.md with the delta.
