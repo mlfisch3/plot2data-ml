@@ -162,8 +162,8 @@ Measured either at af04090 (step23) or at c78db3f (step24). The three probe sets
 | hollow (step24) | step24 | 0.825 -> 0.822 (-0.003) | 0.877 -> 0.923 (+0.045) | 0.138 -> 0.096 (-0.042) | dup -405, marker_ink -13 | **dropped +163, moved +49**, taken -119 |
 | multi (step24) | step24 | 0.733 -> 0.766 (+0.033) | 0.838 -> 0.876 (+0.038) | 0.141 -> 0.088 (-0.053) | dup -1693, marker_ink +227 | peak_off -1739, taken -810, **moved +1445**, no_heat -59, dropped +110 |
 | lines (step24, no-markers charts) | step24 | - | - | - | line_ink -105, legend -4 | - |
-| val (pending diag) | pending | pending | pending | pending | pending | pending |
-| plotly (pending diag) | pending | pending | pending | pending | pending | pending |
+| val (step24) | step24 | 0.593 -> 0.598 (+0.006) | 0.704 -> 0.798 (+0.094) | 0.128 -> 0.086 (-0.043) | dup -869, **line_ink -784**, text 0, marker_ink +67, legend +13, bg +27 | taken -318, peak_off -276, unlabelled -244, dropped +440, moved +350 |
+| plotly (step24) | step24 | 0.465 -> 0.445 (-0.020) | 0.798 -> 0.871 (+0.073) | 0.091 -> 0.044 (-0.047) | dup -567, line_ink -196, marker_ink -105 | taken -580, dropped +1005, moved +130, peak_off -129, unlabelled -87 |
 
 Notes:
 - The "moved" FN stage (markers that reached the pipeline but ended beyond tolerance after refinement) is up on every set where the mixture or the convention correction runs. On dense, shapes, hollow, multi, it is the price of the ink-based centring; the `err_median_pct` improvement shows the move is usually TOWARD the drawn centre, just occasionally past tolerance for a few.
