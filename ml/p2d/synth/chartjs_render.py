@@ -78,8 +78,12 @@ def _png(data_url: str) -> np.ndarray:
     return cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_UNCHANGED)  # BGRA
 
 
-def _hex(c: str) -> str:
-    return c
+def _alpha(b64: str, H: int, W: int) -> np.ndarray:
+    """A pass's alpha channel: deflate-compressed bytes from the page."""
+    import zlib
+
+    raw = zlib.decompress(base64.b64decode(b64))
+    return np.frombuffer(raw, np.uint8).reshape(H, W)
 
 
 def _rgba(hex_colour: str, a: float) -> str:
@@ -133,8 +137,8 @@ def _labels(rng: np.random.Generator, vals: np.ndarray, log: bool, axis: str) ->
 def make_spec(seed: int) -> tuple[dict, dict]:
     """A random chart spec for the renderer, plus what the truth needs that the spec does not carry."""
     rng = np.random.default_rng(seed)
-    dpr = 2 if rng.random() < 0.2 else 1
-    W = int(rng.uniform(380, 1000 if dpr == 2 else 1500))
+    dpr = 2 if rng.random() < 0.12 else 1
+    W = int(rng.uniform(380, 900 if dpr == 2 else 1500))
     H = max(240, int(W * rng.uniform(0.4, 0.85)))
     dark = rng.random() < 0.15
     if dark:
@@ -188,7 +192,7 @@ def make_spec(seed: int) -> tuple[dict, dict]:
             kind=kind, label=str(rng.choice([f"Series {k + 1}", "Revenue", "Users", "Sales", "Temperature", "Model A", "Model B", "Actual", "Forecast", "North", "South"])),
             x=[float(v) for v in x], y=[float(v) for v in y], color=colour, fillColor=_rgba(colour, float(rng.uniform(0.15, 0.5))),
             width=float(rng.choice([1, 1.5, 2, 2, 2.5, 3, 4])),
-            dash=[] if rng.random() < 0.8 else [int(v) for v in rng.choice([[6, 4], [2, 2], [8, 4, 2, 4], [10, 6], [4, 4]])],
+            dash=[] if rng.random() < 0.8 else [[6, 4], [2, 2], [8, 4, 2, 4], [10, 6], [4, 4]][int(rng.integers(5))],
             join=str(rng.choice(["miter", "miter", "round", "bevel"])), cap=str(rng.choice(["butt", "butt", "round"])),
             pointRadius=float(rng.uniform(2.5, 6)), pointStyle=str(rng.choice(POINT_STYLES)),
             hollow=bool(rng.random() < 0.15), pointBorderWidth=float(rng.uniform(1, 2)), stepped=stepped,
@@ -267,12 +271,13 @@ def generate(seed: int) -> Rendered:
     spec, extra = make_spec(seed)
     r = render_spec(spec)
     dpr = spec["dpr"]
-    passes = {k: _png(v) for k, v in r["passes"].items()}
-    full = passes["full"]
+    full = _png(r["passes"]["full"])
     image = np.ascontiguousarray(full[..., :3][..., ::-1])  # BGRA -> RGB
     H, W = image.shape[:2]
     n_series = len(spec["datasets"])
-    alpha = {k: v[..., 3] for k, v in passes.items()}
+    alpha = {k: _alpha(v, H, W) for k, v in r["passes"].items() if k != "full"}
+    for k in ("text", "legend"):  # passes skipped when the chart has no such ink
+        alpha.setdefault(k, np.zeros((H, W), np.uint8))
     series_alpha = [alpha[f"series_{k}"] for k in range(n_series)]
     thr = 60
     stack = [alpha["grid"], alpha["axis"]] + series_alpha + [alpha["legend"], alpha["ticklabels"], alpha["text"]]

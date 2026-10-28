@@ -45,3 +45,12 @@ Changes so far (commits 72d21cf, 259b09d):
 - For a fine-tune: `--zoom` in train (crops at the inference scale, `_crop_shift`), y-label vertical alignment and pad randomised in mpl_render (30%), colour cast and inversion in augment_photometric (8%, 4%).
 
 Measurement hygiene: the curator froze the 6b313e9 code at out/t5/base-code for "before" numbers; my queue out/t5/q1-* measures 259b09d.
+
+## Wed 28 Oct 2026, 02:20 EDT, curator: first diagnosis, probe generators, real benchmark
+
+- Diagnosis of the known failures (details in mail/to-brainstormer.md, 01:50): the frame is found on all of them; nogrid is the network's label-only tick bias on Chart.js y labels (0.8-1.0 px up, nothing drawn to snap to); log-y/log-y-multi ghosts are minor gridlines traced as lines; offset-annotation's 1e6 box is found but rejected by a 3 px tolerance; the news chart's x axis goes log because a linear fit loses one placed-by-hand label; OWID fails on "80 years" labels; FRED carries the same label bias (y resid 1.1 px) and snaps x ticks to recession-band edges.
+- Measurement hygiene: all "before" numbers run from the judge's frozen worktree PLOT2DATA-teams/base (6b313e9); my tools take P2D_ROOT for that. A mixed-code run (the brainstormer's 259b09d landed mid-run) was discarded.
+- Probe generator `p2d/synth/probe_t5.py`: factors dpr (true re-render at K x dpi), resize, jpeg, blur, dark, clutter, skew; renderers matplotlib, plotly, chartjs. data/t5-dpr1, t5-dpr2, t5-dpr3 generated (100 charts each, seeds 15,000,000-15,000,099; the same seed is the same chart; width medians 1004 / 2008 / 3012 px).
+- Chart.js renderer `p2d/synth/chartjs_render.py` + `.mjs`: one headless Chrome, colour-only passes for the label maps (alpha deflated, not PNG), exact geometry from Chart.js's scales; checked by truth overlays on 12 seeds (out/t5/cjs-check). Generating data/t5-chartjs-val (100, seeds 15,200,000+) and data/t5-chartjs (4,000, seeds 15,100,000+) for the brainstormer's fine-tune. Cost about 1 s per chart at DPR 1 and 5-10 s at DPR 2 on the loaded machine (load average 34).
+- Real benchmark: `teams/t5-robust/tools/fetch_real.py` fetched 30 charts with their published data into data/t5-real (12 OWID, 16 FRED, 1 GISS, 1 NOAA); `p2d/eval_t5real.py` scores them (RMS as % of the data span, coverage, found). Baseline run queued.
+- Mistake: while stopping my own queue I matched another team's script name (t2's out/t2c/gpu2.sh) and killed it; reported to the judge. Kill only pids from a pattern naming t5.

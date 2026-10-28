@@ -129,6 +129,8 @@ def _affine_meta(meta: dict, M: np.ndarray, width: int, height: int) -> dict:
 def _render_base(seed: int, renderer: str):
     if renderer == "plotly":
         from .plotly_render import generate
+    elif renderer == "chartjs":
+        from .chartjs_render import generate
     else:
         from .mpl_render import generate
     return generate(seed)
@@ -367,7 +369,7 @@ def main() -> None:
     ap.add_argument("--start", type=int, default=15_000_000)
     ap.add_argument("--count", type=int, default=100)
     ap.add_argument("--workers", type=int, default=3)
-    ap.add_argument("--renderer", choices=["matplotlib", "plotly"], default="matplotlib")
+    ap.add_argument("--renderer", choices=["matplotlib", "plotly", "chartjs"], default="matplotlib")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     jobs = [(a.out, s, a.factor, a.value, a.renderer) for s in range(a.start, a.start + a.count)]

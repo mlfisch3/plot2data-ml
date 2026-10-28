@@ -62,7 +62,10 @@ function build(spec, pass) {
       ticks: { color: vis(pass, 'ticklabels', ax.tickFontColor), font: { family: spec.font.family, size: ax.tickFontSize },
                padding: ax.tickPadding, maxRotation: ax.maxRotation, minRotation: ax.minRotation, autoSkip: false,
                align: ax.align, crossAlign: ax.crossAlign, display: true,
-               callback: function (value) { const l = ax.labels[String(value)]; return l === undefined ? '' : l; } },
+               callback: function (value) {
+                 for (const e of ax.labels) { if (Math.abs(e.value - value) <= 1e-9 * Math.max(1e-300, Math.abs(value))) return e.label; }
+                 return '';
+               } },
       title: { display: !!ax.title, text: ax.title, color: fg('text'), font: { family: spec.font.family, size: ax.titleFontSize } },
     };
     if (ax.type === 'linear') {
@@ -123,14 +126,33 @@ function build(spec, pass) {
   const chart = new Chart(canvas.getContext('2d'), cfg);
   return chart;
 }
-window.renderSpec = function (spec) {
+// The alpha channel of the canvas, deflate-compressed and base64-encoded: far cheaper than a PNG
+// round trip for a mask that is mostly zero.
+async function alphaDeflate(canvas) {
+  const ctx = canvas.getContext('2d');
+  const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const a = new Uint8Array(d.length / 4);
+  for (let i = 0, j = 3; i < a.length; i++, j += 4) a[i] = d[j];
+  const stream = new Blob([a]).stream().pipeThrough(new CompressionStream('deflate'));
+  const buf = new Uint8Array(await new Response(stream).arrayBuffer());
+  let s = '';
+  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+window.renderSpec = async function (spec) {
   const passes = {};
-  const names = ['full', 'grid', 'axis', 'ticklabels', 'text', 'legend'].concat(spec.datasets.map((_, k) => 'series_' + k));
+  const timings = {};
+  const hasText = !!spec.title || !!spec.x.title || !!spec.y.title || !!spec.legend;
+  const names = ['full', 'grid', 'axis', 'ticklabels'].concat(hasText ? ['text'] : []).concat(spec.legend ? ['legend'] : [])
+    .concat(spec.datasets.map((_, k) => 'series_' + k));
   let geom = null;
   for (const name of names) {
+    const t0 = performance.now();
     const chart = build(spec, name);
+    const t1 = performance.now();
     const canvas = document.getElementById('c');
-    passes[name] = canvas.toDataURL('image/png');
+    passes[name] = name === 'full' ? canvas.toDataURL('image/png') : await alphaDeflate(canvas);
+    timings[name] = [Math.round(t1 - t0), Math.round(performance.now() - t1)];
     if (name === 'full') {
       const a = chart.chartArea;
       const sc = (s) => ({
@@ -150,7 +172,7 @@ window.renderSpec = function (spec) {
     }
     chart.destroy();
   }
-  return { passes, geom };
+  return { passes, geom, timings };
 };
 `;
 
