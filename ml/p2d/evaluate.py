@@ -118,9 +118,7 @@ def main() -> None:
     ap.add_argument("--viz", default=None)
     ap.add_argument("--json", default=None)
     ap.add_argument("--ocr", default=None, help="tick reader checkpoint: score end to end in data units")
-    ap.add_argument("--refine", action="store_true", help="geometry only: re-measure lines and markers on the source pixels")
-    ap.add_argument("--no-refine", action="store_true",
-                    help="end to end: skip the source-pixel refinement the pipeline applies by default")
+    ap.add_argument("--refine", action="store_true", help="re-measure lines on the source pixels")
     ap.add_argument("--oracle-ticks", action="store_true", help="end to end, but with the true tick positions and values")
     a = ap.parse_args()
     net = load_net(a.ckpt)
@@ -145,7 +143,7 @@ def main() -> None:
             if a.oracle_ticks:
                 oracle = {"x": [(t["pos"], t["value"]) for t in meta["xticks"]],
                           "y": [(t["pos"], t["value"]) for t in meta["yticks"]]}
-            res = run(net, reader, img, oracle, refine=not a.no_refine)
+            res = run(net, reader, img, oracle, refine=a.refine)
             ex = to_gt_pixels(meta, res) if res.xfit and res.yfit else res.ex.__class__(M=res.ex.M, plot_area=None)
             M = res.ex.M
             ce = calib_error(meta, res)
