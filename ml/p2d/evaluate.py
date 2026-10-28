@@ -39,13 +39,16 @@ def draw(img: np.ndarray, ex, meta: dict | None = None) -> np.ndarray:
     pal = [(230, 0, 230), (0, 120, 255), (255, 120, 0), (0, 0, 0), (200, 0, 0), (0, 160, 160), (120, 60, 0)]
     for k, s in enumerate(ex.series):
         c = pal[k % len(pal)]
-        if len(s.line_px) > 1:
-            cv2.polylines(out, [np.round(s.line_px * 4).astype(np.int32)], False, c, 1, cv2.LINE_AA, shift=2)
+        lp = s.line_px[np.all(np.isfinite(s.line_px), axis=1)] if len(s.line_px) else s.line_px
+        if len(lp) > 1:
+            cv2.polylines(out, [np.round(lp * 4).astype(np.int32)], False, c, 1, cv2.LINE_AA, shift=2)
         for m in s.markers_px:
-            cv2.drawMarker(out, (int(round(m[0])), int(round(m[1]))), c, cv2.MARKER_TILTED_CROSS, 7, 1)
+            if np.all(np.isfinite(m)):
+                cv2.drawMarker(out, (int(round(m[0])), int(round(m[1]))), c, cv2.MARKER_TILTED_CROSS, 7, 1)
     for t in ex.xticks + ex.yticks:
         a = t["anchor"]
-        cv2.drawMarker(out, (int(round(a[0])), int(round(a[1]))), (255, 0, 0), cv2.MARKER_CROSS, 9, 1)
+        if np.all(np.isfinite(a)):
+            cv2.drawMarker(out, (int(round(a[0])), int(round(a[1]))), (255, 0, 0), cv2.MARKER_CROSS, 9, 1)
         if t["label_box"]:
             b = np.round(t["label_box"]).astype(int)
             cv2.rectangle(out, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 1)

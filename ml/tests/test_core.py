@@ -95,7 +95,7 @@ def test_parabola_peak_recovers_subpixel_gaussian_centre():
 
 def test_placement_keeps_small_charts_and_reads_large_ones_natively():
     from p2d.data import CANVAS_H, CANVAS_W
-    from p2d.extract import placement
+    from p2d.data import placement
 
     # A chart smaller than the canvas is placed exactly as in training (scaled up to fit, at most 2x).
     M, size = placement(400, 300)
@@ -143,3 +143,12 @@ def test_refine_ticks_snaps_to_tick_marks_without_a_frame():
         assert t["pos"] == pytest.approx(y, abs=0.05) and t["pos_net"] == y + 1.5
     for t, x in zip(ex.xticks, tx):
         assert t["pos"] == pytest.approx(x, abs=0.05) and t["pos_net"] == x - 1.5
+
+
+def test_log_needs_a_decade_or_a_label_saying_so():
+    # Years 1970..2021 with the last label misplaced: a log fit would take all six, but is absurd.
+    pos = [29, 81, 133, 184, 236, 293]
+    f = fit_axis(pos, [1970, 1980, 1990, 2000, 2010, 2021])
+    assert f.scale == "linear"
+    assert fit_axis([100, 200, 300], [1, 10, 100]).scale == "log"
+    assert fit_axis([100, 200], [2, 4], ["2x10^0", "4x10^0"]).scale == "log"

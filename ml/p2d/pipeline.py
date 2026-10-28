@@ -79,9 +79,11 @@ def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[flo
     cands = []
     for b in ex.loose_labels:
         cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
-        if axis == "y" and b[3] <= y0 + 3 and y0 - cy < 0.15 * h + 30 and (abs(cx - x0) < 0.25 * w or abs(cx - x1) < 0.25 * w):
+        # The text's centre is outside the plot; its box may touch or overlap the edge by a few px
+        # (Chart.js prints the multiplier right on the top edge).
+        if axis == "y" and cy < y0 and y0 - cy < 0.15 * h + 30 and (abs(cx - x0) < 0.25 * w or abs(cx - x1) < 0.25 * w):
             cands.append((abs(cx - x0) + (y0 - cy), b))
-        if axis == "x" and b[1] >= y1 - 3 and cy - y1 < 0.2 * h + 40 and cx > x1 - 0.3 * w:
+        if axis == "x" and cy > y1 and cy - y1 < 0.2 * h + 40 and cx > x1 - 0.3 * w:
             cands.append((abs(cx - x1) + (cy - y1), b))
     if not cands:
         return 1.0, 0.0, None

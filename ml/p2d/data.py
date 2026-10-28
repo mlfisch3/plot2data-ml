@@ -41,6 +41,31 @@ def fit_transform(w: int, h: int, scale_jitter: float = 1.0, shift: tuple[float,
     return np.array([[s, 0, 0.5 * s - 0.5 + shift[0]], [0, s, 0.5 * s - 0.5 + shift[1]]], np.float64)
 
 
+MAX_PIXELS = 1_300_000  # canvas pixels for native-resolution inference: about 0.9 GB in bf16
+
+
+def placement(w: int, h: int, native: bool = True, max_pixels: int = MAX_PIXELS) -> tuple[np.ndarray, tuple[int, int]]:
+    """The placement transform and the canvas size for a w x h image.
+
+    Training scales a chart to fit the 768 x 512 canvas, which reads a large
+    screenshot at a fraction of its resolution: a 1,800 px wide chart at 0.43.
+    The network is fully convolutional, so at inference a chart larger than the
+    canvas is read at its own resolution instead (scale 1, or as close to it as a
+    pixel budget allows), on a canvas grown to hold it, in multiples of 32. A chart
+    smaller than the canvas is placed exactly as in training.
+    """
+    M = fit_transform(w, h)
+    if not native:
+        return M, (CANVAS_W, CANVAS_H)
+    s_fit = float(M[0, 0])
+    s = max(s_fit, min(1.0, math.sqrt(max_pixels / float(w * h))))
+    if s <= s_fit * (1 + 1e-6):
+        return M, (CANVAS_W, CANVAS_H)
+    cw = max(CANVAS_W, 32 * int(math.ceil(s * w / 32)))
+    ch = max(CANVAS_H, 32 * int(math.ceil(s * h / 32)))
+    return np.array([[s, 0, 0.5 * s - 0.5], [0, s, 0.5 * s - 0.5]], np.float64), (cw, ch)
+
+
 def apply(M: np.ndarray, pts) -> np.ndarray:
     p = np.asarray(pts, np.float64).reshape(-1, 2)
     return p @ M[:, :2].T + M[:, 2]
@@ -128,8 +153,22 @@ def _background(rng: np.random.Generator, img: np.ndarray) -> np.ndarray:
     return cv2.resize(small, (CANVAS_W, CANVAS_H), interpolation=cv2.INTER_CUBIC)
 
 
+def _crop_shift(rng: np.random.Generator, lo_p: float, hi_p: float, used: float, canvas: float) -> float:
+    """A random shift of a chart `used` long on a `canvas`, keeping the middle third of its plot
+    area [lo_p, hi_p] in view: the chart may hang off either edge when it is the larger."""
+    a, b = min(0.0, canvas - used), max(0.0, canvas - used)
+    third = (hi_p - lo_p) / 3
+    a = max(a, -lo_p - third)
+    b = min(b, canvas - lo_p - 2 * third)
+    return float(rng.uniform(a, b)) if a < b else (a + b) / 2
+
+
 class PlotDataset(Dataset):
-    def __init__(self, roots: list[str] | str, train: bool, limit: int | None = None):
+    """`zoom` is the share of training samples placed at the native-resolution inference
+    scale (`placement`) and cropped to the canvas, so that a chart larger than the canvas,
+    seen whole at inference, looks like what the network trained on."""
+
+    def __init__(self, roots: list[str] | str, train: bool, limit: int | None = None, zoom: float = 0.0):
         roots = [roots] if isinstance(roots, str) else roots
         files = []
         for r in roots:
@@ -138,6 +177,7 @@ class PlotDataset(Dataset):
             files = files[:limit]
         self.files = files
         self.train = train
+        self.zoom = zoom
 
     def __len__(self) -> int:
         return len(self.files)
@@ -154,7 +194,16 @@ class PlotDataset(Dataset):
         rng = np.random.default_rng(None if self.train else i)
         meta, img, sem, inst = self.load(i)
         h, w = img.shape[:2]
-        if self.train:
+        if self.train and rng.random() < self.zoom:
+            # The inference scale of a large chart, jittered, cropped to the canvas: a window
+            # over the chart, placed so that the plot area is at least partly in view.
+            s = float(placement(w, h)[0][0, 0]) * rng.uniform(0.8, 1.25)
+            M = np.array([[s, 0, 0.5 * s - 0.5], [0, s, 0.5 * s - 0.5]], np.float64)
+            pa = apply(M, [[meta["plot_area"][0], meta["plot_area"][1]], [meta["plot_area"][2], meta["plot_area"][3]]])
+            M[:, 2] += [_crop_shift(rng, pa[0, 0], pa[1, 0], s * w, CANVAS_W),
+                        _crop_shift(rng, pa[0, 1], pa[1, 1], s * h, CANVAS_H)]
+            bg = _background(rng, img)
+        elif self.train:
             jitter = rng.uniform(0.55, 1.0) if rng.random() < 0.6 else 1.0
             M = fit_transform(w, h, jitter)
             used_w, used_h = apply(M, [[w - 0.5, h - 0.5]])[0] + 0.5

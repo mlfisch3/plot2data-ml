@@ -17,8 +17,8 @@ import torch
 from scipy.spatial import cKDTree
 
 from .data import (CANVAS_H, CANVAS_W, H_CORNER, H_LINE, H_MARKER, H_VERTEX, H_XTICK, H_YTICK, MEAN, STD, apply,
-                   fit_transform)
-from .synth.mpl_render import DATA, TICK_LABEL
+                   placement)
+from .synth.mpl_render import DATA, GRID, LEGEND_SYMBOL, TEXT, TICK_LABEL
 
 
 @dataclass
@@ -40,31 +40,6 @@ class Extraction:
     series: list[Series] = field(default_factory=list)
     raw: dict | None = None
     loose_labels: list[list[float]] = field(default_factory=list)  # tick-label text no tick claimed, source px
-
-
-MAX_PIXELS = 1_300_000  # canvas pixels for native-resolution inference: about 0.9 GB in bf16
-
-
-def placement(w: int, h: int, native: bool = True, max_pixels: int = MAX_PIXELS) -> tuple[np.ndarray, tuple[int, int]]:
-    """The placement transform and the canvas size for a w x h image.
-
-    Training scales a chart to fit the 768 x 512 canvas, which reads a large
-    screenshot at a fraction of its resolution: a 1,800 px wide chart at 0.43.
-    The network is fully convolutional, so at inference a chart larger than the
-    canvas is read at its own resolution instead (scale 1, or as close to it as a
-    pixel budget allows), on a canvas grown to hold it, in multiples of 32. A chart
-    smaller than the canvas is placed exactly as in training.
-    """
-    M = fit_transform(w, h)
-    if not native:
-        return M, (CANVAS_W, CANVAS_H)
-    s_fit = float(M[0, 0])
-    s = max(s_fit, min(1.0, math.sqrt(max_pixels / float(w * h))))
-    if s <= s_fit * (1 + 1e-6):
-        return M, (CANVAS_W, CANVAS_H)
-    cw = max(CANVAS_W, 32 * int(math.ceil(s * w / 32)))
-    ch = max(CANVAS_H, 32 * int(math.ceil(s * h / 32)))
-    return np.array([[s, 0, 0.5 * s - 0.5], [0, s, 0.5 * s - 0.5]], np.float64), (cw, ch)
 
 
 def prepare(img: np.ndarray, native: bool = True) -> tuple[torch.Tensor, np.ndarray]:
@@ -305,12 +280,19 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
     H, W = heat.shape[1:]
     lh = heat[H_LINE]
     mh = heat[H_MARKER]
+    # Where data can be: around the frame, with a margin, since on a chart without axis lines
+    # the frame is a guess that is often 5 to 25 px off and a tight window clips the series at
+    # its edges. What the margin lets in (legend symbols, text, tick labels) is kept out by
+    # the class the network gives those pixels, not by where they are.
     if frame is not None:
         fx0, fy0, fx1, fy1 = frame
+        m = max(3, int(round(0.05 * max(fx1 - fx0, fy1 - fy0))))
         roi = np.zeros((H, W), bool)
-        roi[max(0, int(fy0) - 1): int(fy1) + 3, max(0, int(fx0) - 1): int(fx1) + 3] = True
+        roi[max(0, int(fy0) - m): int(fy1) + m + 1, max(0, int(fx0) - m): int(fx1) + m + 1] = True
     else:
         roi = np.ones((H, W), bool)
+    furniture = (sem[LEGEND_SYMBOL] > 0.5) | (sem[TICK_LABEL] > 0.5) | (sem[TEXT] > 0.5)
+    roi &= ~furniture
     ink = (lh > line_thr) & roi
     mpk = [p for p in peaks(mh, marker_thr, nms=2) if roi[int(round(p[1])), int(round(p[0]))]]
     ys, xs = np.nonzero(ink)
@@ -347,6 +329,8 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
             frags.append({"cols": cols, "ys": ys, "emb": e_mean, "k": k, "q": float(lh[yi, cols.astype(int)].mean()),
                           "spans": [(a, b) for _, _, a, b in chain]})
     lines = drop_duplicates(merge_fragments(frags), min_cols=max(12, int(0.04 * (frame[2] - frame[0])) if frame else 12))
+    # A gridline (the minor decades of a log axis, say) can carry a ridge too; the class says what it is.
+    lines = [f for f in lines if not _mostly(f, sem[GRID] > 0.5)]
     # A row of markers drawn touching looks like a line. A real line also runs between its markers.
     if mpk:
         mxy = np.array([[p[0], p[1]] for p in mpk])
@@ -382,6 +366,14 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
             scatters.append(_make_series("scatter", np.zeros((0, 2)), mk, Mi, img))
     ex.series += merge_by_colour(scatters, img)
     return ex
+
+
+def _mostly(f: dict, mask: np.ndarray, frac: float = 0.5) -> bool:
+    """Whether more than `frac` of a traced line's pixels fall where `mask` is set."""
+    H, W = mask.shape
+    xi = np.clip(np.round(f["cols"]).astype(int), 0, W - 1)
+    yi = np.clip(np.round(f["ys"]).astype(int), 0, H - 1)
+    return float(mask[yi, xi].mean()) > frac
 
 
 def _make_series(kind: str, line_canvas: np.ndarray, mk: np.ndarray, Mi: np.ndarray, img) -> Series:

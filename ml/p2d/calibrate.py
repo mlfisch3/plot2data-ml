@@ -69,7 +69,10 @@ def fit_axis(pos, values, texts=None, tol_px: float = 3.0, hint: str | None = No
     if lin:
         cands.append(("linear", lin))
     pos_ok = vals > 0
-    if pos_ok.sum() >= 2:
+    # A log axis spans at least a decade, or says so on its labels: over a narrow range (years
+    # 1970 to 2021) a log fit bends just enough to take in a misplaced label and would win.
+    says_log = hint == "log" or any("^" in t for t in (texts or []))
+    if pos_ok.sum() >= 2 and (says_log or vals[pos_ok].max() / vals[pos_ok].min() >= 10):
         # A log axis is fitted on the positive labels; a stray "0" misread is just an outlier.
         lg = _ransac(pos[pos_ok], np.log10(vals[pos_ok]), tol_px)
         if lg:
