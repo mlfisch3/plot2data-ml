@@ -154,3 +154,37 @@ In the scoreboard's unit the large images are the best, not the worst: the pixel
 An extremum of the drawn path is scored only when it stands out by 5% of the plot height against every point within 15 path points on each side; the comparison is against the window's extreme in the same direction, so two tips of similar height within 15 points of each other cancel and neither is scored.
 A periodic wave with tips closer than 16 path points (the corpus `sawtooth-sharp`: 81 points, 15 teeth, 5.4 points per tooth) has no scored turning point under this definition, and a dense series with spikes every few samples scores none either, whatever the extraction does there.
 The probe sets keep every tip at least 16 path points from its neighbours (collinear points along the flanks, which draw identically) so that the standard metric scores them; `corpus_diag.py` measures the sawtooth's tips with a prominence against the window's minimum instead.
+
+## 6. The measurement rewrite: narrow-peaks regression and the fix
+
+The brainstormer's `p2d/measure.py` (first version d3c4502) rewrote `refine_lines` to measure every column of a traced line on the source pixels and to recover vertices by flank fit and intersection.
+The first version regressed on the corpus (series median 0.067% -> 0.085%, worst case narrow-peaks 0.211% -> 6.104%) and on scoreboard #5 (simple line_rms_median 0.189% -> 0.309%, all 0.311% -> 0.574%); commit 6db13c8 fixes three faults and the regression lands as a net gain on the scoreboard (preliminary iter_refine on `out/t3/cache-val60`: simple line_rms_median 0.160 -> 0.136, simple peak_err_median 0.298 -> 0.144, all peak_err_p90 7.082 -> 6.091).
+
+Measurement from the pipeline (not from `measure.py` internals) on narrow-peaks, refine on, 200-sample grid in data space, truth from the corpus CSV, pre-fix (d3c4502+WIP) versus the base tree and the fixed tree:
+
+| sample x (data) | truth | base pred (err) | pre-fix pred (err) | fixed pred (err) |
+| --- | --- | --- | --- | --- |
+| 1.0 (apex of spike 0) | 54.60 | 54.57 (-0.03) | 53.72 (-0.88) | 54.53 (-0.07) |
+| 3.0 (apex of spike 1) | 59.80 | 59.04 (-0.76) | 58.01 (-1.79) | 59.80 (-0.00) |
+| 5.0 (apex of spike 2) | 65.00 | 65.06 (+0.06) | 63.00 (-2.00) | 64.71 (-0.29) |
+| 7.0 (apex of spike 3) | 70.20 | 70.28 (+0.08) | 70.15 (-0.05) | 70.15 (-0.05) |
+| 9.0 (apex of spike 4) | 75.40 | 75.05 (-0.35) | 71.07 (-4.33) | 75.37 (-0.03) |
+| 11.0 (apex of spike 5) | 80.60 | 80.14 (-0.46) | 74.47 (-6.13) | 79.64 (-0.96) |
+| 2.5 (baseline between spikes) | 24.50 | 24.50 (-0.00) | 24.48 (-0.02) | 24.48 (-0.02) |
+
+corpus_diag split on narrow-peaks: base rms 0.211% (calib 0.145 / trace 0.153, peaks in_p50 +0.19%); pre-fix 6.104% (calib 3.782 / trace 4.791, peaks in_p50 +1.90%); fixed 0.292% (calib 0.149 / trace 0.251, peaks in_p50 +0.06%: better than base at the tips, the residual lives in the first-sample flank climb where a one-pixel apex column cannot carry a continuous curve).
+
+Three faults, documented so the pattern is remembered:
+
+1. **The spike-triangle fill rewrote neighbour columns' values.** For a column that measured as a narrow apex (ink width at mid-height less than `2 t`), `measure.py` walked sideways to find the first "base" column on each side (span less than half the apex span) and reassigned every column in between the value `base + (tip - base) * max(0, 1 - |x - xv| / w_half)`. `w_half < 1 px` for a 1-pixel spike, so the formula collapsed to `base` for every column that was not the apex, erasing the flank columns' own centroids. The flank columns of an anti-aliased single-sample spike on matplotlib (4 to 5 columns wide at render time) hold the triangle's shape in their centroids; the fill replaced it with "baseline, apex, baseline".
+2. **The occlusion test fired on butt-cap end columns.** `t_col[i] < 0.55 * t and |slope| < 2` marked a column as occluded (`clean = False`), and the `np.where(clean, cen, yc)` line fell those columns back to the network's trace (noise +-0.4 px). The first and last pixel columns of a straight stroke carry half the ink of an interior column (the butt cap is cut), so the test tripped at every segment end: `tests/test_measure::test_flat_line_centroid_and_stroke_width[1,2,4]` failed with first/last columns off by 0.25 px.
+3. **The flank-fit intersection accepted lines that did not point towards the apex.** `_vertices` called `_fit_line` on each side of a candidate apex, accepted the intersection if the fits were straight (max residual below `0.3 + 0.05 |slope|`), and used `(a1 + b1 x, a2 + b2 x)` in the column override. Two flat flanks with the same gentle slope would fit well and intersect far from the apex, with both slopes pointing the same direction; the override then painted a long run of columns on the flat flank's value, which is the baseline at distance from an apex.
+
+Fix in 6db13c8:
+- Reverted `np.where(clean, cen, yc)` to `np.where(have, cen, yc)` so a column with any run (butt caps included) keeps its centroid.
+- Gated the occlusion test: fires only when at least one neighbour within 2 columns on each side has mass at least 0.85 * t (both sides really covered, not an end), and the threshold tightened to 0.4 * t.
+- Added a sign test on the flank fits (b1 and b2 point towards the apex direction) before using their intersection, with the apex direction given by `turn[k]`.
+- Deleted the spike-triangle fill block. The apex column's own centroid, with the inserted vertex at `(xs[k] + dx, values[k])` and the vertex clustering by apex direction, gives the recovery: for a 1-pixel spike on narrow-peaks the apex column holds the ink centroid of the stroke's top row, the vertex drops in at that `x` with `y = top + t/2` (the classical turn rule), and the flank columns carry the shape with their own centroids.
+
+Overlay at `out/t3/cases/narrow-peaks-broken.png` (3 x 6 panels, pre-fix: truth, base, pre-fix live, at 4x zoom on each spike) and `out/t3/cases/narrow-peaks-overlay.png` (same, fixed in the LIVE row).
+
