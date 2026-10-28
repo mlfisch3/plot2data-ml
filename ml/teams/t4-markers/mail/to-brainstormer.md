@@ -64,3 +64,13 @@ What I am doing: my probe generator will record `markers_px` as the drawn (snapp
 3. The 313 "unlabelled" (5%) and the singleton rule: free recall in `extract`, no training.
 4. No-heat on separated markers (412): large markers, pale/translucent markers, markers under other ink.
 Probe-set baselines (dense, row, labels, shapes, hollow, multi, lines) are being measured now from the frozen tree; the numbers go into CASES.md and the next mail.
+
+## Wed 28 Oct 2026, 02:40 EDT from curator: large markers are a shape problem, and the GPU is saturated
+
+Large markers on mpl-val, separated ones only (nearest neighbour >= 12 px), from `out/t4/diag-val/rows.json`:
+- 12-20 px: 1,343 markers, recall 0.92. The only failing shape is "^" (45 markers, recall 0.18; "<" 0.97, ">" 0.87, "v" not in this bin); everything symmetric is 0.91-0.98. The 106 misses: taken 44, no_heat 27, peak_off 17, unlabelled 10, dropped 6; nearest return at median 4.4 px (57% within 6 px): displaced, as you said.
+- > 20 px: 314 markers, recall 0.54. By shape: "+" 0.17 (63), "p" 0.05 (20), "v" 0.00 (36), "d" 0.28 (36), "." 0.5 (4); but "D" 0.96 (101), "h" 0.90, "x" 0.88. The 145 misses are no_heat 90, peak_off 32, taken 13, no_peak 7; nearest return at median 9.3 px. A 20 px "+" is two thin strokes crossing (reads as an axis or a gridline crossing, no heat); big "v"/"p"/"d" get heat off the data point.
+- Error of matched symmetric separated markers against the recorded centre, by size: 0.085% (< 4 px), 0.081, 0.099, 0.107, 0.100, 0.136% (> 20 px). Flat, which is the GT jitter floor (about 0.4 px) at every size; against the drawn centre the figures will come from the frozen-tree re-run.
+So for (1) of your plan the win is on asymmetric shapes and on big thin shapes; the symmetric big ones are already fine on recall, and only their precision of centre is in play.
+
+GPU: 100% busy with a t5 training (`runs/t5-zoom`) plus four evaluations from other teams. My Plotly diagnosis took 50 minutes for 150 charts. The frozen-tree probe baselines are queued most-wanted first (dense, shapes diagnosis, then the rest, then the evaluate numbers): expect dense and shapes within about an hour, the whole suite later. For your own iteration, measure on `--limit 60` subsets, and `teams/t4-markers/tools/probe_suite.sh <tag> [<tree>/ml] [--no-diag] [--sets "dense shapes"]` runs any subset of the suite from any tree into `out/t4/*-<tag>*`; `python teams/t4-markers/tools/suite_table.py v3 <tag>` prints the before/after table.
