@@ -229,18 +229,11 @@ class LineMeasure:
             lo, hi = max(0, i - 2), min(n, i + 3)
             ext[i] = max(yc[lo:hi].max() - yc[lo:hi].min(), self.ridge_ext[max(0, i - 1):i + 2].max())
         clean = have.copy()
-        # Butt caps and short dash caps carry half the stroke's mass; so does an end column
-        # that only grazed the ink. The occlusion test must then only accept a drop in mass
-        # when at least one neighbour within two columns holds a full-mass stroke on the same
-        # run, so a genuine covering by a crossing series or a gridline is told apart from an
-        # end-of-stroke effect.
-        full_mass = have & (t_col >= 0.85 * t)
         for i in np.nonzero(have)[0]:
             if span[i] > ext[i] + t * math.sqrt(1 + slope[i] ** 2) + max(3.0, 3 / self.s) + 2:
                 clean[i] = False  # merged with something
-            elif abs(slope[i]) < 2.0 and t_col[i] < 0.4 * t and \
-                    (full_mass[max(0, i - 2):i].any() and full_mass[i + 1:i + 3].any()):
-                clean[i] = False  # occluded: another series over this one, or a gridline through it
+            elif abs(slope[i]) < 2.0 and t_col[i] < 0.55 * t:
+                clean[i] = False  # occluded, under a glyph, a butt cap, or the stroke's end
         # Columns under a marker are the marker's, not the line's.
         under_marker = np.zeros(n, bool)
         if len(self.markers):
@@ -249,7 +242,11 @@ class LineMeasure:
                 if span[i] > 1.5 * (t * math.sqrt(1 + slope[i] ** 2) + abs(slope[i])) + 2 and np.min(np.abs(mx - xs[i])) < 14 / self.s:
                     under_marker[i] = True
                     clean[i] = False
-        values = np.where(have, cen, yc)
+        # At occluded or end columns (clean=False) the ink centroid is pulled by whatever ink
+        # happens to sit in the column: a crossing series, a gridline, a legend swatch at the
+        # right edge, or just a half-mass butt cap on a steep stroke. The network's trace is
+        # less precise there but it does not blow up, so it stands in.
+        values = np.where(clean, cen, yc)
         reach = max(3, int(round(t * 2)))
         turn = np.zeros(n)
         dbg_turn = []
