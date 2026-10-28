@@ -710,20 +710,26 @@ def refine_lines_v1(img: np.ndarray, ex: Extraction, keep_vertex: float = 0.3) -
     return ex
 
 
-def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0) -> Extraction:
-    """Move each tick onto the tick mark or gridline drawn at it, when one is there.
+def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift: float = 0.45,
+                 max_spread: float = 0.45) -> Extraction:
+    """Correct an axis's ticks by the offset of the drawn tick marks or gridlines from them.
 
     The network places a tick from everything around it, labels included, and a
     label's offset from its tick is a house style that differs between charting
-    libraries. The mark itself does not: where a short line is drawn across the
-    axis within a couple of pixels of the estimate, its centre is the tick.
+    libraries: on a renderer it has not learned, every tick of an axis is off by
+    the same fraction of a pixel. The marks themselves do not lie, but they are
+    snapped to the pixel grid by the renderer while the true position is not, so
+    a single mark is only good to half a pixel. So the marks are used for what
+    they are good for, the common offset: when at least three ticks of an axis
+    have a mark or a gridline within reach and those marks agree on one shift
+    beyond the snapping noise, every tick of the axis moves by the median shift,
+    and the network's sub-pixel placement is kept. Otherwise nothing moves.
 
-    Two places are searched: a narrow band hugging the axis on the outside,
-    where a tick mark is and a label's padding keeps glyphs out, and the whole
-    extent of the plot, where a gridline runs. A line must darken most of the
-    band (the profile is a low percentile across it), so a glyph, or a data
-    line crossing the band, cannot pass for one. With no clear line (a
-    labels-only axis) the estimate stands.
+    Two places are searched for a line: a narrow band hugging the axis on the
+    outside, where a tick mark is and a label's padding keeps glyphs out, and
+    the whole extent of the plot, where a gridline runs. A line must darken most
+    of the band (the profile is a low percentile across it), so a glyph, or a
+    data line crossing the band, cannot pass for one.
     """
     if ex.plot_area is None:
         return ex
@@ -733,7 +739,9 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0) -> Extrac
                               int(max(0, ex.plot_area[0])):int(min(W, ex.plot_area[2]))]))
     x0, y0, x1, y1 = ex.plot_area
     for key in ("xticks", "yticks"):
-        for t in getattr(ex, key):
+        ticks = getattr(ex, key)
+        shifts = []
+        for t in ticks:
             p = t["pos"]
             lo, hi = int(np.floor(p - search - 1)), int(np.ceil(p + search + 1))
             best = None
@@ -760,12 +768,21 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0) -> Extrac
                     prof = np.percentile(np.abs(g[a:b, lo:hi + 1] - paper), q, axis=0)
                     best = _pick_line(prof, lo, p, search, best)
             if best is not None:
-                t["pos_net"] = p
-                t["pos"] = best[1]
-                if key == "yticks":
-                    t["anchor"] = [t["anchor"][0], best[1]]
-                else:
-                    t["anchor"] = [best[1], t["anchor"][1]]
+                t["mark"] = best[1]
+                shifts.append(best[1] - p)
+        if len(shifts) < 3:
+            continue
+        sh = np.array(shifts)
+        med = float(np.median(sh))
+        if abs(med) < min_shift or float(np.median(np.abs(sh - med))) > max_spread:
+            continue
+        for t in ticks:
+            t["pos_net"] = t["pos"]
+            t["pos"] = t["pos"] + med
+            if key == "yticks":
+                t["anchor"] = [t["anchor"][0], t["pos"]]
+            else:
+                t["anchor"] = [t["pos"], t["anchor"][1]]
     return ex
 
 

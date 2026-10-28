@@ -130,9 +130,10 @@ class LineMeasure:
     """One traced line measured on the source pixels."""
 
     def __init__(self, img_f: np.ndarray, paper: np.ndarray, color, line_px: np.ndarray, markers_px: np.ndarray,
-                 canvas_scale: float, ridge_px: np.ndarray | None = None):
+                 canvas_scale: float, ridge_px: np.ndarray | None = None, net_vertices_x=None):
         self.H, self.W_img = img_f.shape[:2]
         self.s = canvas_scale
+        self.net_vx = np.asarray(net_vertices_x, float) if net_vertices_x is not None else np.zeros(0)
         lp = line_px[np.argsort(line_px[:, 0], kind="stable")]
         self.lp = lp
         self.paper = paper
@@ -228,10 +229,17 @@ class LineMeasure:
             lo, hi = max(0, i - 2), min(n, i + 3)
             ext[i] = max(yc[lo:hi].max() - yc[lo:hi].min(), self.ridge_ext[max(0, i - 1):i + 2].max())
         clean = have.copy()
+        # Butt caps and short dash caps carry half the stroke's mass; so does an end column
+        # that only grazed the ink. The occlusion test must then only accept a drop in mass
+        # when at least one neighbour within two columns holds a full-mass stroke on the same
+        # run, so a genuine covering by a crossing series or a gridline is told apart from an
+        # end-of-stroke effect.
+        full_mass = have & (t_col >= 0.85 * t)
         for i in np.nonzero(have)[0]:
             if span[i] > ext[i] + t * math.sqrt(1 + slope[i] ** 2) + max(3.0, 3 / self.s) + 2:
                 clean[i] = False  # merged with something
-            elif abs(slope[i]) < 2.0 and t_col[i] < 0.55 * t:
+            elif abs(slope[i]) < 2.0 and t_col[i] < 0.4 * t and \
+                    (full_mass[max(0, i - 2):i].any() and full_mass[i + 1:i + 3].any()):
                 clean[i] = False  # occluded: another series over this one, or a gridline through it
         # Columns under a marker are the marker's, not the line's.
         under_marker = np.zeros(n, bool)
@@ -287,6 +295,27 @@ class LineMeasure:
             values[i] = cen[i] + steep * abs(tn) * (extreme - cen[i])
         # Vertices: the extremum columns of the ink, and the network's corners, refined by flank fits.
         verts = self._vertices(xs, values, cen, clean, runs, turn, t, slope)
+        # Short stretches the ink could not settle (dash gaps, a marker, a crossing) between measured
+        # columns are bridged straight, unless the network put a corner inside them.
+        bridged = np.zeros(n, bool)
+        max_gap = int(max(12, 12 / self.s))
+        i = 0
+        while i < n:
+            if clean[i]:
+                i += 1
+                continue
+            j = i
+            while j + 1 < n and not clean[j + 1]:
+                j += 1
+            if i > 0 and j < n - 1 and clean[i - 1] and clean[j + 1] and j - i + 1 <= max_gap and \
+                    not np.any((self.net_vx >= xs[i] - 1) & (self.net_vx <= xs[j] + 1)):
+                xa, xb = xs[i - 1], xs[j + 1]
+                ya, yb = values[i - 1], values[j + 1]
+                for q in range(i, j + 1):
+                    values[q] = ya + (yb - ya) * (xs[q] - xa) / (xb - xa)
+                bridged[i:j + 1] = True
+            i = j + 1
+        self.bridged = bridged
         self.dbg = dict(cen=cen, values=values.copy(), turn=turn, clean=clean, t=t, span=span, mass=mass, slope=slope, runs=runs, turn_parts=dbg_turn)
         # Bridge columns under markers and short unclean stretches between clean neighbours.
         fb = ~clean
@@ -338,7 +367,14 @@ class LineMeasure:
                 a2, b2, r2 = _fit_line(xs[ri].astype(float), cen[ri])
                 tol1, tol2 = 0.3 + 0.05 * abs(b1), 0.3 + 0.05 * abs(b2)
                 ang = abs(math.degrees(math.atan(b1) - math.atan(b2)))
-                if r1 < tol1 and r2 < tol2 and ang >= 8 and abs(b1 - b2) > 1e-6:
+                # A real polyline peak has flanks that bend AWAY from the apex: for an up-apex
+                # (smaller y is higher on screen), the left flank's cen decreases with x and the
+                # right flank's cen increases. The opposite for a down-apex. When the fits are
+                # on the same side of flat (both nearly horizontal, or both tilted the same way)
+                # the intersection sits at infinity or on the wrong side of the apex and the
+                # columns around a narrow spike are not join columns at all.
+                dir_ok = (turn[k] > 0 and b1 < -0.05 and b2 > 0.05) or (turn[k] < 0 and b1 > 0.05 and b2 < -0.05)
+                if r1 < tol1 and r2 < tol2 and ang >= 8 and dir_ok and abs(b1 - b2) > 1e-6:
                     xi = (a2 - a1) / (b1 - b2)
                     yi = a1 + b1 * xi
                     r = runs[k]
@@ -351,9 +387,8 @@ class LineMeasure:
                         e2 = min(e2, e + K)
                         ki = int(round(xi)) - int(xs[0])  # index of the column holding the vertex
                         for q in range(max(0, ki - e2), min(n, ki + e2 + 1)):
-                            if not clean[q] and abs(turn[q]) < 0.3:
-                                continue
                             values[q] = (a1 + b1 * xs[q]) if xs[q] < xi else (a2 + b2 * xs[q])
+                            clean[q] = True
             if got is None:
                 # The apex column itself; the tip's x is the horizontal centroid of the ink in the
                 # outermost stroke's worth of rows, over the join columns.
@@ -373,35 +408,13 @@ class LineMeasure:
                     cx = float((patch.sum(0) * np.arange(xa, xb)).sum() / m)
                     dx = float(np.clip(cx - k, -e, e))
                 got = (xs[k] + dx, values[k], "apex")
-                # A spike narrower than the stroke: the ink of its flanks spills into the neighbouring
-                # columns, whose runs then reach from the base to the tip and whose centroids land
-                # halfway up. The ink width at mid-height gives the spike's base width (a stroke's
-                # width more than the flanks' spread), and the columns around the tip take the
-                # values of that triangle, its base being the trace either side.
-                w_mid = _row_width(Wm, int(round((r[0] + r[1]) / 2 - self.y_off)), k)
-                w_half = max(0.0, w_mid - t)
-                if w_half < 2 * t:
-                    xv = xs[k] + dx
-                    tip = values[k]
-                    span_k = runs[k][1] - runs[k][0]
-                    span_of = lambda q: runs[q][1] - runs[q][0]  # noqa: E731
-                    for side in (-1, 1):
-                        # The spill columns reach from the base to the tip like the apex column does;
-                        # the first column beyond them with a stroke's worth of run is the base.
-                        qb = k + side
-                        limit = k + side * int(math.ceil(w_half + 3 * t + 3))
-                        while 0 <= qb < n and (side < 0 and qb >= limit or side > 0 and qb <= limit) and \
-                                not (runs[qb] is not None and span_of(qb) < 0.5 * span_k and abs(turn[qb]) < 0.3):
-                            qb += side
-                        if not (0 <= qb < n) or runs[qb] is None or span_of(qb) >= 0.5 * span_k:
-                            continue
-                        base = cen[qb]
-                        for q in range(min(k, qb) + (1 if side < 0 else 0), max(k, qb) + (0 if side < 0 else 1)):
-                            if q == qb or (side > 0 and q == k):
-                                continue
-                            frac = 1.0 - abs(xs[q] - xv) / w_half if w_half > 1e-6 else 0.0
-                            values[q] = base + (tip - base) * max(0.0, frac)
-                            clean[q] = True
+                # Earlier the spike-triangle fill overwrote every neighbour column of a narrow
+                # apex with a linear ramp from the first "small-span" baseline column to the tip.
+                # On narrow-peaks the walk crossed the whole spike before finding a baseline run
+                # and then painted every flank column with the baseline value, turning the chart
+                # into a flat line punctuated by one tip (corpus 0.211% -> 6.104%). The vertex is
+                # inserted as its own point in the trace; the flank columns' own centroids, even
+                # when biased by a tall merged run, track the spike far better than a flat fill.
             verts.append(got)
         return verts
 
@@ -419,7 +432,8 @@ def refine_lines(img: np.ndarray, ex, paper: np.ndarray | None = None):
     for se in ex.series:
         if se.kind != "line" or len(se.line_px) < 3:
             continue
-        lm = LineMeasure(imf, paper, se.color, se.line_px, se.markers_px, s, se.ridge_px)
+        lm = LineMeasure(imf, paper, se.color, se.line_px, se.markers_px, s, se.ridge_px,
+                         se.vertices_px[:, 0] if se.vertices_px is not None and len(se.vertices_px) else None)
         pts, verts, fb = lm.measure()
         if len(pts) < 3:
             continue

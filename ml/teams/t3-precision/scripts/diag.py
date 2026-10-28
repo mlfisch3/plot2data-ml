@@ -203,7 +203,10 @@ def main() -> None:
     net = load_net(a.ckpt)
     files = sorted(glob.glob(os.path.join(a.data, "*.json")))[: a.limit]
     charts = []
+    import time
+
     for f in files:
+        t0 = time.time()
         meta = json.load(open(f))
         stem = f[:-5]
         img = cv2.imread(stem + ".png")[..., ::-1].copy()
@@ -322,11 +325,17 @@ def main() -> None:
         rec["lines"] = lines
         rec["n_line_pred"] = len(preds_ref)
         charts.append(rec)
+        print(f"{len(charts)}/{len(files)} {meta['seed']} {time.time() - t0:.1f}s", flush=True)
         if len(charts) % 20 == 0:
-            print(f"{len(charts)}/{len(files)}", flush=True)
+            # Checkpoint, so a killed run keeps what it has.
+            os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+            with open(a.out + ".partial", "wb") as fh:
+                pickle.dump(charts, fh)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     with open(a.out, "wb") as fh:
         pickle.dump(charts, fh)
+    if os.path.exists(a.out + ".partial"):
+        os.remove(a.out + ".partial")
     print("wrote", a.out, len(charts))
 
 

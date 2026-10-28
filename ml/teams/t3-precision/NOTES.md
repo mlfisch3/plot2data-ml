@@ -92,3 +92,70 @@ Refinement is neutral on the median (section 5); per-series RMS by scale shows l
 Probe sets rebuilt: smallest peak prominence 6% (a 5% tooth on a sloped baseline falls under the metric's threshold on one side), every tip at least 16 path points from its neighbours so `metrics.peak_vertices` scores it (collinear flank points for the triangle; spike spacing at least 16 samples), Gaussian peaks sampled at four points per sigma.
 `tests/test_probe_t3.py` added. The GPU chain (`out/t3/baseline-chain.sh`) now runs peaks and spikes from the base tree and the live tree first, then the standard `evaluate --refine` from both trees, then the other families and the corpus decomposition.
 Lesson applied twice the hard way: a kill pattern must not appear anywhere else in the same command, not even as the launch line of the same script.
+
+## Wed 28 Oct 2026, 16:12 EDT (curator, Opus 4.7 replacement)
+
+Resumed after the 02:30 cutoff.
+Working tree holds uncommitted edits from the brainstormer's second iteration (last file touch 02:29): `p2d/measure.py` adds a `net_vertices_x` argument, the bugfix `np.where(have,...)` -> `np.where(clean,...)` on the per-column values, and a short-gap bridger; `p2d/extract.py` replaces per-tick snapping with the offset-only `refine_ticks` (median shift across the axis's ticks); `p2d/evaluate.py` adds `--no-refine` and makes the e2e path refine by default; `scripts/diag.py` prints per-chart timing and writes `<out>.partial` every 20 charts.
+Also untracked: `tests/test_measure.py` (the unit-stroke tests).
+A stuck shell (pid 832056) was waiting on `out/t3/diag-plotly-base.pkl` that the killed predecessor never finished; killed it.
+Nothing on the GPU.
+The only measurement from the new code that landed before the cutoff is `out/t3/corpus-new1.txt` (eval_corpus at 02:42) and it carries a disaster: narrow-peaks 0.21 -> 6.10 %, dark-theme 0.047/0.017 -> 0.088/0.085 %, linear-thick-line 0.042 -> 0.085 %, narrow-small 0.066 -> 0.144 %, offset-annotation unchanged. The gains are on log-log 1.33 -> 0.89 % and sawtooth-sharp 0.27 -> 0.22 % and log-y 0.17 -> 0.12 %. Corpus series-median 0.067 -> 0.085 %.
+Re-measurement plan: a geometry --refine on 200 mpl-val (standard scoreboard #5) with and without the new code, then the probe sets (peaks, spikes, scale, ticks, width, log, grid, frame), then the e2e commands, then isolate the narrow-peaks regression on crops.
+
+
+## Wed 28 Oct 2026, 16:14 EDT (brainstormer, Opus 4.7 replacement)
+
+Resumed from Fable's 02:30 cutoff. State inherited from the predecessor:
+- `measure.py` is a full rewrite reached through `extract.refine_lines`; the v1 lives on as `refine_lines_v1`.
+- `extract.refine_ticks` is now an offset-only correction (median shift across the axis's ticks, applied only when at least three marks agree beyond the snapping noise).
+- `evaluate.py` adds `--no-refine`; the e2e path refines by default.
+- The 60-chart CPU cache `out/t3/cache-val60` and `iter_refine.py` let me iterate measurement on CPU with the GPU extraction cached.
+
+What I found in the predecessor's traces that must be fixed:
+- `test_measure::test_flat_line_centroid_and_stroke_width[1]` fails on the butt-cap first column: the predecessor's `np.where(have, cen, yc)` -> `np.where(clean, cen, yc)` edit drops the end column from `cen` to `yc` because `t_col[0] < 0.55*t` fires on the half-coverage butt cap. That is an end-of-stroke effect, not occlusion; the test exposes it.
+- `iter-new.json` on 60 cached charts (new refine_lines) vs `iter-old.json` (v1): on simple charts peak_err_median drops from 0.298% to 0.145% (a halving) but line_rms_median rises from 0.160% to 0.236%, and line_rms_p90 from 0.70% to 4.25%. On all charts, line_rms_median goes 0.312% -> 0.557%, p90 1.92% -> 3.58%. Peak gains, line losses: the sophisticated turn/vertex/spike code is pulling values far off where it should not fire. Also line_rms_mean 0.336 -> 1.190 on simple: a long tail of catastrophic series.
+- `out/t3/corpus-new1.txt` carries the same picture: narrow-peaks 0.21% -> 6.10% (28x worse), narrow-small 0.07 -> 0.14, linear-thick-line 0.04 -> 0.09, dark-theme 0.017 -> 0.085, offset-annotation unchanged; but log-log 1.33 -> 0.89, sawtooth-sharp 0.27 -> 0.22, log-y 0.17 -> 0.12. Series-median goes 0.067 -> 0.085: a net corpus regression.
+
+So the WIP's bones are right (big peak wins) but the vertex/spike code over-reaches and the clean/have swap is strict at the ends. I will go after the regression, keep the peak gains, and only then promote the e2e harness change (`--no-refine`). My next step is to repro narrow-peaks on a crop under iter_refine (CPU) and bisect which code path (apex extrapolation into the join columns, the spike-triangle fill, or the bridger) owns the 6% figure. If one path dominates, I will gate it; if several, I will fall back to the v1-style trace of flat/steep columns plus a smaller, surer vertex improvement (flank intersection only, no spike reconstruction).
+
+Teammate: curator at agent id a28e75ba558dd3aea (short notes via SendMessage; long items in mailbox). Judge is `main`.
+
+## Wed 28 Oct 2026, 16:22 EDT (curator): scoreboard #5 and #1 with the live tree
+
+Numbers on 200 mpl-val, both from this worktree with the uncommitted measure.py / extract.py / evaluate.py edits, versus the frozen contest-start baseline (`out/t3/base-refine.txt` and `/home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/v3-e2e-ocr.txt`).
+
+Scoreboard #5 `evaluate --refine` (geometry):
+
+| metric (simple / all) | baseline | new | delta |
+| --- | --- | --- | --- |
+| line_rms_median_pct | 0.189 / 0.311 | 0.309 / 0.574 | +0.120 / +0.263 |
+| line_rms_mean_pct | 0.575 / 0.883 | 1.359 / 1.693 | +0.78 / +0.81 |
+| line_rms_p90_pct | 1.377 / 2.231 | 4.477 / 5.071 | +3.10 / +2.84 |
+| peak_err_median_pct | 0.307 / 1.766 | 0.381 / 1.921 | +0.074 / +0.155 |
+| peak_err_p90_pct | 3.006 / 12.476 | 4.498 / 12.179 | +1.49 / -0.30 |
+| line_found | 0.886 / 0.757 | 0.893 / 0.781 | +0.007 / +0.024 |
+| line_cov_mean | 0.815 / 0.667 | 0.828 / 0.690 | +0.013 / +0.023 |
+| line_good_cov_mean | 0.764 / 0.588 | 0.740 / 0.584 | -0.024 / -0.004 |
+
+Scoreboard #1 `evaluate --ocr` (e2e; the new code refines by default, versus the baseline that did not refine at all):
+
+| metric (simple / all) | baseline (no refine) | new (refine on) | delta |
+| --- | --- | --- | --- |
+| line_rms_median_pct | 0.310 / 0.441 | 0.465 / 0.647 | +0.155 / +0.206 |
+| line_rms_p90_pct | 2.449 / 2.858 | 5.260 / 5.093 | +2.81 / +2.24 |
+| peak_err_median_pct | 0.390 / 2.290 | 0.423 / 2.396 | +0.033 / +0.106 |
+| line_found | 0.624 / 0.547 | 0.617 / 0.538 | -0.007 / -0.009 |
+| calib_x_within_0.5pct | 0.845 / - | 0.845 / - | 0.000 |
+| calib_y_within_0.5pct | 0.775 / - | 0.775 / - | 0.000 |
+| calib_x_err_median_pct | 0.046 / - | 0.050 / - | +0.004 |
+| calib_y_err_median_pct | 0.111 / - | 0.119 / - | +0.008 |
+
+eval_corpus (from `out/t3/corpus-new1.txt`, 02:42, same live tree versus `/home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/v3-corpus.txt`): series median 0.067% -> 0.085%; sawtooth-sharp 0.268 -> 0.220 (win); log-log 1.326 -> 0.889 (win); log-y 0.170 -> 0.117 (win); linear-single-solid 0.033 -> 0.029; narrow-peaks 0.211 -> 6.104 (disaster, see below); linear-thick-line 0.042 -> 0.085; dark-theme 0.047/0.017 -> 0.088/0.085; narrow-small 0.066 -> 0.144; linear-dashed 0.067 -> 0.079.
+
+Narrow-peaks diagnosis (from `/tmp/.../scratchpad/narrow_values.py`): the 1-pixel spike at x=1 (truth sample at x=0.965 is y=46.5, truth at x=1 is y=48.97, truth at x=1.085 is y=35.46; a narrow triangle 4-5 samples wide) is reconstructed as a bare `baseline, apex, baseline` by the live code: predicted sample values at x=0.905/0.965/1.025/1.085 are 20.26/20.55/25.39/21.04 against 32.71/46.54/48.97/35.46 truth. The apex tip itself is correct to -0.88 y (truth 54.6, pred 53.72). Repeats at every spike (6 of them). The flank columns that read correctly in the base pipeline (via column centroid of the thin anti-aliased stroke) are rewritten by `measure.py`'s spike-triangle fill with `base + (tip - base) * max(0, 1 - |x - xv| / w_half)` where `w_half < 1 px`, which collapses to `base` for every q != apex. The yfit calibration of the pipeline is unchanged (base vs live a/b differ by less than 0.02 px): the whole regression is in the trace.
+
+Other failing cases to look at next on the catalogue once the chain finishes: linear-thick-line (0.042 -> 0.085), dark-theme (0.047 -> 0.088 and 0.017 -> 0.085), linear-dashed (0.067 -> 0.079), narrow-small (0.066 -> 0.144).
+
+Harness note: scoreboard #1 now defaults to refining in the e2e path, which matches the pipeline's real behaviour. The baseline comparison is therefore refine=False vs refine=True on 200 charts: section 5 of CASES.md gives the predecessor's measurement on the same 60 charts (simple RMS 0.185 vs 0.183%, essentially neutral; marker error 0.077 vs 0.095). The e2e harness change is itself not an improvement under the old measure.py; it is only justified if the new measure.py beats the raw network on the e2e path.
+
