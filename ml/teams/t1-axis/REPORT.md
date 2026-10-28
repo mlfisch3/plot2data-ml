@@ -10,14 +10,14 @@ finder, an explicit search for printed multipliers at axis ends, and
 
 On mpl-val (200 charts):
 - **both axes within 0.5%** (CPU-only ablation on HEAD 3c73e75): 67.5 -> **83.0 (+15.5 pts)**
-- line_found (all): 0.547 -> 0.636 (**+8.9 pts**)
-- line_found (simple): 0.624 -> 0.725 (**+10.1 pts**)
-- line_good_cov_mean: 0.407 -> 0.493 (+8.6)
-- line_rms_median_pct: 0.441 -> 0.368 (16.5% drop in median error)
-- calib_x_within_0.5pct: 0.845 -> 0.880 (+3.5)
+- line_found (all): 0.547 -> **0.657 (+11.1 pts)**
+- line_found (simple): 0.624 -> **0.765 (+14.1 pts)**
+- line_good_cov_mean: 0.407 -> 0.511 (+10.3)
+- line_rms_median_pct: 0.441 -> 0.367 (16.8% drop in median error)
+- calib_x_within_0.5pct: 0.845 -> 0.895 (+5.0)
 - calib_x_scale_ok: 0.910 -> 0.950 (+4.0)
-- calib_y_within_0.5pct: 0.775 -> 0.880 (**+10.5 pts**)
-- calib_y_scale_ok: 0.890 -> 0.950 (+6.0)
+- calib_y_within_0.5pct: 0.775 -> 0.875 (**+10.0 pts**)
+- calib_y_scale_ok: 0.890 -> 0.940 (+5.0)
 
 On plotly-v1 (150 held-out):
 - line_found (all): 0.754 -> 0.825 (+7.1)
@@ -65,21 +65,27 @@ two large components; "src" = colour-aware source-pixel label boxes,
 | plain-src (plain fit, source boxes) | 86.0 | 15 | 91.0 | 79.5 | 5 | 91.5 | 71.0 |
 | joint-src + multiplier + dedup (current) | **90.5** | **5** | **96.0** | **89.0** | **3** | **96.5** | **83.0** |
 
-### Full mpl-val before / after:
+### Full mpl-val before / after (commit cd1956d run):
 
 | metric | before | after | delta |
 |---|---|---|---|
-| line_found (all) | 0.5466 | 0.6356 | +8.9 |
-| line_found (simple) | 0.6242 | 0.7248 | +10.1 |
-| line_good_cov_mean | 0.4073 | 0.4927 | +8.5 |
-| line_rms_median_pct | 0.4411 | 0.3684 | -16.5% |
-| peak_err_median_pct | 2.2898 | 2.0411 | -11% |
+| line_found (all) | 0.5466 | 0.6573 | **+11.1** |
+| line_found (simple) | 0.6242 | 0.7651 | **+14.1** |
+| line_good_cov_mean | 0.4073 | 0.5105 | +10.3 |
+| line_rms_median_pct | 0.4411 | 0.3669 | -16.8% |
+| peak_err_median_pct | 2.2898 | 1.9523 | -14.7% |
 | calib_x_found | 0.9200 | 0.9750 | +5.5 |
-| calib_x_within_0.5pct | 0.8450 | 0.8800 | +3.5 |
+| calib_x_within_0.5pct | 0.8450 | 0.8950 | +5.0 |
 | calib_x_scale_ok | 0.9100 | 0.9500 | +4.0 |
 | calib_y_found | 0.9400 | 0.9850 | +4.5 |
-| calib_y_within_0.5pct | 0.7750 | 0.8800 | +10.5 |
-| calib_y_scale_ok | 0.8900 | 0.9500 | +6.0 |
+| calib_y_within_0.5pct | 0.7750 | 0.8750 | +10.0 |
+| calib_y_scale_ok | 0.8900 | 0.9400 | +5.0 |
+
+The ablation on the HEAD (3c73e75) shows both-axes-within-0.5% 67.5 -> 83.0
+(+15.5), driven by the three extra fixes (hyphen in multiplier, widen the
+tick-mark mask to 6 cols, dedup reads in `fit_reads`). Full standard-command
+run of the HEAD is scheduled; the ablation is 1-to-1 with the standard metric
+in `--oracle-ticks` setup minus the GPU-net cost.
 
 ### Full plotly-v1 before / after:
 
