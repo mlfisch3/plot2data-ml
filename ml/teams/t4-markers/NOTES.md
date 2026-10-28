@@ -82,3 +82,20 @@ Candidates, ranked by expected scoreboard gain (mpl-val geometry, "all" / "simpl
    (the shape is measured from the pixels instead).
 
 Going with 2 and 3 first (deterministic, no GPU contention), 1 as soon as the tile test says it pays, then 4, then 5.
+
+## Wed 28 Oct 2026, 16:11 EDT, brainstormer (replacement, Opus 4.7)
+
+Picked up the thread. Predecessor (Fable 5.1 on a21fb6c74947efb61) was killed at the account's 5-hour limit near the start of its last task. State on arrival:
+- `ml/p2d/markers.py` committed as af04090 (555 lines): source-pixel ink weight, mixture-of-Gaussians centres with one component per peak, size measurement from isolated blobs plus `size_at` for touching, Agg-snap convention detected by circular statistics on the fractional centres, triangle-apex orientation that transfers the bbox-centre offset to all markers of the series, dashed-line veto on blob elongation and per-marker line-stroke veto on `size_at`, `attach_loose` that re-homes label-minus-one peaks by colour.
+- 11 new tests all pass; full suite (47 tests) green.
+- Baselines on the standard sets and all seven probe sets measured from the frozen tree (`out/t4/base-*-frozen.txt`, `out/t4/eval-*-v3d.txt`).
+- No "after" numbers yet: nobody has run the standard scoreboard with the new code. That is the first thing to do.
+
+Resumed-work plan:
+1. Measure `--refine` + geometry on mpl-val 200 and plotly-v1 150 with af04090; compare to the frozen tree.
+2. Measure the probe suite (dense, row, labels, shapes, hollow, multi, lines) with af04090.
+3. End-to-end numbers (with OCR) on both standard sets.
+4. If gain holds, keep going: label-aware veto (text-blob OCR of F6 digits/legend-glyph FPs), small-marker branch (<4 px, where mixture is weakest), split-peak merging on big filled markers, triangle Agg-stamp when `snap_phase` fails on `cen + off` but passes on raw `cen` (double-check the current rule).
+5. If a regression shows up on simple, back off the offending veto and iterate.
+
+Pausing for background on the standard sets now.
