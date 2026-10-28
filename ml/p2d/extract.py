@@ -773,7 +773,7 @@ def _nearest_run(runs: list[tuple[int, int]], rel: float) -> tuple[int, int]:
     return min(runs, key=lambda ge: 0 if ge[0] <= rel <= ge[1] else min(abs(ge[0] - rel), abs(ge[1] - rel)))
 
 
-def _mask_tick_marks(ink: np.ndarray, max_h: int = 15, max_w: int = 4, isolate: int = 12) -> np.ndarray:
+def _mask_tick_marks(ink: np.ndarray, max_h: int = 15, max_w: int = 6, isolate: int = 12) -> np.ndarray:
     """Remove narrow vertical streaks starting near the axis side (tick marks).
 
     An x-axis tick mark is one or two columns wide, extends a handful of rows outward
