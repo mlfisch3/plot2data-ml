@@ -42,21 +42,46 @@ class Extraction:
     loose_labels: list[list[float]] = field(default_factory=list)  # tick-label text no tick claimed, source px
 
 
-def prepare(img: np.ndarray) -> tuple[torch.Tensor, np.ndarray]:
+MAX_PIXELS = 1_300_000  # canvas pixels for native-resolution inference: about 0.9 GB in bf16
+
+
+def placement(w: int, h: int, native: bool = True, max_pixels: int = MAX_PIXELS) -> tuple[np.ndarray, tuple[int, int]]:
+    """The placement transform and the canvas size for a w x h image.
+
+    Training scales a chart to fit the 768 x 512 canvas, which reads a large
+    screenshot at a fraction of its resolution: a 1,800 px wide chart at 0.43.
+    The network is fully convolutional, so at inference a chart larger than the
+    canvas is read at its own resolution instead (scale 1, or as close to it as a
+    pixel budget allows), on a canvas grown to hold it, in multiples of 32. A chart
+    smaller than the canvas is placed exactly as in training.
+    """
+    M = fit_transform(w, h)
+    if not native:
+        return M, (CANVAS_W, CANVAS_H)
+    s_fit = float(M[0, 0])
+    s = max(s_fit, min(1.0, math.sqrt(max_pixels / float(w * h))))
+    if s <= s_fit * (1 + 1e-6):
+        return M, (CANVAS_W, CANVAS_H)
+    cw = max(CANVAS_W, 32 * int(math.ceil(s * w / 32)))
+    ch = max(CANVAS_H, 32 * int(math.ceil(s * h / 32)))
+    return np.array([[s, 0, 0.5 * s - 0.5], [0, s, 0.5 * s - 0.5]], np.float64), (cw, ch)
+
+
+def prepare(img: np.ndarray, native: bool = True) -> tuple[torch.Tensor, np.ndarray]:
     """RGB uint8 image -> normalised canvas tensor and the placement transform."""
     h, w = img.shape[:2]
-    M = fit_transform(w, h)
-    bg = np.full((CANVAS_H, CANVAS_W, 3), img[0, 0], np.float32)
-    valid = cv2.warpAffine(np.ones((h, w), np.uint8), M, (CANVAS_W, CANVAS_H), flags=cv2.INTER_NEAREST)
-    c = cv2.warpAffine(img, M, (CANVAS_W, CANVAS_H), flags=cv2.INTER_AREA if M[0, 0] < 1 else cv2.INTER_LINEAR,
+    M, (cw, ch) = placement(w, h, native)
+    bg = np.full((ch, cw, 3), img[0, 0], np.float32)
+    valid = cv2.warpAffine(np.ones((h, w), np.uint8), M, (cw, ch), flags=cv2.INTER_NEAREST)
+    c = cv2.warpAffine(img, M, (cw, ch), flags=cv2.INTER_AREA if M[0, 0] < 1 else cv2.INTER_LINEAR,
                        borderMode=cv2.BORDER_REPLICATE).astype(np.float32)
     c = np.where(valid[..., None] > 0, c, bg)
     x = (c - MEAN) / STD
     return torch.from_numpy(x.transpose(2, 0, 1).copy())[None], M
 
 
-def run_net(net, img: np.ndarray, device="cuda") -> tuple[dict, np.ndarray]:
-    x, M = prepare(img)
+def run_net(net, img: np.ndarray, device="cuda", native: bool = True) -> tuple[dict, np.ndarray]:
+    x, M = prepare(img, native)
     with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=device == "cuda"):
         o = net(x.to(device))
     out = {
@@ -711,25 +736,50 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0) -> Extrac
     band (the profile is a low percentile across it), so a glyph, or a data
     line crossing the band, cannot pass for one. With no clear line (a
     labels-only axis) the estimate stands.
+
+    None of this needs the plot frame: the axis is where the tick anchors are,
+    the outside is the side the label sits on, and a gridline runs across the
+    span of the other axis's ticks. The frame, when found, only widens that span.
     """
-    if ex.plot_area is None:
-        return ex
     g = img.astype(np.float32).mean(-1)
     H, W = g.shape
-    paper = float(np.median(g[int(max(0, ex.plot_area[1])):int(min(H, ex.plot_area[3])),
-                              int(max(0, ex.plot_area[0])):int(min(W, ex.plot_area[2]))]))
-    x0, y0, x1, y1 = ex.plot_area
+    if ex.plot_area is not None:
+        x0, y0, x1, y1 = ex.plot_area
+        paper = float(np.median(g[int(max(0, y0)):int(min(H, y1)), int(max(0, x0)):int(min(W, x1))]))
+    else:
+        x0 = y0 = x1 = y1 = None
+        paper = float(_paper_colour(img, None).mean())
+
+    def span(ticks, i, lo_frame, hi_frame):
+        """The extent of the plot along an axis: the frame, else the other axis's ticks."""
+        if lo_frame is not None:
+            return lo_frame, hi_frame
+        v = [t["anchor"][i] for t in ticks]
+        return (min(v), max(v)) if len(v) >= 2 else (None, None)
+
     for key in ("xticks", "yticks"):
         for t in getattr(ex, key):
             p = t["pos"]
             lo, hi = int(np.floor(p - search - 1)), int(np.ceil(p + search + 1))
             best = None
+            lb = t.get("label_box")
             if key == "yticks":
                 if lo < 0 or hi >= H:
                     continue
                 side = t["anchor"][0]
-                out = (int(side) - 4, int(side)) if abs(side - x0) <= abs(side - x1) else (int(side) + 1, int(side) + 5)
-                for a, b, q in (out + (20,), (int(x0) + 2, int(x1) - 1, 35)):
+                if lb is not None:
+                    left = (lb[0] + lb[2]) / 2 < side
+                elif x0 is not None:
+                    left = abs(side - x0) <= abs(side - x1)
+                else:
+                    left = None
+                bands = []
+                if left is not None:
+                    bands.append(((int(side) - 4, int(side)) if left else (int(side) + 1, int(side) + 5)) + (20,))
+                a0, a1 = span(ex.xticks, 0, x0, x1)
+                if a0 is not None:
+                    bands.append((int(a0) + 2, int(a1) - 1, 35))
+                for a, b, q in bands:
                     a, b = max(0, a), min(W, b)
                     if b - a < 4:
                         continue
@@ -739,8 +789,19 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0) -> Extrac
                 if lo < 0 or hi >= W:
                     continue
                 side = t["anchor"][1]
-                out = (int(side) + 1, int(side) + 5) if abs(side - y1) <= abs(side - y0) else (int(side) - 4, int(side))
-                for a, b, q in (out + (20,), (int(y0) + 2, int(y1) - 1, 35)):
+                if lb is not None:
+                    below = (lb[1] + lb[3]) / 2 > side
+                elif y0 is not None:
+                    below = abs(side - y1) <= abs(side - y0)
+                else:
+                    below = None
+                bands = []
+                if below is not None:
+                    bands.append(((int(side) + 1, int(side) + 5) if below else (int(side) - 4, int(side))) + (20,))
+                a0, a1 = span(ex.yticks, 1, y0, y1)
+                if a0 is not None:
+                    bands.append((int(a0) + 2, int(a1) - 1, 35))
+                for a, b, q in bands:
                     a, b = max(0, a), min(H, b)
                     if b - a < 4:
                         continue

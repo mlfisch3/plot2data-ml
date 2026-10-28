@@ -84,6 +84,7 @@ def main() -> None:
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--ocr", required=True)
     ap.add_argument("--viz", default=None)
+    ap.add_argument("--fit-canvas", action="store_true", help="scale every chart to the 768 x 512 canvas (no native-resolution pass)")
     a = ap.parse_args()
     net = load_net(a.ckpt)
     reader = load_reader(a.ocr)
@@ -98,7 +99,7 @@ def main() -> None:
         names = csv.dtype.names
         xs = csv[names[0]]
         truth = {n: csv[n] for n in names[1:]}
-        res = run(net, reader, img)
+        res = run(net, reader, img, native=not a.fit_canvas)
         rows = score_case(spec, truth, xs, res)
         xs_ = res.xfit.scale if res.xfit else "-"
         ys_ = res.yfit.scale if res.yfit else "-"
