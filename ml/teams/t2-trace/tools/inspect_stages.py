@@ -35,7 +35,9 @@ import sys
 import cv2
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+# P2D_SRC points at a frozen copy of the package (out/t2c/base-src), for baseline numbers that do not move
+# while the live p2d/ is being edited.
+sys.path.insert(0, os.environ.get("P2D_SRC") or os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from p2d import extract as X  # noqa: E402
 from p2d.data import CANVAS_H, CANVAS_W, H_LINE, H_MARKER, apply, densify  # noqa: E402

@@ -35,3 +35,10 @@ Baselines done: out/t2c/v3-val-refine.txt (matches out/base/v3-pixel.txt exactly
 Per-series tag tables: out/t2c/analyze-val.txt, analyze-plotly.txt (tools/analyze_rows.py). Lost rate 7% with no crossing vs 37% with 10+ crossings; 53% under 1.2 px; 41% under 250 px plot height; 54% of area series; 39% dotted.
 Staged inspection over all 200 mpl-val charts (tools/inspect_stages.py, composites in out/t2c/inspect-val/): the heat is present on the curve in 458/461 series; the losses are decoding. The most common lost pattern is a series cut into 2-3 long pieces at a cluster change, both kept, never joined by merge_fragments (9000080, 9000108, 9000041, 9000156, 9000175, 9000162). A first run mislabelled kept pieces as marker-row (a matching bug under --refine); fixed, re-run queued with the reasons each junction was refused (dx, overlap, y gap, embedding distance).
 Probe generator p2d/synth/probe_t2.py with 13 cases; t2-cross, t2-samecolour, t2-parallel built (100 each), the other ten building. CASES.md drafted.
+
+## Wed 28 Oct 2026, 01:58 EDT curator
+
+Measurement protocol, after a scare: the brainstormer edits p2d/extract.py live in the shared worktree, and a baseline run that starts after an edit imports the new code (my t2-samecolour baseline did, and was discarded).
+Baselines now run from a frozen copy of p2d at the baseline commit 6b313e9, out/t2c/base-src (cwd there, or P2D_SRC=... for the tools in teams/t2-trace/tools); "after" numbers run from the live tree with out/t2c/t2c-measure-live.sh <tag>, which records the commit and a snapshot of extract.py next to the numbers.
+Queue scripts carry the team name (out/t2c/t2c-*.sh); kills are by pid after pgrep, never by a generic pattern.
+Cross probe baseline (valid, imported before the edit): found 0.827, good cov 0.714, rms median 0.11%, rms p90 17.2%: 66 of 248 found series have rms > 5%, the hop signature; 1.59 lines returned per true series.

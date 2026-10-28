@@ -78,4 +78,35 @@ Not a tracing failure, for the record: a wrong plot frame clips the series outsi
 
 ## 5. Catalogue
 
-(one entry per failure kind: examples, overlays, diagnosis, probe, numbers; filled in as the evidence lands)
+Composite overlays (`out/t2c/inspect-val/<seed>.png`) show six panels: the extraction over the chart with the truth in green, the line heat, the embedding (PCA to RGB), the clusters, the chains before merging, and the merged pieces with the dropped ones in red.
+
+### C1. A series cut into long pieces that are never joined
+
+- Examples: 9000080 s1 (two smooth lines, no crossing: 371 + 213 columns), 9000108 s2 (399 + 208), 9000041 s1 (206 + 258), 9000156 s0 (240 + 253), 9000175 s1 (416 + 322), 9000162 s0 (186 + 135 + 88), 9000145 s0 (383 + 126, a single dotted series).
+- What the pixels show: the ridge is complete; the embedding drifts along the series with context (9000080's upper line goes green to blue to dark in the PCA panel) and the clustering (radius 1.5, 16 centres) cuts it where the drift crosses a cluster boundary, often at a turning point.
+- Stage: `cluster_embeddings` splits; `peel_chains` runs per cluster so the chain ends there; `merge_fragments` refuses the junction (the pieces' mean embeddings differ by more than `emb_tol` = 3.0 because the clustering separated them, and/or the pieces overlap by more than 8 columns in the transition); `drop_duplicates` keeps both.
+- Why it costs so much: a piece must cover more than ~60% of the series to match at all, so the series is "not found" and contributes 0 to good coverage, although 90% of it was traced correctly.
+- Probe: any probe set shows it; cleanest in `t2-parallel` and `t2-steep` (few series, no crossings).
+
+### C2. Hopping at a crossing
+
+- Examples: `t2-cross` 12000000 s0 (RMS 21%), 12000071 s1 (32%), 12000087 s0 (31%); mpl-val 9000067 s1 (RMS 10%, two lines within 3 px on half the columns), 9000099 s3, 9000018 s0.
+- What the pixels show: two series of one embedding cluster cross at a shallow angle; the heat ridge is a continuous X.
+- Stage: `peel_chains` scores a chain by collected heat minus 0.5 per pixel of vertical gap; at a shallow crossing both continuations have the same gap, so the choice is arbitrary; the chain then runs on the other series until the next crossing. The embedding is not consulted inside a cluster, and direction is never consulted.
+- Signature in the numbers: a found series with RMS of 5-30% (66 of 248 found series in `t2-cross`), plus extra lines (1.59 returned per true series).
+
+### C3. Steep series break at any interruption
+
+- Examples: 9000018 s2 (an oscillation of 60 px per column, pieces of 190 + 159 columns), 9000144 s1/s2, 9000132.
+- Stage: the chain's gap cost and the merge rule (`gap <= 3 + 2 dx`) are vertical pixel distances; a steep series interrupted for 3 columns (a crossing taking those columns to another cluster) has its ends 100+ px apart vertically and is never re-joined, though extrapolating its slope would land within a pixel.
+
+### C4. Dense or steep data represented one value per column
+
+- Examples: 9000031 s0 (area, 470 points on 575 columns, good coverage 0.19 at RMS 5.7%), 9000068 s1/s2, 9000184 s0 (2004 points, RMS 13%), 9000079, 9000077, 9000129 s0; plotly 500011 s3, 500008 s1.
+- Stage: `column_runs` takes the heat-mass centroid of a run longer than 5 px, which for a zigzag of 20-40 px per column is 10-20 px from the truth at the column centre; the metric compares at the column centre within 1% of the plot height. Found, but "good" on 10-50% of columns.
+- Not a separation failure: the series is followed. It is the representation (and partly the metric's one-value-per-column view of a vertical run).
+
+### C5. Spurious lines
+
+- Examples: 9000031 (13 lines for 2 series), 9000144 (17 for 3), 9000109 (15 for 4), 9000032 (8 for 3).
+- Where they come from: ghost chains along the far flank of a thick or jagged stroke, and the fragments of C1-C3 that `drop_duplicates` keeps because they are not inside a longer trace's envelope. They cost precision downstream (matching, the marker-row filter, and every extra CSV column a user has to delete).
