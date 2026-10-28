@@ -133,6 +133,12 @@ def augment_photometric(img: np.ndarray, rng: np.random.Generator) -> np.ndarray
     out = out.astype(np.float32)
     if rng.random() < 0.3:
         out = out * rng.uniform(0.8, 1.15) + rng.uniform(-20, 20)
+    if rng.random() < 0.08:
+        # A colour cast: tinted paper, a photo, a themed app.
+        out = out * rng.uniform(0.85, 1.0, 3)
+    if rng.random() < 0.04:
+        # A dark theme from a light one.
+        out = 255 - out
     if rng.random() < 0.2:
         out = out + rng.normal(0, rng.uniform(1, 6), out.shape)
     if rng.random() < 0.05:

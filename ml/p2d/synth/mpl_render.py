@@ -411,6 +411,9 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict, preset:
     tick_dir = str(rng.choice(["out", "in", "inout"], p=[0.7, 0.2, 0.1]))
     ax.tick_params(direction=tick_dir, length=float(rng.choice([0, 2, 3.5, 5, 7], p=[0.1, 0.2, 0.4, 0.2, 0.1])),
                    width=float(rng.uniform(0.5, 1.5)))
+    label_va = "center" if rng.random() < 0.3 else None  # applied once the layout is frozen, below
+    if rng.random() < 0.3:
+        ax.tick_params(axis="y", pad=float(rng.uniform(1.5, 8)))
     if rng.random() < 0.08:
         ax.yaxis.tick_right()
     if rng.random() < 0.12:
@@ -473,6 +476,13 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict, preset:
     ax.set_xlim(ax.get_xlim())
     ax.set_ylim(ax.get_ylim())
     fig.set_layout_engine("none")
+    if label_va is not None:
+        # Where a y label sits against its tick is a house convention: matplotlib centres the digits
+        # (center_baseline), Chart.js and browsers centre the em box, which puts the digits about a
+        # tenth of an em higher. The tick's position is unchanged; only the label moves.
+        for tick in ax.yaxis.get_major_ticks():
+            tick.label1.set_va(label_va)
+            tick.label2.set_va(label_va)
     canvas.draw()
     rgba = np.asarray(canvas.buffer_rgba()).copy()
     H, W = rgba.shape[:2]

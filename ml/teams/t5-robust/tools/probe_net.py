@@ -15,7 +15,8 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "..", "..")))
+# P2D_ROOT selects which copy of the p2d package is measured (the frozen baseline in out/t5/base-code, or the live tree).
+sys.path.insert(0, os.environ.get("P2D_ROOT") or os.path.abspath(os.path.join(HERE, "..", "..", "..")))
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402

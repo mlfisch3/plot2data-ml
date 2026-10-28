@@ -25,3 +25,23 @@ Ranked candidates (expected gain on the standard scoreboard):
 7. Colour canonicalisation (chroma/ink channels) and deskew from perpendicular axes: need retraining or address failures no set contains. Not now.
 
 Going after 1 and 2 first, then 4 if a fine-tune is needed.
+
+## Wed 28 Oct 2026, 01:57 EDT, brainstormer: baseline rows by scale, the curator's diagnosis, first changes
+
+Baseline geometry rows (`evaluate --refine`, v3, out/t5/base-refine.json) by fit scale, simple charts: line_found 0.94 / 0.92 / 0.86 / 0.82 and RMS 0.07 / 0.33 / 0.21 / 0.26 % for scale < 0.5 / 0.5-0.7 / 0.7-1 / >= 1; marker recall 0.94 / 0.84 / 0.91 / 0.71.
+So large charts are the easiest bin and small upscaled charts the hardest, the opposite of what I assumed.
+Frame error p90 13 px is entirely the house-style presets (plain matplotlib p90 3.0 px; excel 24, highcharts 80, news 29, minimal 21, ft 15): on a chart without spines the frame is an invisible box.
+
+The curator's 01:50 diagnosis (mail/to-brainstormer.md): the frame is found on every corpus case; nogrid is a renderer-specific label-to-tick bias (about 1 px) with nothing to snap to; the log-y ghosts are minor gridlines traced as lines; offset-annotation is a 5 px overlap the multiplier test rejects; the news x axis goes log because a log fit over 1970..2021 bends enough to take a misplaced label; and a frame more than 5 px off (43 to 70% of the no-spine presets) costs line_good_cov 0.565 to 0.45 through the ROI clipping in extract.
+
+Changes so far (commits 72d21cf, 259b09d):
+
+- `data.placement` / `extract.prepare`: native-resolution single-pass inference for charts larger than the canvas (scale 1, pixel budget 1.3 M, canvas in multiples of 32); `--fit-canvas` on evaluate, eval_corpus and eval_real for the ablation.
+- `extract.refine_ticks` no longer needs the frame: outside band from the label side, gridline span from the other axis's ticks.
+- `extract.extract`: ROI margin 5% of the frame instead of 1-3 px; legend symbols, tick labels and text excluded by their class; traced lines that are mostly GRID dropped.
+- `pipeline.axis_factor`: the multiplier box may overlap the plot edge (centre test).
+- `calibrate.fit_axis`: a log fit needs a decade or a label that says so (t1's file; one condition).
+- `evaluate.draw` safe for non-finite coordinates.
+- For a fine-tune: `--zoom` in train (crops at the inference scale, `_crop_shift`), y-label vertical alignment and pad randomised in mpl_render (30%), colour cast and inversion in augment_photometric (8%, 4%).
+
+Measurement hygiene: the curator froze the 6b313e9 code at out/t5/base-code for "before" numbers; my queue out/t5/q1-* measures 259b09d.

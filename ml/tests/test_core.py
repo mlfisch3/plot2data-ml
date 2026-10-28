@@ -152,3 +152,18 @@ def test_log_needs_a_decade_or_a_label_saying_so():
     assert f.scale == "linear"
     assert fit_axis([100, 200, 300], [1, 10, 100]).scale == "log"
     assert fit_axis([100, 200], [2, 4], ["2x10^0", "4x10^0"]).scale == "log"
+
+
+def test_crop_shift_keeps_the_middle_third_of_the_plot_in_view():
+    from p2d.data import _crop_shift
+
+    rng = np.random.default_rng(0)
+    # A chart 2000 px wide with its plot area at 200..1800 on a 768 px canvas: whatever the shift,
+    # the plot's middle third (733..1267) stays inside [0, 768).
+    for _ in range(200):
+        s = _crop_shift(rng, 200.0, 1800.0, 2000.0, 768)
+        assert 200 + s + 1600 / 3 >= 0 and 200 + s + 2 * 1600 / 3 <= 768
+    # A chart smaller than the canvas only slides within it.
+    for _ in range(50):
+        s = _crop_shift(rng, 50.0, 350.0, 400.0, 768)
+        assert 0 <= s <= 768 - 400

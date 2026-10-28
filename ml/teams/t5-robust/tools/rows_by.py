@@ -13,7 +13,7 @@ import sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "..", "..")))
+sys.path.insert(0, os.environ.get("P2D_ROOT") or os.path.abspath(os.path.join(HERE, "..", "..", "..")))
 
 from p2d.metrics import summarise  # noqa: E402
 
