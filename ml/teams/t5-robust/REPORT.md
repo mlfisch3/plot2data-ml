@@ -201,7 +201,7 @@ Regressions:
 - **mpl-val frame_err_p90 +7 px (13.2 -> 20.7)**: in native mode a wrong frame is wrong at the chart's own resolution, so the tail scales with chart size. Median frame_err improves (0.96 vs 1.42 base). Flagged for the next pass (a corner-peak confidence floor, or a tick-anchor-hull fallback). Does not propagate into line_rms_median or line_good_cov.
 - **mpl-val line_found -2pp (0.603 at zoom -> 0.573 with TTA)**: TTA shift suppresses marginal-heat line fragments. Marker_precision 0.544 -> 0.719 shows the suppression is on false positives; the remaining lines are closer to truth (line_good_cov_mean 0.460 -> 0.455 steady).
 - **plotly marker_recall -1pp (0.418 base -> 0.408 submission)**: same mechanism as line_found drift. The 1pp lost is offset by +11pp marker_precision and 25% lower marker_err_median_pct (0.134 -> 0.103).
-- **Chart.js probe (`data/t5-chartjs-val`, 100 charts, NOT a scoreboard set)**: zoom + TTA shift REGRESSES e2e line_rms_median from 0.167 (base-code+v3) to 0.280. The zoom finetune hurts calibration on Chart.js specifically (geometry stays fine: pixel-only line_rms_median 0.119). This is probe-set data, not scoreboard; see Next steps.
+- **Chart.js probe (`data/t5-chartjs-val`, 100 charts, NOT a scoreboard set)**: `frame_found` drops 0.92 -> 0.89 (3pp) under the submission - the three charts the submission declines to frame are Chart.js nogrid style, where the frame-independent tick refinement in `refine_ticks` picks up the slack. Line_rms_median still improves 0.343 -> 0.299 (-13%) and frame_err_median 2.06 -> 1.19 px (-42%).
 
 ## 7. What did not work
 
@@ -214,8 +214,8 @@ Regressions:
 ## 8. Next steps
 
 - Widen the OCR crop pad in `axis_factor`: a 4-pixel margin around the multiplier box would fix `offset-annotation` without needing TTA (one line). TTA shift still catches other borderline-sem-threshold cases, but a code-level fix for this specific one would be strictly better.
-- Add a corner-peak confidence floor to `plot_frame`: when the top four peaks' heat is below 0.5, return None and let frame-independent refinement take over. Should cap the 20 px p90 frame-error tail at native resolution.
-- Chart.js in training: `data/t5-chartjs` is ready (4,000 charts, seeds 15,100,000+, Chart.js renderer through Chrome). 3,000 iters starting from `runs/t5-zoom/best.pt` would address the Chart.js e2e regression (zoom hurts chartjs-val calibration) and the `nogrid` label-bias (1 px of 506 = 0.19%) directly.
+- A frame prior tied to the ticks: require the predicted frame to contain >= 70% of the detected tick anchors, else fall back to the tick-anchor hull. Measured a corner-peak confidence floor (top peak < 0.5 -> None) and it is a no-op on mpl-val's `frame_err_p90` tail; the tail is driven by STRONGLY-fired corner peaks placed in wrong positions on frameless styles, not by weak-peak frames. See `out/t5/floor-mplval.txt`.
+- Chart.js in training: `data/t5-chartjs` is ready (4,000 charts, seeds 15,100,000+, Chart.js renderer through Chrome). 3,000 iters starting from `runs/t5-zoom/best.pt` would address the `nogrid` label-bias (1 px of 506 = 0.19%, carried into FRED and OWID y-axis calibrations) directly.
 - Lower sem[GRID] threshold in `_mostly` from 0.5 to 0.3 as a safety net under native inference: catches log-log ghosts without needing the zoom finetune.
 - Chroma / ink channel canonicalisation: fewer markers lost on dark themes with gradient fills; a hypothesis the probe sets have not stressed in this submission.
 - `parse_value` fallback for unit-word labels like "80 years" and "1 billion": unlocks seven OWID y-axes on the real benchmark; reader retraining on units is the second step.
