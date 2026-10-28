@@ -204,3 +204,35 @@ Impact on the pipeline is bounded by whether class 1 (two-label log) still fires
 read from the thin box, calibration still works; if the digit is cut, every `10^k` becomes 10 and the axis fits
 as linear. On mpl-val this hit 9000015, 9000027, 9000044, 9000106, 9000154 before the rewrite (class 1); the new
 rewrite would do the same by returning only the superscript. Probe: `t1-pow10_edge/x` 0.88 within is partly this.
+
+## 12. Colour-aware box crops the leading "0." / overgrows into a neighbour (added by 244ce7b)
+
+Introduced by the same `label_from_source` rewrite. From `compare-mpl-v244.txt`, 15 charts broke; 7 of them are
+this class. Three charts (9000016/21/24) are the superscript (class 11); the rest split as follows (seed, axis,
+true -> read):
+
+- **"0." stripped**: `9000162 x` (0.030/0.040/0.020/0.010/0.000 -> 6/8/4/2/0, ALL ticks; the leading "0." is
+  dropped from every label on the axis, so an axis of "zero point something" reads as its last digit alone).
+  `9000186 y` ("0.0" -> "5", one tick). The thin dot of "." may be deciding the colour of the first-glyph run,
+  so after the colour re-filter the main digit at a slightly different hue is excluded; or the box starts after
+  the "." column.
+- **Overgrown**: `9000098 x` ("105.0" -> "00000", the box captured the neighbour tick's leading digits).
+  `9000014 y` ("25/75" -> "-51/151", similar). `9000037 y` ("200,000/400,000/600,000" -> "4/4/200,000", groups
+  collapsed in box space). `9000136 y` (every tick on an axis of 0..5e6 reads as 2-3 digits with duplicates:
+  "800/5000/2000/80/80/8000"). Here the box widened past the end of one label into the next, or merged two.
+- **"-" added**: `9000043 y` ("10^3/10^4" -> "-10^3/-10^4"). The box widened leftward past the first glyph into
+  a line pixel (axis spine or gridline), which the reader took as a minus sign.
+
+Mechanism, best guess: the colour re-filter sets the ink mask to `(off < 0.35) & (t > 0.2)`. For a label whose
+first ink run is a thin feature (a period, a comma, a decimal point, a tick-mark pixel included by accident),
+the "colour" is that feature's rendering; antialiased pixels of the main digits in a slightly different blend
+are then excluded. Conversely, when the first ink run is the main glyph of a horizontally-placed label and
+other labels of the same colour are close by (crowded axes, small label gaps), the along-axis `_runs` with gap
+tolerance can bridge into the next label.
+
+Fix candidates (all for the brainstormer): (a) use the DARKEST pixel of the band, not the median of the brightest
+first-glyph set, to define the label colour; (b) require the "colour" step to find at least two independent
+clusters of ink along the axis before re-filtering, so a lone decimal point does not define it; (c) after the
+re-filter, re-run the main glyph detection on the uncoloured ink too and take the UNION (not replacement) of the
+two bands. The 7 regressions here plus the 3 class-11 superscripts bound the price of 244ce7b's rewrite at 10
+charts on mpl-val, against 34 fixed (22 y + 12 x); the colour-aware path is a net +24 before any of these fixes.
