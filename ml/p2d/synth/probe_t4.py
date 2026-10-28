@@ -485,7 +485,12 @@ def finish(fig, canvas, ax, series_meta, data_artists, grid_extra, legend, seed,
     for m, art in zip(series_meta, data_artists):
         x, y = m["x"], m["y"]
         path = _to_px(ax, H, x, y) if m["kind"] != "scatter" else np.zeros((0, 2))
-        markers = _to_px(ax, H, x, y) if m["kind"] in ("scatter", "line+markers") else np.zeros((0, 2))
+        markers_data = _to_px(ax, H, x, y) if m["kind"] in ("scatter", "line+markers") else np.zeros((0, 2))
+        # Agg stamps every marker at an integer pixel position (whatever `set_snap` says), so the centre
+        # actually drawn is the display coordinate rounded: floor(exact + 1) in this pixel convention.
+        # Verified to 0.05 px on isolated markers of every symmetric shape. `markers_px` is what is drawn
+        # (the heat target and the measurable truth); `markers_data_px` is where the value maps exactly.
+        markers = np.floor(markers_data + 1.0) if len(markers_data) else markers_data
         if len(markers):
             all_mk.append(markers)
         color = art.get_color() if isinstance(art, Line2D) else art.get_facecolor()
@@ -502,7 +507,7 @@ def finish(fig, canvas, ax, series_meta, data_artists, grid_extra, legend, seed,
                                linewidth_px=m["lw"] * fig.dpi / 72.0, marker=m["marker"], markersize_px=m["ms"] * fig.dpi / 72.0,
                                hollow=bool(m.get("hollow")), halo=bool(m.get("halo")),
                                x=np.asarray(x).tolist(), y=np.asarray(y).tolist(), path_px=path.round(3).tolist(),
-                               markers_px=markers.round(3).tolist()))
+                               markers_px=markers.round(3).tolist(), markers_data_px=markers_data.round(3).tolist()))
     # The exact nearest-neighbour spacing of the markers drawn, in pixels and in marker diameters.
     if all_mk:
         mk = np.vstack(all_mk)
@@ -521,7 +526,7 @@ def finish(fig, canvas, ax, series_meta, data_artists, grid_extra, legend, seed,
     if legend is not None:
         e = legend.get_window_extent(renderer)
         leg_bbox = [e.x0 - 0.5, H - e.y1 - 0.5, e.x1 - 0.5, H - e.y0 - 0.5]
-    meta = dict(seed=seed, generator="probe_t4", style=style, preset=preset, font=rc["font.family"], width=W, height=H,
+    meta = dict(seed=seed, generator="probe_t4", marker_centre="drawn", style=style, preset=preset, font=rc["font.family"], width=W, height=H,
                 plot_area=plot_area, xscale="linear", xdate=None, yscale="linear", xlim=list(map(float, xlim)),
                 ylim=list(map(float, ylim)), xticks=ticks_for("x"), yticks=ticks_for("y"), series=out_series,
                 legend_bbox=leg_bbox, offset_text=[_clean_label(o.get_text()) for o in offset_texts], probe=probe)

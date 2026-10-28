@@ -40,7 +40,8 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+# The p2d package to diagnose: this worktree's by default, or the frozen baseline tree through P2D_ROOT.
+sys.path.insert(0, os.environ.get("P2D_ROOT") or os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from p2d import extract as E  # noqa: E402
 from p2d.data import H_MARKER, apply  # noqa: E402
@@ -117,6 +118,7 @@ def analyse(meta, img, sem_gt, inst_gt, out, M, ex, lab_store):
 
     matched_g = np.full(len(gm), -1)
     matched_p = np.full(len(pm), -1)
+    tp_capped = 0
     if len(gm) and len(pm):
         D = np.hypot(gm[:, None, 0] - pm[None, :, 0], gm[:, None, 1] - pm[None, :, 1])
         gi, pj = linear_sum_assignment(np.minimum(D, 1e3))
@@ -124,6 +126,14 @@ def analyse(meta, img, sem_gt, inst_gt, out, M, ex, lab_store):
             if D[i, j] <= rad:
                 matched_g[i] = j
                 matched_p[j] = i
+        # The same matching with the cost capped at the tolerance: it then maximises the number of pairs
+        # within tolerance instead of minimising the summed distance (which can trade a hit for two misses).
+        gi2, pj2 = linear_sum_assignment(np.minimum(D, rad * 1.001))
+        tp_capped = int((D[gi2, pj2] <= rad).sum())
+    # The centre matplotlib actually drew: Agg stamps markers at integer pixel positions, so the drawn
+    # centre is round(display) = floor(recorded + 1) in each axis (verified on isolated markers to 0.05 px).
+    snapped = meta.get("generator") in ("matplotlib", "probe_t4") and meta.get("marker_centre") != "drawn"
+    gm_drawn = np.floor(gm + 1.0) if snapped else gm
 
     # Raw peaks and their embedding labels, in source px.
     frame_canvas = apply(M, [[ex.plot_area[0], ex.plot_area[1]], [ex.plot_area[2], ex.plot_area[3]]]).reshape(-1).tolist() if ex.plot_area else None
@@ -168,6 +178,8 @@ def analyse(meta, img, sem_gt, inst_gt, out, M, ex, lab_store):
         if matched_g[i] >= 0:
             a["stage"] = "ok"
             a["err_pct"] = float(np.hypot(*(pm[matched_g[i]] - gm[i])) / ph * 100)
+            a["err_drawn_pct"] = float(np.hypot(*(pm[matched_g[i]] - gm_drawn[i])) / ph * 100)
+            a["dx"], a["dy"] = [float(v) for v in (pm[matched_g[i]] - gm_drawn[i])]
             a["pred_series"] = pattr[matched_g[i]]["pred_series"]
         elif d_final <= rad:
             a["stage"] = "taken"
@@ -229,7 +241,7 @@ def analyse(meta, img, sem_gt, inst_gt, out, M, ex, lab_store):
         if matched_g[i] >= 0:
             frag.setdefault(gattr[i]["series"], set()).add(pattr[matched_g[i]]["pred_series"])
     density = max([len(sr["x"]) / max(pa[2] - pa[0], 1) for sr in meta["series"] if sr["kind"] in ("line", "step", "line+markers", "area")] or [0.0])
-    return dict(id=meta["seed"], n_gt=len(gm), n_pred=len(pm), tp=int((matched_g >= 0).sum()), rad=rad, scale=s,
+    return dict(id=meta["seed"], n_gt=len(gm), n_pred=len(pm), tp=int((matched_g >= 0).sum()), tp_capped=tp_capped, rad=rad, scale=s,
                 n_series=len(meta["series"]), density=density, probe=meta.get("probe"), gt=rows_g, pred=rows_p,
                 groups=groups, frag={str(k): len(v) for k, v in frag.items()}), gm, pm, matched_g, matched_p, mh
 
@@ -327,15 +339,22 @@ def main():
     for bad, seed, img, gm, pm, mg, mp, mh, M, r in keep[: a.worst]:
         cv2.imwrite(os.path.join(a.out, f"{seed}.png"), overlay(img, gm, pm, mg, mp)[..., ::-1])
         cv2.imwrite(os.path.join(a.out, f"{seed}-heat.png"), heat_image(mh, M, img)[..., ::-1])
-    # Contact sheets, up to 48 tiles per cause, taken across charts.
+    # Contact sheets, up to 48 tiles per cause, at most 4 per chart so the sheet spans many charts.
     for bad, seed, img, gm, pm, mg, mp, mh, M, r in keep:
-        hm_img = heat_image(mh, M, img)
+        hm_img = None
+        per = collections.Counter()
         for g in r["gt"]:
-            if g["stage"] != "ok" and len(tiles["FN-" + g["stage"]]) < 48:
-                tiles["FN-" + g["stage"]].append(tile(img, hm_img, g["x"], g["y"]))
+            k = "FN-" + g["stage"]
+            if g["stage"] != "ok" and len(tiles[k]) < 48 and per[k] < 4:
+                hm_img = heat_image(mh, M, img) if hm_img is None else hm_img
+                tiles[k].append(tile(img, hm_img, g["x"], g["y"]))
+                per[k] += 1
         for p in r["pred"]:
-            if p["cause"] != "ok" and len(tiles["FP-" + p["cause"]]) < 48:
-                tiles["FP-" + p["cause"]].append(tile(img, hm_img, p["x"], p["y"]))
+            k = "FP-" + p["cause"]
+            if p["cause"] != "ok" and len(tiles[k]) < 48 and per[k] < 4:
+                hm_img = heat_image(mh, M, img) if hm_img is None else hm_img
+                tiles[k].append(tile(img, hm_img, p["x"], p["y"]))
+                per[k] += 1
     for k, ts in tiles.items():
         cv2.imwrite(os.path.join(a.out, f"sheet-{k}.png"), sheet(ts)[..., ::-1])
 
@@ -369,6 +388,16 @@ def main():
                                   for k in ("line", "scatter")}
     errs = np.array([g["err_pct"] for g in gt_all if g["stage"] == "ok"])
     S["err_median_pct"] = float(np.median(errs)) if len(errs) else None
+    errd = np.array([g["err_drawn_pct"] for g in gt_all if g["stage"] == "ok"])
+    S["err_drawn_median_pct"] = float(np.median(errd)) if len(errd) else None
+    S["recall_capped"] = sum(r["tp_capped"] for r in rows) / max(1, S["n_gt"])
+    S["precision_capped"] = sum(r["tp_capped"] for r in rows) / max(1, S["n_pred"])
+    # Bias of the returned centre against the drawn centre, in source px, isolated symmetric markers only.
+    iso = [g for g in gt_all if g["stage"] == "ok" and g["nn_px"] >= 12 and g["shape"] in ("o", "s", "D", "d", "h", "8", "x", "+", "P", "X", ".", "*", "circle", "square", "diamond", "cross", "x", "hexagon")]
+    if iso:
+        S["bias_px_isolated_symmetric"] = dict(n=len(iso), dx_mean=float(np.mean([g["dx"] for g in iso])), dy_mean=float(np.mean([g["dy"] for g in iso])),
+                                               dx_median=float(np.median([g["dx"] for g in iso])), dy_median=float(np.median([g["dy"] for g in iso])),
+                                               abs_median=float(np.median([math.hypot(g["dx"], g["dy"]) for g in iso])))
     S["err_by_shape_median_pct"] = {k: float(np.median([g["err_pct"] for g in gt_all if g["stage"] == "ok" and g["shape"] == k]))
                                     for k in S["by_shape"] if any(g["stage"] == "ok" and g["shape"] == k for g in gt_all)}
     purs = [g for r in rows for g in r["groups"] if g["n_matched"] > 0]
