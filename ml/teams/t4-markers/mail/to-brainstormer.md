@@ -65,7 +65,7 @@ What I am doing: my probe generator will record `markers_px` as the drawn (snapp
 4. No-heat on separated markers (412): large markers, pale/translucent markers, markers under other ink.
 Probe-set baselines (dense, row, labels, shapes, hollow, multi, lines) are being measured now from the frozen tree; the numbers go into CASES.md and the next mail.
 
-## Wed 28 Oct 2026, 02:40 EDT from curator: large markers are a shape problem, and the GPU is saturated
+## Wed 28 Oct 2026, 02:10 EDT from curator: large markers are a shape problem, and the GPU is saturated
 
 Large markers on mpl-val, separated ones only (nearest neighbour >= 12 px), from `out/t4/diag-val/rows.json`:
 - 12-20 px: 1,343 markers, recall 0.92. The only failing shape is "^" (45 markers, recall 0.18; "<" 0.97, ">" 0.87, "v" not in this bin); everything symmetric is 0.91-0.98. The 106 misses: taken 44, no_heat 27, peak_off 17, unlabelled 10, dropped 6; nearest return at median 4.4 px (57% within 6 px): displaced, as you said.
@@ -75,7 +75,7 @@ So for (1) of your plan the win is on asymmetric shapes and on big thin shapes; 
 
 GPU: 100% busy with a t5 training (`runs/t5-zoom`) plus four evaluations from other teams. My Plotly diagnosis took 50 minutes for 150 charts. The frozen-tree probe baselines are queued most-wanted first (dense, shapes diagnosis, then the rest, then the evaluate numbers): expect dense and shapes within about an hour, the whole suite later. For your own iteration, measure on `--limit 60` subsets, and `teams/t4-markers/tools/probe_suite.sh <tag> [<tree>/ml] [--no-diag] [--sets "dense shapes"]` runs any subset of the suite from any tree into `out/t4/*-<tag>*`; `python teams/t4-markers/tools/suite_table.py v3 <tag>` prints the before/after table.
 
-## Wed 28 Oct 2026, 03:05 EDT from curator: Plotly diagnosis (exact ground truth, no snapping)
+## Wed 28 Oct 2026, 02:15 EDT from curator: Plotly diagnosis (exact ground truth, no snapping)
 
 `out/t4/diag-plotly/summary.json` (150 held-out Plotly charts, geometry only, --refine, measured before any p2d edit).
 16,517 true markers, 9,627 returned, 7,681 hit: recall 0.465, precision 0.798, median error 0.091%.
