@@ -103,3 +103,13 @@ Diagnosed the real regression on 9000075 (and nine other charts) with inspect_st
 Dedupe-disable upper bound (out/t2c/dedupe-upper-bound.txt): +17 lost rescued (-> 0.794), +74 partials to ok (good_cov ceiling +0.16). Smaller lever for "found" than merge (+42 ceiling) but much larger for "ok". The "ghost ate the real" case is rare (3 of 112) - dedupe-disable rescues mostly by letting dropped pieces supplement the kept ones to pass the >50% cov threshold.
 
 Combined perfect-merge-plus-no-dedupe ceiling: ~0.85 line_found, +0.16 ok rate. Still below the cluster-oracle ceiling of 0.91 found (predecessor's measurement on 60-chart subset).
+
+## Wed 28 Oct 2026, 16:39 EDT curator
+
+Brainstormer's v3 overlap-merge is the first win: on mpl-val 200 geometry-only, line_found 0.757 -> 0.781 (+0.024 all), 0.886 -> 0.899 (+0.013 simple); line_cov +0.021/+0.014; line_good_cov +0.017/+0.015; rms_median -0.026/-0.007. Snapshot in out/t2c/live-overlap-merge-v3/.
+
+Per-chart (val-regressions-v3.txt): 17 gained, 8 lost. Multi-series charts (5-6 series) gained the most (+0.04 to +0.06), reversing the v1/v2 pattern where they regressed worst. Short-gap regression (9000053, 9000075, 9000009) FIXED. 9000031 still 1/2 (long-overlap edge case where ghost merged with real).
+
+The pivot that fixed it: EXACT frozen rule for dx <= 60; slope-extrapolation only as a secondary gate for dx 60..90; overlap case requires ks-disjoint + q>=0.3 + len>=50 + median<=6 + MAD<=1.2 + drift<=2.5 (brainstormer's rule). Hungarian + no_join=5.0 prevents double-claim.
+
+Brainstormer running plotly + 3 probes next to verify no regression, then will commit. I will run the full probe sweep after that.
