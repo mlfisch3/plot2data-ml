@@ -149,6 +149,7 @@ def main() -> None:
     ap.add_argument("--data", default=REAL)
     ap.add_argument("--viz", default=None)
     ap.add_argument("--json", default=None)
+    ap.add_argument("--tta", default=None, help="extra passes to fuse: shift, scale, or shift+scale")
     a = ap.parse_args()
     net, reader = load_net(a.ckpt), load_reader(a.ocr)
     if a.viz:
@@ -161,7 +162,7 @@ def main() -> None:
         cid = meta["id"]
         img = cv2.imread(os.path.join(a.data, cid + ".png"))[..., ::-1].copy()
         truth = load_truth(meta, os.path.join(a.data, cid + ".data.csv"))
-        res = run(net, reader, img)
+        res = run(net, reader, img, tta=a.tta)
         rows = score_chart(meta, truth, res)
         xs_ = res.xfit.scale if res.xfit else "-"
         ys_ = res.yfit.scale if res.yfit else "-"
