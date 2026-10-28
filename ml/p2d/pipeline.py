@@ -64,13 +64,28 @@ def as_dates(reads: list[TickRead], axis: str) -> bool:
 
 
 def fit_reads(reads: list[TickRead], dates: bool, hint: str | None = None) -> AxisFit | None:
-    """Calibrate one axis from its readings: jointly when the reader's log-probs are there, else plainly."""
+    """Calibrate one axis from its readings: jointly when the reader's log-probs are there, else plainly.
+
+    Duplicate ticks (two heat peaks at the same position, two sem components) make the pair
+    search in the joint decoder skip every pair of them (distance < 3) and leave the axis unfit;
+    collapse ticks within 1.5 px of each other so the decoder sees one reading per position.
+    """
     if not reads:
         return None
-    if dates or all(r.logits is None for r in reads):
-        return fit_axis([r.pos for r in reads], [np.nan if r.value is None else r.value for r in reads],
-                        [r.text for r in reads], hint=hint)
-    return decode_axis(reads, hint=hint)
+    deduped: list[TickRead] = []
+    for r in sorted(reads, key=lambda r: r.pos):
+        if deduped and abs(deduped[-1].pos - r.pos) < 1.5:
+            # Keep the reading with the higher confidence (or the one that parses).
+            if (r.value is not None) and (deduped[-1].value is None):
+                deduped[-1] = r
+            elif r.conf > deduped[-1].conf:
+                deduped[-1] = r
+            continue
+        deduped.append(r)
+    if dates or all(r.logits is None for r in deduped):
+        return fit_axis([r.pos for r in deduped], [np.nan if r.value is None else r.value for r in deduped],
+                        [r.text for r in deduped], hint=hint)
+    return decode_axis(deduped, hint=hint)
 
 
 _MULT = re.compile(r"^(?:x|\(x)?(?:1e([-+]?\d+)|10\^([-+]?\d+))\)?$")
