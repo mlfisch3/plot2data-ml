@@ -95,3 +95,11 @@ Next action: wait for brainstormer's tightened merge candidate ("ready - measure
 Brainstormer shipped tightened overlap-merge (live-overlap-merge-v2): still regressed on "all" (-0.030 line_found vs frozen); "simple" nearly flat. Same 10 charts fail under both v1 and v2 (tightening didn't help the regressors). Analysis in out/t2c/val-regressions-v2.txt. The regression pattern says merge is picking up GHOST chains that drop_duplicates would otherwise remove, so a wrong merge takes a ghost+real pair and the real line is lost to Hungarian matching afterwards. Suggested swap: run drop_duplicates BEFORE merge_fragments, or filter merge candidates by chain quality (q, min_support). Both appear in the brainstormer's inbox.
 
 Oracle computed from inspect-val-v2.json (out/t2c/merge-oracle.txt): perfect same-series merge gives line_found 0.848 on mpl-val (vs 0.757 baseline) = +0.091 ceiling. Any merge-only fix is bounded by this. The predecessor's measured oracle for cluster-fix (joint-tracker ceiling) was 0.91 on 60-chart subset.
+
+## Wed 28 Oct 2026, 16:34 EDT curator
+
+Diagnosed the real regression on 9000075 (and nine other charts) with inspect_stages on LIVE tree. The new no-overlap branch is strictly STRICTER than the frozen gap rule: for a short gap (dx 20-60) with wavering slope (dashed sine), extrap-miss blocks the join although ygap <= 3+2*dx and de small, so pieces that frozen joined are now kept apart. Brainstormer pivoting to a "superset of frozen gap rule, with Hungarian + slope-aware only for 60..90 cols" approach. Sent them the specific fix: keep frozen's dx 1..60, gap <= 3 + 2*dx, de <= 3 rule intact.
+
+Dedupe-disable upper bound (out/t2c/dedupe-upper-bound.txt): +17 lost rescued (-> 0.794), +74 partials to ok (good_cov ceiling +0.16). Smaller lever for "found" than merge (+42 ceiling) but much larger for "ok". The "ghost ate the real" case is rare (3 of 112) - dedupe-disable rescues mostly by letting dropped pieces supplement the kept ones to pass the >50% cov threshold.
+
+Combined perfect-merge-plus-no-dedupe ceiling: ~0.85 line_found, +0.16 ok rate. Still below the cluster-oracle ceiling of 0.91 found (predecessor's measurement on 60-chart subset).
