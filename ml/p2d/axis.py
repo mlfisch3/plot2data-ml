@@ -154,11 +154,18 @@ def infer_style(texts: list[str]) -> Style:
 # --- the decode --------------------------------------------------------------
 
 def nice_step(s: float) -> bool:
-    """A step a tick locator would choose: 1, 2, 2.5, 5 x 10^k, and the looser ones some charts use."""
+    """A step a tick locator would choose: 1, 2, 2.5, 5 x 10^k, and the looser ones some charts use.
+
+    The step comes from a fit to pixel positions, so it is close to the printed step but not
+    exact: a label step of 0.1 may come back as 0.09997, whose log10 floors a decade below and
+    whose mantissa then reads as 9.997. The floor is nudged up by 1e-3 so a step just under
+    the decade boundary stays in its own decade; the mantissa is compared to a 2% tolerance.
+    """
     if not (s > 0 and math.isfinite(s)):
         return False
-    m = s / 10.0 ** math.floor(math.log10(s) + 1e-9)
-    return any(abs(m - k) < 1e-6 * k for k in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 8))
+    e = math.floor(math.log10(s) + 1e-3)
+    m = s / 10.0 ** e
+    return any(abs(m - k) <= 0.02 * k for k in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 8))
 
 
 def log_like(v1: float, v2: float) -> bool:

@@ -773,6 +773,53 @@ def _nearest_run(runs: list[tuple[int, int]], rel: float) -> tuple[int, int]:
     return min(runs, key=lambda ge: 0 if ge[0] <= rel <= ge[1] else min(abs(ge[0] - rel), abs(ge[1] - rel)))
 
 
+def _mask_tick_marks(ink: np.ndarray, max_h: int = 15, max_w: int = 4, isolate: int = 12) -> np.ndarray:
+    """Remove narrow vertical streaks starting near the axis side (tick marks).
+
+    An x-axis tick mark is one or two columns wide, extends a handful of rows outward
+    from the axis, and does not reach the label text. If two tick marks appear at
+    different `along` positions in the window, the per-row width used by `_row_shapes`
+    sees them as one wide band (ink from leftmost to rightmost in the row) and the
+    band finder takes it for the label. The band finder breaks that way on log axes
+    where the tick marks sit between the axis and the text.
+
+    Line rows (plot borders, grid, offset spines) are blanked first so tick marks that
+    touch them become components of their own; a line is still a line in the per-row
+    logic that _label_band uses. A narrow component is masked only when there is no
+    ink in the same row range within `isolate` columns on either side, so narrow
+    glyphs on either end of a label (the "1" of "1000", a trailing digit) are kept.
+    """
+    n, m = ink.shape
+    # Rows made entirely of ink across the window are the plot border or a drawn line.
+    # Zero them before the component walk so tick marks hanging off the border become
+    # components of their own; the per-row logic still sees the lines later.
+    row_count = ink.sum(1)
+    cleaned = ink.copy()
+    cleaned[row_count >= max(4, int(0.8 * m))] = False
+    nlab, labels = cv2.connectedComponents(cleaned.astype(np.uint8))
+    out = ink.copy()
+    for i in range(1, nlab):
+        where = labels == i
+        rows, cols = np.where(where)
+        if rows.size == 0:
+            continue
+        r0, r1 = int(rows.min()), int(rows.max())
+        c0, c1 = int(cols.min()), int(cols.max())
+        if r0 > 4 or (r1 - r0 + 1) > max_h or (c1 - c0 + 1) > max_w:
+            continue
+        # Does the component stand alone? A tick mark has empty space on both sides
+        # at its own rows; a text glyph has its neighbours in the same row range.
+        rs, re = r0, r1 + 1
+        left_lo, left_hi = max(0, c0 - isolate), c0
+        right_lo, right_hi = c1 + 1, min(m, c1 + 1 + isolate)
+        if left_hi > left_lo and ink[rs:re, left_lo:left_hi].any():
+            continue
+        if right_hi > right_lo and ink[rs:re, right_lo:right_hi].any():
+            continue
+        out[where] = False
+    return out
+
+
 def _row_shapes(ink: np.ndarray, lo: int, hi: int) -> tuple[np.ndarray, np.ndarray]:
     """Per row of an [across, along] ink window: is it a drawn line (one continuous run of ink over at least
     80% of the along-extent [lo, hi], the plot's), and is it narrow (ink within 4 px, a tick mark's width)."""
@@ -907,6 +954,7 @@ def label_from_source(img: np.ndarray, pos: float, axis_at: float, outward: int,
     if peak < 30:
         return None
     ink = contrast > max(20.0, 0.25 * peak)
+    ink = _mask_tick_marks(ink)
 
     # A line is judged over the plot's own extent along the axis: an offset spine ends with the plot, and
     # the window of an end tick reaches past it.
@@ -921,7 +969,11 @@ def label_from_source(img: np.ndarray, pos: float, axis_at: float, outward: int,
     if band is None:
         return None
     r0, r1 = band
-    # The ink colour of the label, from the darkest pixels of its first glyph run; then only that ink counts.
+    # The ink colour of the label, from the darkest pixels of its first glyph run; then only that
+    # ink counts. The colour filter decides which ROWS to keep for the band; the along-axis extent
+    # still uses the raw ink, so anti-aliased glyph edges on a small label do not get stripped
+    # from the leading or trailing digit.
+    raw_ink = ink
     first = ink[r0:r1 + 1] & (contrast[r0:r1 + 1] >= 0.7 * contrast[r0:r1 + 1].max())
     if first.sum() >= 2:
         colour = np.median(win[r0:r1 + 1][first], axis=0)
@@ -934,7 +986,7 @@ def label_from_source(img: np.ndarray, pos: float, axis_at: float, outward: int,
             band = _label_band(ink2, *_row_shapes(ink2, lo, hi), horizontal, max_h)
             if band is not None:
                 ink, (r0, r1) = ink2, band
-    band_ink = ink[r0:r1 + 1]
+    band_ink = raw_ink[r0:r1 + 1]
     along = np.nonzero(band_ink.any(0))[0]
     if len(along) == 0:
         return None
@@ -978,8 +1030,13 @@ def refine_labels(img: np.ndarray, ex: Extraction) -> Extraction:
         if not ticks:
             continue
         horizontal = key == "xticks"
-        p = np.sort(np.array([t["pos"] for t in ticks]))
-        spacing = float(np.median(np.diff(p))) if len(p) > 1 else 60.0
+        # Duplicate ticks (two heat peaks on one tick, two sem components for one tick) collapse
+        # the median spacing to zero and shrink the along-axis window below one glyph. Measure the
+        # spacing from unique positions, rounded to the pixel, before computing the window.
+        uniq = np.unique(np.round([t["pos"] for t in ticks]).astype(int))
+        d = np.diff(np.sort(uniq)) if len(uniq) > 1 else np.array([60.0])
+        d = d[d > 0]
+        spacing = float(np.median(d)) if len(d) else 60.0
         half = max(6.0, 0.48 * spacing)
         bands: list[tuple[int, int]] = []
         for t in ticks:
