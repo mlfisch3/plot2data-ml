@@ -20,7 +20,9 @@ import sys
 import cv2
 import numpy as np
 
-ML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+# P2D_ROOT selects which tree's p2d is imported: the frozen baseline worktree for "before" numbers,
+# this worktree (the default) for "after" numbers.
+ML = os.environ.get("P2D_ROOT") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, ML)
 
 from p2d.eval_corpus import CORPUS, _t  # noqa: E402

@@ -60,3 +60,9 @@ Ranked candidates (expected gain on the scoreboard):
 6. Dash gaps: interpolate across short gaps instead of the network estimate; small.
 
 Going after 1 first, then 2, then 3.
+
+## Wed 28 Oct 2026, 02:00 EDT (curator)
+
+Diagnosis on 200 mpl-val charts written to the mailbox and CASES.md sections 1 to 4 (lines, peaks, ticks, frame).
+Provenance: `out/t3/diag-base.pkl` was written 01:54:14, the first live edit to `p2d/extract.py` was 01:55:44, and the plotly-v1 collection started 01:54:18 (module imported before the edit); both are clean baselines.
+From now on every baseline run imports p2d from the frozen tree (`P2D_ROOT=/home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/base/ml`), supported by `scripts/diag.py` and `scripts/corpus_diag.py`; the queued probe-set and corpus runs were stopped (own pids only, matched on this team's file names) and re-queued that way.

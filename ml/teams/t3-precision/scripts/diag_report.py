@@ -159,7 +159,7 @@ def main() -> None:
                 print(f"  {lab:>12s} {m.sum():5d} {np.mean(inn[m]):+8.3f} {np.median(inn[m]):+8.3f} {np.median(np.abs(inn[m])):8.3f} "
                       f"{np.quantile(np.abs(inn[m]), 0.9):8.3f} {100 * np.mean(inn[m] > 1):6.1f} {100 * np.median(np.abs(inn[m]) / ph_[m]):8.3f}")
 
-        pk_table("angle at the vertex (deg; 180 = straight)", "angle", [0, 30, 60, 90, 120, 150, 181], ["<30", "30-60", "60-90", "90-120", "120-150", ">150"])
+        pk_table("turning angle at the vertex (deg; 0 = straight, 180 = needle)", "angle", [0, 30, 60, 90, 120, 150, 181], ["<30", "30-60", "60-90", "90-120", "120-150", ">150"])
         pk_table("width 2 px below the tip (cols)", "w_2px", [0, 2, 4, 8, 16, 1e9], ["<2", "2-4", "4-8", "8-16", ">16"])
         pk_table("line width (px)", "lw", [0, 1.2, 2, 3, 4, 1e9], ["<1.2", "1.2-2", "2-3", "3-4", ">4"])
         pk_table("canvas scale", "scale", [0, 0.5, 0.7, 0.999, 1.5, 9], ["<0.5", "0.5-0.7", "0.7-1", "1.0", ">1"])

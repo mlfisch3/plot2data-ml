@@ -23,7 +23,9 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-ML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+# P2D_ROOT selects which tree's p2d is imported: the frozen baseline worktree for "before" numbers,
+# this worktree (the default) for "after" numbers.
+ML = os.environ.get("P2D_ROOT") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, ML)
 
 from p2d.data import H_CORNER, H_VERTEX, apply, turning_vertices  # noqa: E402
