@@ -132,8 +132,18 @@ def analyse(meta, img, sem_gt, inst_gt, out, M, ex, lab_store):
         tp_capped = int((D[gi2, pj2] <= rad).sum())
     # The centre matplotlib actually drew: Agg stamps markers at integer pixel positions, so the drawn
     # centre is round(display) = floor(recorded + 1) in each axis (verified on isolated markers to 0.05 px).
-    snapped = meta.get("generator") in ("matplotlib", "probe_t4") and meta.get("marker_centre") != "drawn"
-    gm_drawn = np.floor(gm + 1.0) if snapped else gm
+    # A set that records it (`markers_drawn_px`, probe_t4) is believed as it is.
+    if any("markers_drawn_px" in sr for sr in meta["series"]):
+        gd = [np.array(sr["markers_drawn_px"]).reshape(-1, 2) for sr in meta["series"] if sr["markers_px"]]
+        ga = [np.array(sr["markers_px"]).reshape(-1, 2) for sr in meta["series"] if sr["markers_px"]]
+        gd = np.vstack(gd) if gd else np.zeros((0, 2))
+        ga = np.vstack(ga) if ga else np.zeros((0, 2))
+        inside = (ga[:, 0] >= pa[0]) & (ga[:, 0] <= pa[2]) & (ga[:, 1] >= pa[1]) & (ga[:, 1] <= pa[3])
+        gm_drawn = gd[inside]
+    elif meta.get("generator") == "matplotlib":
+        gm_drawn = np.floor(gm + 1.0)
+    else:
+        gm_drawn = gm
 
     # Raw peaks and their embedding labels, in source px.
     frame_canvas = apply(M, [[ex.plot_area[0], ex.plot_area[1]], [ex.plot_area[2], ex.plot_area[3]]]).reshape(-1).tolist() if ex.plot_area else None
