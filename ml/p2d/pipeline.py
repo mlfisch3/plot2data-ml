@@ -133,13 +133,16 @@ def _end_search(img: np.ndarray, ex: Extraction, axis: str) -> list[list[int]]:
                 continue
             r0, r1 = int(rows.min()), int(rows.max())
             c0, c1 = int(cols.min()), int(cols.max())
-            # Keep text-shaped components: tall enough to be text, wide enough for 2+ glyphs,
-            # not a long horizontal line.
+            # Keep text-shaped components. The hyphen of "1e-5" is 1-2 rows tall and 2-4 cols
+            # wide; it joins its neighbours later. A long horizontal line (an axis spine or
+            # under-line) is excluded by the aspect check.
             w, h = c1 - c0 + 1, r1 - r0 + 1
-            if h < 4 or h > 40 or w < 4 or w > 300:
+            if h < 1 or h > 40 or w < 1 or w > 300:
                 continue
-            if w > 10 * h:
-                continue
+            if w > 12 * h and h <= 2:
+                continue  # a bar/underline, not a hyphen
+            if h > 12 * w:
+                continue  # a vertical line
             cands.append([rx0 + c0, ry0 + r0, rx0 + c1 + 1, ry0 + r1 + 1])
     # Join components close along the horizontal axis into one box (digits + 'e' + exponent).
     # Gap grows with the height of the two pieces: `1e` + `-` + `5` has larger gaps than a single
