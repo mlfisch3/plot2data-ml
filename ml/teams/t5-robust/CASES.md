@@ -79,29 +79,48 @@ Inference-touching commits between the two are 72d21cf (native-resolution pass, 
 
 | source | median | worst | failed | notes |
 | --- | --- | --- | --- | --- |
-| base | 0.067% | 61.222% (offset-annotation) | 0 | log-y 4/1, log-y-multi 5/2, log-log 2/1 (ghost minor log gridlines); linear-single-nogrid 0.194%; retina-2x 0.109% |
-| a7aed7d | 0.080% | 61.222% (offset-annotation, same) | 0 | log-y 3/1, log-y-multi 2/2, **log-log 24/1** (new ghosts); nogrid 0.163%; retina-2x 0.066% |
+| base (6b313e9) | 0.067% | 61.222% (offset-annotation) | 0 | log-y 4/1, log-y-multi 5/2, log-log 2/1 (ghost minor log gridlines); linear-single-nogrid 0.194%; retina-2x 0.109% |
+| a7aed7d --fit-canvas | **0.066%** | **1.326%** (log-log cov 68%) | 0 | log-y 2/1, log-y-multi 4/2, log-log 2/1, **offset-annotation 0.019% WARN "y scaled by 1e6"**: all 259b09d fixes work |
+| a7aed7d --native | 0.080% | 61.222% | 0 | log-y 3/1, log-y-multi 2/2, **log-log 24/1 (regression)**; nogrid 0.163%; retina-2x 0.066% |
+| t5-zoom + a7aed7d --native | 0.080% | 61.222% | 0 | **log-log 1/1 (training fixes it)**, log-y 1/1, retina-2x 0.061%; offset-annotation unchanged |
+| t5-zoom + --tta shift (submission) | 0.072% | 0.580% | 0 | **offset-annotation 0.020% WARN**, log-log 1/1, all easier cases unchanged |
 
-Two things to call out:
+The ablation is clean: 259b09d's fixes (ROI, grid-ghost drop, multiplier box, log-decade) all work in fit-canvas mode (a7aed7d --fit-canvas drops the worst case from 61.222% to 1.326%). The native-mode pass regresses offset-annotation and log-log because:
 
-- **log-log found 24/1 at a7aed7d** vs 2/1 at base. The 259b09d "drop a traced line that sem calls GRID by majority" fix cut log-y (4/1 to 3/1) and log-y-multi (5/2 to 2/2), but log-log regressed from 2/1 to 24/1. Hypothesis: at native scale 1.0 the minor-log gridline pixels are too crisp for sem to call GRID by majority, so the drop rule stops firing. Confirmable by probe_net.py; queued in `t5-gpu-queue7.sh`.
-- **offset-annotation stays at 61.222%** at a7aed7d. The axis_factor box test went from `b[3] <= y0 + 3` to `cy < y0` in 259b09d; the measured box ([9,2,35,22], cy=12, y0=17.2) should pass. Either the box is no longer in `loose_labels`, or a secondary guard rejects it. Also queued for probe_net.
+- **offset-annotation at native**: the "1e6" box IS in loose_labels (src[10,2,24,22], 280 px, sem argmax=TICK_LABEL on 23% of its pixels; label_boxes finds the connected component through dilation). axis_factor's geometry check PASSES (cy=12 < y0=17.6; |cx-x0|=9.2 < 0.25*w=212). But the OCR crop at native scale clips the 14x20 glyphs: the reader's output does not match `_MULT = ^(?:x|\(x)?(?:1e([-+]?\d+)|10\^([-+]?\d+))\)?$`, so axis_factor returns (1.0, 0.0, None) and the warning does not fire. At fit-canvas (scale 0.853x) the 12x17 crop reads "1e6" cleanly. See `out/t5/probe-regr.txt`.
+- **log-log at native**: 23 of 24 series are minor-log gridlines in gridline grey (224,224,224). The drop rule in extract is `[f for f in lines if not _mostly(f, sem[GRID] > 0.5, 0.5)]`: a line is dropped iff more than 50% of its ridge-centre pixels have sem argmax = GRID. In native mode 21 of the 23 ghosts have GRID-fraction < 0.5 (measured per-series: 0.12, 0.34, 0.20, 0.54, 0.36, 0.51, 0.11, 0.08, 0.01, 0.08, 0.44, 0.05, 0.38, 0.00, 0.04, 0.19, 0.00, 0.34, 0.45, 0.00, 0.41, 0.00, 0.00). Mechanism: at native scale 1.0 the gridlines are 1 pixel wide, sem's softmax spreads probability across neighbours, the ridge-centre pixel often lands on a pixel sem argmax=BG even though it visibly BELONGS to a gridline. At fit-canvas the gridlines are compressed below 1 canvas px and sem calls them GRID consistently; log-log stays at 2/1.
+
+Both regressions are patched by the submission's other ingredients:
+
+- **t5-zoom checkpoint fixes log-log**: the zoom-crop fine-tune (3,000 iters at zoom 0.35 from v3) trains the net on crops at native resolutions. sem learns to call native-scale gridlines GRID consistently; log-log drops to 1/1.
+- **--tta shift fixes offset-annotation**: a half-pixel-shifted forward pass produces a slightly different sem connected component; the OCR crop at the slightly different coordinates reads "1e6", the fused mean clears label_boxes's threshold, axis_factor fires, factor 1e6 applied. (The brainstormer's measurement, confirmed on tta-shift-corpus.txt.)
 
 ### 9.2 Chart.js synthetic probe (`data/t5-chartjs-val`, 100 charts; the renderer no v3 training touched)
 
-| metric | base | a7aed7d |
-| --- | --- | --- |
-| line_rms_median_pct (all / simple) | 0.343 / 0.285 | 0.308 / 0.252 |
-| line_found | 0.773 | 0.795 |
-| peak_err_median_pct (all / simple) | 0.636 / 0.408 | 0.454 / 0.260 |
-| marker_recall / precision | 0.590 / 0.813 | 0.557 / 0.727 |
-| yticks_err_median_px | 0.751 | 0.637 |
-| frame_found | 0.920 | 0.920 |
-| frame_err_median_px / p90 | 2.06 / 26.8 | 1.15 / 22.5 |
-| calib_y_within_0.5pct | 0.84 | 0.81 |
-| calib_y_err_median_pct | 0.234 | 0.207 |
+End-to-end:
 
-Small net win on Chart.js on a renderer v3 never saw: trace quality improves (peak_err -30%, line_rms -10%); yticks residual drops 15% (the frame-independent snap pays for itself where there is a snap target); marker precision drops a few points (grid-ghost drop missing some, or extra traced lines kept at native resolution).
+| metric | base | a7aed7d | t5-zoom (ckpt swap) | submission (t5-zoom + --tta shift) |
+| --- | --- | --- | --- | --- |
+| line_rms_median_pct (all / simple) | 0.343 / 0.285 | 0.308 / 0.252 | 0.280 / 0.258 | TBD (queue8) |
+| line_found | 0.773 | 0.795 | 0.784 | TBD |
+| peak_err_median_pct (all / simple) | 0.636 / 0.408 | 0.454 / 0.260 | 0.449 / 0.240 | TBD |
+| marker_recall / precision | 0.590 / 0.813 | 0.557 / 0.727 | 0.613 / 0.715 | TBD |
+| yticks_err_median_px | 0.751 | 0.637 | 0.662 | TBD |
+| frame_found | 0.920 | 0.920 | 0.900 | TBD |
+| frame_err_median_px / p90 | 2.06 / 26.8 | 1.15 / 22.5 | 1.22 / 20.0 | TBD |
+| calib_y_within_0.5pct | 0.84 | 0.81 | 0.80 | TBD |
+| calib_y_err_median_pct | 0.234 | 0.207 | 0.208 | TBD |
+
+Geometry only (`--refine`):
+
+| metric | base | a7aed7d | t5-zoom |
+| --- | --- | --- | --- |
+| line_rms_median_pct (all / simple) | 0.167 / 0.099 | 0.160 / 0.074 | 0.119 / 0.069 |
+| line_found | 0.870 | 0.887 | 0.854 |
+| peak_err_median_pct | 0.502 / 0.268 | 0.362 / 0.152 | 0.336 / 0.133 |
+| marker_recall | 0.672 | 0.682 | 0.705 |
+
+Small net win on Chart.js on a renderer v3 never saw: trace quality improves (peak_err -30% at a7aed7d, another -8% at zoom); yticks residual drops 15%; zoom improves line_rms_median another -8% in refine mode. Marker precision drops a few points at a7aed7d (grid-ghost drop or extra traced lines kept at native resolution); zoom recovers marker recall (+6pt) at a cost of frame_found (-2pt). calib_y drops 3pt at a7aed7d, flat at zoom - the frame-independent y snap now has snap targets on more charts, so unsnapped Chart.js y labels with the -1 px bias (section 9.3) land in the fit less often, but the few that remain still carry 1 px of calibration bias.
 
 ### 9.3 Tick-position bias by renderer (`tick-bias-v3.txt`; base code + v3 ckpt)
 
@@ -173,32 +192,51 @@ When a frame IS found and off, it is off by many more canvas pixels at native mo
 
 ### 9.7 Real-chart benchmark (`data/t5-real`, 30 charts, 60 truth series)
 
-Scored against the publisher's data; RMS in % of the data span (not axis span); 80% x-range coverage threshold for "found".
+Scored against the publisher's data; RMS in % of the data span (not axis span); 80% x-range coverage threshold for "found". Measured by `p2d.eval_t5real` (live tree) and the baseline by `teams/t5-robust/tools/real_bench_pkg.py` (new shim: loads base's p2d package via P2D_ROOT so the baseline numbers come from the frozen pipeline).
 
 | source | found | median rms | median of found | within 1% | within 0.5% | failed |
 | --- | --- | --- | --- | --- | --- | --- |
-| base (v3 code + v3 ckpt) | TBD (queue7) | TBD | TBD | TBD | TBD | TBD |
-| a7aed7d | 57% | 0.48% | 0.47% | 42% | 35% | 18 (12 OWID + 6 FRED-y) |
+| base (6b313e9 code + v3 ckpt) | **67%** | 1.86% | 1.99% | 28% | 25% | 15 |
+| a7aed7d + v3 ckpt | 57% | **0.48%** | 0.47% | **42%** | **35%** | 18 |
+| t5-zoom + a7aed7d | 57% | 0.75% | 0.44% | 40% | 35% | 16 |
+| submission (t5-zoom + --tta shift) | TBD (queue8) | TBD | TBD | TBD | TBD | TBD |
 
-The base number was never captured by the predecessor (the `-m p2d.eval_t5real` invocation failed from the base worktree because that file lives only on t5-robust). `teams/t5-robust/tools/real_bench_pkg.py` (new) loads base's p2d package through `P2D_ROOT` and runs the loader against our data; queued in `t5-gpu-queue7.sh`.
+a7aed7d finds 10pt fewer series than base but is 74% more accurate on median rms, +14pt within-1%, +10pt within-0.5%. Three charts shift from catastrophically wrong to within 0.1% at a7aed7d:
+
+- **owid-population-3**: base 3 series found at cov 0% nan% (calibration got the axis fundamentally wrong on all three); a7aed7d 3 series at 0.03% / 0.05% / 0.03% with cov 99 / 99 / 88%. "Unusable" to "within 0.05%".
+- **owid-co2-per-capita**: base reports 13.83% / 29.46% / 23.17% / 16.02% with WARN "y axis: values scaled by the printed '-3'" (base's axis_factor fires on a figure legend printed near the plot, scales values by 10^-3). a7aed7d: 0.36% / 0.35% / 0.30% / 0.60%. The 259b09d multiplier-box tolerance saves it (relaxed from `b[3] <= y0 + 3` to `cy < y0`, so the near-the-plot legend text no longer matches as a multiplier).
+- **owid-renewables**: base 0.17 / 1.06 / 0.38 / 0.22, a7aed7d 0.21 / 0.66 / 0.29 / 0.19. Modest.
+
+One chart that trades at a7aed7d:
+
+- **owid-annual-co2-log**: base finds 4 series but misreads the log y axis as linear (50-88% rms). a7aed7d declines to calibrate (nan%). Fail-safe behaviour under 259b09d's log-needs-a-decade rule.
 
 What dominates the 18 failures at a7aed7d:
 - 7 OWID y-axes fail to calibrate because the labels carry a unit word ("80 years", "1 billion", "20%"); the reader strips the digits and parses the rest to None. Fixable in `parse_value`.
 - 4 FRED y-axes fail to calibrate on tinted paper (gridlines are 10 grey levels, `_pick_line` floor is 12; so no y snap targets and the label-only estimate has 1.1 px of label-bias).
 - 2 OWID log-y axes read linearly (minor-decade labels confuse the detector).
 
-### 9.8 Standard scoreboard, end-to-end, same checkpoint (`runs/v3/best.pt`)
+t5-zoom degrades the median rms over a7aed7d (0.75 vs 0.48) because two charts regress (owid-military rows 82-190% at zoom vs 6% at a7aed7d; owid-gdp-per-capita-log one series 13.9% at zoom vs 0.19% at a7aed7d), but it saves 2 failures (18 to 16) and holds within-0.5% at 35%. If --tta shift (queue8) averages out the zoom regressions, the submission is a clean dominance over base; if not, the brainstormer may want to assess dropping t5-zoom for the real benchmark alone.
+
+### 9.8 Standard scoreboard, end-to-end, same checkpoint (`runs/v3/best.pt` unless noted)
 
 mpl-val (200), Plotly-v1 (150), all split; "code" is the pipeline under test:
 
-| set | code | line_rms_median | peak_err_median | marker_recall | frame_err_median_px | frame_found | calib_y_within_0.5pct |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| mpl-val | base | 0.441% | 2.29% | 0.481 | 1.42 | 0.890 | 0.775 |
-| mpl-val | a7aed7d (native) | 0.299% | 1.84% | 0.531 | 1.21 | 0.900 | 0.790 |
-| plotly-v1 | base | n/a (viz crashed) | | | | | |
-| plotly-v1 | a7aed7d (native) | 0.229% | 1.01% | 0.454 | 0.57 | 0.953 | 0.887 |
+| set | code | ckpt | line_rms_median | peak_err_median | marker_recall | frame_err_median_px | frame_found | calib_y_within_0.5pct |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mpl-val | base | v3 | 0.441% | 2.29% | 0.481 | 1.42 | 0.890 | 0.775 |
+| mpl-val | a7aed7d --fit-canvas | v3 | 0.437% | 2.40% | 0.481 | 1.42 | 0.890 | 0.775 |
+| mpl-val | a7aed7d --native | v3 | 0.299% | 1.84% | 0.531 | 1.21 | 0.900 | 0.790 |
+| mpl-val | a7aed7d --native | t5-zoom | 0.293% | 1.66% | 0.540 | 1.08 | 0.910 | 0.800 |
+| plotly-v1 | base | v3 | 0.250% | 1.34% | 0.418 | 0.64 | 0.940 | 0.860 |
+| plotly-v1 | a7aed7d --fit-canvas | v3 | 0.249% | 1.34% | 0.419 | 0.64 | 0.940 | 0.860 |
+| plotly-v1 | a7aed7d --native | v3 | 0.229% | 1.01% | 0.454 | 0.57 | 0.953 | 0.887 |
+| plotly-v1 | a7aed7d --native | t5-zoom | 0.228% | 1.00% | 0.443 | n/a | 0.947 | n/a |
 
-Base plotly numbers are not in hand because the predecessor's `--viz` crashed in `evaluate.draw` on a non-finite coordinate (chart 13 of plotly-v1). Re-queued without `--viz` in `t5-gpu-queue7.sh`.
+Reading:
 
-a7aed7d brings a measured end-to-end gain on both standard sets: mpl-val line_rms -32% (0.441 to 0.299), peak_err -20%; Plotly line_rms better than base's reported level in RESULTS.md. These are the numbers the brainstormer's REPORT.md should carry.
+- **The native pass is the gain**. On both mpl-val and Plotly, `a7aed7d --fit-canvas` is indistinguishable from base. All of the a7aed7d win comes from the native-resolution forward pass (72d21cf), not from the 259b09d bundle (ROI, grid-ghost drop, multiplier-box, log-decade). 259b09d still matters on charts the standard scoreboard does not stress: offset-annotation in the corpus (section 9.1) and the three OWID charts in the real benchmark (section 9.7).
+- **t5-zoom adds a small further gain** on mpl-val (0.299 to 0.293 line_rms, 1.84 to 1.66 peak_err) and holds the plotly gain. More importantly, it fixes the native-mode regressions on the corpus (section 9.1).
+
+Base plotly numbers ARE in hand (the predecessor's `--viz` crash hid the `--json` run that completed; metrics text file is intact).
 
