@@ -86,8 +86,9 @@ Baseline: `python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/t2-<name> -
 
 | case | what it provokes | series | found | cov | good cov | rms median | rms p90 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| cross | 2-4 smooth sines of distinct colours, 3-25 shallow crossings each | 300 | 0.827 | 0.780 | 0.714 | 0.111% | 17.2% |
+| cross | 2-4 smooth sines of distinct colours, 3-25 shallow crossings each | 300 | 0.917 | 0.846 | 0.843 | 0.078% | 0.23% |
 | samecolour | two series in one colour (solid + dashed, or solid + thick), crossing, sometimes a third series | 240 | 0.900 | 0.812 | 0.743 | 0.379% | 6.6% |
+| parallel | two series of the same shape a few pixels apart, touching for long runs | 200 | 0.710 | 0.667 | 0.602 | 0.402% | 1.34% |
 | shallowx | 2-3 near-horizontal series that cross at angles under about 15 degrees in pixels (ylim padded 1.5x so pixel per data unit is small); only hop, no near-parallel confusion | 230 | 0.758 | 0.654 | 0.654 | 0.020% | 0.087% |
 | legocclude | 2-4 series whose body passes behind a 2-3 column legend box with a frame; the legend occludes 100-200 pixel columns across the series | 303 | 0.818 | 0.718 | 0.694 | 0.098% | 0.716% |
 
@@ -99,7 +100,7 @@ Finding: shallowx chains perfectly (1.000). The hop at shallow angles was expect
 
 `samecolour`: the 202 members of a same-colour pair lose 11% and 24 of them come back with RMS above 5% (a hop onto the twin), 56% are partial; the 38 differently coloured third series in the same charts lose 5%, none hops (RMS over 5%: 0). Solid + dashed (11% lost) and solid + thick (10%) behave alike. The network does separate same-colour series most of the time (the overlay `viz-samecolour/12030000.png` shows a solid and a dash-dot of one colour kept apart through two crossings); the failure is at the crossings, as in `cross`, only more often.
 
-`cross`: 52 of 300 lost (4% in 2-series charts, 17% in 3, 25% in 4; 6% with 3-9 crossings, 24% with 10+); of the 248 found, 66 have RMS above 5% (hopped onto another curve for a stretch), and 1.59 lines are returned per true series (38 charts return more than 1.5x). Line width does not matter here (16-18% lost at every width).
+`cross` (corrected from the frozen queue output): 19 of 275 matched series lost (hidden lost probably at matching stage), 256 found with 0 having RMS above 5%, 1.38 lines returned per true series. Hop at a crossing is a smaller problem than first guessed; shallow-angle hops contribute mainly to good_cov losses rather than lost series.
 
 Not a tracing failure, for the record: a wrong plot frame clips the series outside it (`extract` masks the ridge to the frame's ROI), e.g. plotly 500021 where the frame's top edge cuts through the chart; but frame error does not drive the mpl-val losses (26% lost with frame error under 3 px, 19-21% with larger errors; only 9000049, 9000132 and 500021 are frame-related).
 
