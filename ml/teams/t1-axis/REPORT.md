@@ -9,7 +9,7 @@ finder, an explicit search for printed multipliers at axis ends, and
 90-degree de-rotation of tall tick-label crops.
 
 On mpl-val (200 charts):
-- **both axes within 0.5%** (CPU-only ablation): 67.5 -> 81.5 (**+14 pts**)
+- **both axes within 0.5%** (CPU-only ablation on HEAD 3c73e75): 67.5 -> **83.0 (+15.5 pts)**
 - line_found (all): 0.547 -> 0.636 (**+8.9 pts**)
 - line_found (simple): 0.624 -> 0.725 (**+10.1 pts**)
 - line_good_cov_mean: 0.407 -> 0.493 (+8.6)
@@ -63,7 +63,7 @@ two large components; "src" = colour-aware source-pixel label boxes,
 | v3 baseline (plain-net) | 84.5 | 16 | 91.0 | 76.5 | 12 | 89.0 | 67.5 |
 | joint-net (joint, net boxes) | 85.5 | 13 | 91.5 | 84.0 | 9 | 95.0 | 75.0 |
 | plain-src (plain fit, source boxes) | 86.0 | 15 | 91.0 | 79.5 | 5 | 91.5 | 71.0 |
-| joint-src (joint + source + multiplier) | **89.5** | **5** | **95.0** | **87.0** | **3** | **94.5** | **81.5** |
+| joint-src + multiplier + dedup (current) | **90.5** | **5** | **96.0** | **89.0** | **3** | **96.5** | **83.0** |
 
 ### Full mpl-val before / after:
 
