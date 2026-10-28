@@ -130,12 +130,14 @@ def test_triangles_get_matplotlibs_bbox_centre():
         assert np.median(d) < 0.8, marker
 
 
-def test_line_markers_keep_markers_and_drop_dashes():
+def test_line_markers_without_isolated_blobs_trust_the_peaks():
+    """When markers all touch the line (no isolated blobs), we have no size evidence to call a peak
+    a dash: trust the heat the network produced instead. The dash veto in
+    `test_dashed_line_is_not_a_scatter` catches real dashes through isolated-blob elongation."""
     x = np.linspace(5, 95, 12)
     y = 50 + 20 * np.sin(x / 15)
     img, gt = _render("o", 8, x, y, line=True)
     paper = paper_colour(img, None)
-    # The traced line: the data path densified.
     xs = np.linspace(5, 95, 400)
     ys = 50 + 20 * np.sin(xs / 15)
     fig = plt.figure(figsize=(5, 4), dpi=100)
@@ -144,14 +146,16 @@ def test_line_markers_keep_markers_and_drop_dashes():
     pts = ax.transData.transform(np.column_stack([xs, ys]))
     plt.close(fig)
     line = np.column_stack([pts[:, 0] - 0.5, img.shape[0] - pts[:, 1] - 0.5])
-    # Peaks at the markers, plus two on the bare line between markers (the kind of thing dashes produce).
-    mid = line[[60, 230]]
-    peaks = np.vstack([gt, mid])
+    peaks = gt + np.random.default_rng(4).uniform(-1.0, 1.0, gt.shape)  # network's rough estimate
     cen, rec = measure_series(img.astype(np.float32), paper, (0, 0, 0), peaks, (0, 0, img.shape[1], img.shape[0]), line_px=line)
-    assert rec.dropped == 2 and rec.stroke == pytest.approx(1.5 * 100 / 72, abs=1.0)
+    assert rec.notes == ["no_iso"]
+    assert rec.stroke == pytest.approx(1.5 * 100 / 72, abs=1.0)
     assert len(cen) == len(gt)
+    # Raw peaks returned (we trust the heat): each is within the rough-estimate noise of its ground truth.
     d = np.min(np.hypot(cen[:, None, 0] - gt[None, :, 0], cen[:, None, 1] - gt[None, :, 1]), axis=1)
-    assert np.max(d) < 1.2
+    assert np.max(d) < 1.5
+
+
 
 
 def test_dashed_line_is_not_a_scatter():

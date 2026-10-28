@@ -359,10 +359,14 @@ def measure_series(img_f: np.ndarray, paper: np.ndarray, colour, peaks: np.ndarr
 
     keep = np.ones(len(pk), bool)
     # A peak on the owning line that is no wider than the line's stroke is the line itself.
+    # The per-peak veto only informs when markers are confusable with the stroke: when there are
+    # isolated markers to measure a size against (`iso` >= 3) AND that size is close to the stroke.
+    # If the series' isolated markers are visibly bigger than the stroke, trust the heat peaks on
+    # the line - size_at measures cardinal half-runs and fails on sparse shapes like X, x, *, +.
     if line_px is not None and len(line_px) >= 3:
         stroke = line_stroke(w, line_px - [x0, y0])
         rec.stroke = stroke
-        if stroke > 0:
+        if stroke > 0 and len(iso) >= 3 and size <= stroke + 2.0:
             need = max(1.5 * stroke, stroke + 2.0)
             for i, (x, y) in enumerate(pk):
                 if size_at(mask, x, y) < need:
@@ -373,10 +377,21 @@ def measure_series(img_f: np.ndarray, paper: np.ndarray, colour, peaks: np.ndarr
     if len(pk) == 0:
         return np.zeros((0, 2)), rec
 
+    # Fall back to raw heat peaks when no isolated markers are available: without a size and shape
+    # confirmed on isolated blobs, the mixture centroid may be far from the drawn centre for
+    # asymmetric shapes (triangle: size/6 off), and the line-stroke test above has been skipped on
+    # the same grounds. The raw peaks come from the network trained on the drawn centre.
+    if len(iso) < 3:
+        rec.notes.append("no_iso")
+        return pk + [x0, y0], rec
+
     # Markers the heat merged: a blob holding more ink than its peaks account for gets extra seeds.
+    # Only trusted when area1 is measured from enough isolated blobs; the extras are also capped per
+    # blob so a huge merged component can't flood the mixture with arbitrary seeds (14000064).
     seeds = pk.copy()
-    if add_seeds and area1 > 0 and line_px is None:
+    if add_seeds and len(iso) >= 5 and area1 > 0 and line_px is None:
         extra = []
+        max_extras_per_blob = 3
         for c in np.unique(comp):
             if c == 0:
                 continue
@@ -388,13 +403,17 @@ def measure_series(img_f: np.ndarray, paper: np.ndarray, colour, peaks: np.ndarr
             ys, xs = np.nonzero(lab == c)
             cand = np.column_stack([xs, ys]).astype(np.float64)
             cur = list(seeds[comp == c]) + extra
+            added_here = 0
             for _ in range(m - k):
+                if added_here >= max_extras_per_blob:
+                    break
                 d = np.min(np.linalg.norm(cand[:, None, :] - np.array(cur)[None], axis=2), axis=1) if cur else np.full(len(cand), 1e9)
                 j = int(np.argmax(d))
                 if d[j] < 0.5 * size:
                     break
                 cur.append(cand[j])
                 extra.append(cand[j])
+                added_here += 1
         if extra:
             seeds = np.vstack([seeds, np.array(extra)])
             rec.added = len(extra)
@@ -421,6 +440,10 @@ def measure_series(img_f: np.ndarray, paper: np.ndarray, colour, peaks: np.ndarr
     # Conventions, read off the isolated blobs. The data point of a marker is the origin of its path:
     # the centroid for every shape but the triangles, whose origin (in matplotlib) is the bounding-box
     # centre. The offset from centroid to bbox centre is measured on the isolated blobs and applied to all.
+    # Without isolated blobs we cannot see which shape the series uses, so the centroid risks being
+    # several pixels off the drawn centre for anything asymmetric (triangles, stars). In that case we
+    # fall back to the heat peaks the network gave us - its training targets the drawn centre on the
+    # synthetic charts, and the raw peak is closer than the centroid for asymmetric shapes.
     apex, offs = [], []
     for i, c, e, area, bw, bh in iso:
         bx, by, patch = blob_patch(c)

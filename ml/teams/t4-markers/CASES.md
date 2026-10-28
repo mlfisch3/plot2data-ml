@@ -131,7 +131,9 @@ Measured in this worktree with the brainstormer's committed change (`af04090`), 
 | mpl-val 200 | marker_recall | 0.593 / 0.845 | 0.544 / 0.826 | -0.048 / -0.019 |
 | mpl-val 200 | marker_precision | 0.704 / 0.825 | 0.812 / 0.896 | +0.108 / +0.071 |
 | mpl-val 200 | marker_err_median_pct | 0.128 / 0.112 | 0.082 / 0.070 | -0.047 / -0.042 |
-| plotly 150 | marker_recall / precision / err | pending | pending | pending |
+| plotly 150 | marker_recall | 0.465 / 0.829 | 0.399 / 0.780 | -0.066 / -0.049 |
+| plotly 150 | marker_precision | 0.798 / 0.819 | 0.903 / 0.915 | +0.105 / +0.096 |
+| plotly 150 | marker_err_median_pct | 0.091 / 0.081 | 0.030 / 0.025 | -0.061 / -0.056 |
 
 The error cut by about a third, precision up by 10 points, recall down a touch (and most of that is on the rope charts in "all"). On "simple" (the one that describes screenshots) precision gains 7 points at the cost of 2 recall points.
 
@@ -139,9 +141,9 @@ The error cut by about a third, precision up by 10 points, recall down a touch (
 
 | set | recall v3 -> step23 | precision v3 -> step23 | err v3 -> step23 (raw %) | FP causes delta | FN stages delta |
 | --- | --- | --- | --- | --- | --- |
-| dense | 0.765 -> 0.812 (+0.046) | 0.856 -> 0.925 (+0.069) | 0.168 -> 0.105 | dup -2194, legend -28, marker_ink +51, grid +31 | peak_off -1518, taken -662, unlabelled -128, moved +978, dropped +13 |
-| shapes | pending | pending | pending | pending | pending |
-| row, labels, hollow, multi, lines | pending | pending | pending | pending | pending |
+| dense | 0.765 -> 0.812 (+0.046) | 0.856 -> 0.925 (+0.069) | 0.168 -> 0.105 (-0.063) | dup -2194, legend -28, marker_ink +51, grid +31 | peak_off -1518, taken -662, unlabelled -128, moved +978, dropped +13 |
+| shapes | 0.977 -> 0.985 (+0.008) | 0.936 -> 0.984 (+0.048) | 0.118 -> 0.069 (-0.049) | dup -1132, grid -19, legend +16 | taken -149, dropped -25, unlabelled -10, moved +3 |
+| row, labels, hollow, multi, lines, val, plotly | pending | pending | pending | pending | pending |
 
 ### F10. Asymmetric shapes under the ink-centroid refinement, no isolated examples to measure the convention
 
