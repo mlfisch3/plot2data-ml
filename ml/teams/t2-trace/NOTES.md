@@ -77,3 +77,15 @@ live (uncommitted): found 0.896, good_cov 0.805, rms_median 0.09%, rms_p90 12.3%
 The joint tracker regresses on crossings. Suspect split_thr=1.2 (just above the p90 adjacent-column embedding distance of 1.15) fragmenting runs falsely and the shared-run mechanism producing bad chains.
 
 Plan: 1) commit current state as a WIP checkpoint so nothing is lost, 2) measure live on 100-chart probes to confirm scope of regression, 3) decide whether to debug the tracker or roll back to the frozen chain + just a smarter merge_fragments. Partner id not yet known; mail inbox is empty.
+
+## Wed 28 Oct 2026, 16:28 EDT curator
+
+Brainstormer committed the WIP as 9b97b78 (preserving the Fable predecessor's wholesale tracker rewrite + direction head scaffolding + tests), rolled extract.py back to frozen, and is now rewriting ONLY merge_fragments with overlap-join. First attempt (uncommitted) regressed mpl-val geometry-only (found 0.757->0.733 all; simple 0.886->0.899 improved).
+
+What I measured/reported during this round:
+- inspect-val-v2.json re-run with per-column overlap (frozen tree): same-series kept-piece overlapping junctions have ov_med p50=6.96, p90=29.46 - the proposed median<=2.0 recovers only 22% of actual same-series overlaps, so it is both too strict for recovery AND too permissive for 6-series false joins at 400-col overlaps.
+- val-regressions.txt: 22 charts lost found, 13 gained; 4-series mean delta -0.062 (worst). The regressed charts show "partial series destroyed" not "false positives found"; pred counts move both up and down. Pattern consistent with brainstormer's hypothesis: two chains from DIFFERENT series pass the median test by accident, get merged, and drop_duplicates removes the real one.
+- Corrected CASES.md: the earlier cross baseline of 0.827 was from an early contaminated run; the actual frozen-queue baseline is 0.917 all / 0.947 simple. All numbers in the probe table now match out/t2c/v3-*-refine.txt.
+- Added teams/t2-trace/tools/compare_runs.py for side-by-side before/after tables.
+
+Next action: wait for brainstormer's tightened merge candidate ("ready - measure tag=X"), then run t2c-measure-live.sh. Standing offer: if the merge keeps regressing on multi-series charts, propose moving the fix into cluster_embeddings instead (merge same-ridge clusters BEFORE chaining), which naturally cannot create cross-series false joins.
