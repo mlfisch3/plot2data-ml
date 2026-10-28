@@ -44,13 +44,14 @@ def main() -> None:
     ap.add_argument("--ocr", required=True)
     ap.add_argument("--out", default="out/real")
     ap.add_argument("--fit-canvas", action="store_true", help="scale every chart to the 768 x 512 canvas (no native-resolution pass)")
+    ap.add_argument("--tta", default=None, help="extra passes to fuse: shift, scale, or shift+scale")
     a = ap.parse_args()
     net = load_net(a.ckpt)
     reader = load_reader(a.ocr)
     os.makedirs(a.out, exist_ok=True)
     for name, (xa, ya) in ANCHORS.items():
         img = cv2.imread(os.path.join(REAL, name))[..., ::-1].copy()
-        res = run(net, reader, img, native=not a.fit_canvas)
+        res = run(net, reader, img, native=not a.fit_canvas, tta=a.tta)
         cv2.imwrite(os.path.join(a.out, name), draw(img, res.ex)[..., ::-1])
         errs = []
         for fit, anchors in ((res.xfit, xa), (res.yfit, ya)):
