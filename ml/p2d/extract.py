@@ -65,8 +65,6 @@ def run_net(net, img: np.ndarray, device="cuda") -> tuple[dict, np.ndarray]:
         "heat": torch.sigmoid(o["heat"].float())[0].cpu().numpy(),
         "emb": o["emb"].float()[0].cpu().numpy(),
     }
-    if "dir" in o:
-        out["dir"] = o["dir"].float()[0].cpu().numpy()
     return out, M
 
 
@@ -250,11 +248,6 @@ def cluster_embeddings(e: np.ndarray, weight: np.ndarray, radius: float = 1.5, m
     return lab
 
 
-# Tunables of the line tracker, in one place so that experiments can sweep them.
-TRACE = dict(split_thr=1.2, gap_pen=0.5, skip_pen=0.3, emb_pen=1.0, emb_max=2.5, track_max=3.5, share_pen=0.5,
-             max_skip=12, merge_emb_tol=4.0)
-
-
 def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: float = 0.25,
             marker_thr: float = 0.3) -> Extraction:
     heat, sem, emb = out["heat"], out["sem"], out["emb"]
@@ -296,35 +289,40 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
         roi = np.ones((H, W), bool)
     ink = (lh > line_thr) & roi
     mpk = [p for p in peaks(mh, marker_thr, nms=2) if roi[int(round(p[1])), int(round(p[0]))]]
+    ys, xs = np.nonzero(ink)
+    pts = np.column_stack([xs, ys])
     mp = np.array([[int(round(p[0])), int(round(p[1]))] for p in mpk], np.int64).reshape(-1, 2)
-    # Markers are grouped by embedding: marker peaks, and the data-ink class around them, vote.
+    # Marker regions vote too, through the data-ink class around each peak.
     data_ink = (sem[DATA] > 0.5) & roi & ~ink
     dys, dxs = np.nonzero(data_ink)
-    mk_lab = np.zeros(0, np.int32)
-    if len(mp) or len(dxs):
-        allpts = np.vstack([np.column_stack([dxs, dys]), mp])
-        e = emb[:, allpts[:, 1], allpts[:, 0]].T
-        w = np.concatenate([0.5 * sem[DATA][dys, dxs], np.ones(len(mp)) * 2.0])
-        mk_lab = cluster_embeddings(e, w, min_support=15)[len(dxs):]
-    if not ink.any() and not len(mp):
+    allpts = np.vstack([pts, np.column_stack([dxs, dys]), mp]) if len(mp) or len(dxs) else pts
+    if len(allpts) == 0:
         return ex
+    e = emb[:, allpts[:, 1], allpts[:, 0]].T
+    w = np.concatenate([lh[ys, xs], 0.5 * sem[DATA][dys, dxs], np.ones(len(mp)) * 2.0])
+    lab = cluster_embeddings(e, w, min_support=15)
+    n_line = len(pts)
+    n_ink = len(dxs)
+    line_lab = lab[:n_line]
+    mk_lab = lab[n_line + n_ink:]
 
-    # Lines: chains of ridge runs through the whole plot, linked column to column by continuity
-    # and by the embedding, which is what tells two series apart where they cross or touch.
-    # The chains are then joined end to end where the ends meet.
+    # Lines: within each embedding cluster, follow continuous chains of ridge runs;
+    # then join chains end to end across clusters where the ends meet.
     frags = []
-    T = TRACE
-    runs = column_runs(ink, lh, emb, split_thr=T["split_thr"])
-    for chain in peel_chains(runs, gap_pen=T["gap_pen"], skip_pen=T["skip_pen"], emb_pen=T["emb_pen"],
-                             emb_max=T["emb_max"], track_max=T["track_max"], share_pen=T["share_pen"],
-                             max_skip=T["max_skip"]):
-        cols = runs.col[chain].astype(float)
-        ys = runs.y[chain]
-        yi = np.round(ys).astype(int).clip(0, H - 1)
-        frags.append({"cols": cols, "ys": ys, "embs": runs.e[chain], "q": float(lh[yi, cols.astype(int)].mean()),
-                      "spans": list(zip(runs.a[chain].tolist(), runs.b[chain].tolist()))})
-    lines = drop_duplicates(merge_fragments(frags, emb_tol=T["merge_emb_tol"]),
-                            min_cols=max(12, int(0.04 * (frame[2] - frame[0])) if frame else 12))
+    for k in range(lab.max() + 1):
+        sel = line_lab == k
+        if sel.sum() < 15:
+            continue
+        mask = np.zeros((H, W), bool)
+        mask[pts[sel, 1], pts[sel, 0]] = True
+        for chain in peel_chains(column_runs(mask, lh)):
+            cols = np.array([c for c, _, _, _ in chain], float)
+            ys = np.array([y for _, y, _, _ in chain], float)
+            yi = np.round(ys).astype(int).clip(0, H - 1)
+            e_mean = emb[:, yi, cols.astype(int)].mean(1)
+            frags.append({"cols": cols, "ys": ys, "emb": e_mean, "k": k, "q": float(lh[yi, cols.astype(int)].mean()),
+                          "spans": [(a, b) for _, _, a, b in chain]})
+    lines = drop_duplicates(merge_fragments(frags), min_cols=max(12, int(0.04 * (frame[2] - frame[0])) if frame else 12))
     # A row of markers drawn touching looks like a line. A real line also runs between its markers.
     if mpk:
         mxy = np.array([[p[0], p[1]] for p in mpk])
@@ -339,16 +337,13 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
     vpk = [p for p in peaks(heat[H_VERTEX], 0.3, nms=2) if roi[int(round(p[1])), int(round(p[0]))]]
     for f in lines:
         snap_vertices(f, vpk)
-    # Each marker goes to at most one line: one it sits on whose embedding there is its own.
+    # Each marker goes to at most one line: one of its own cluster that it sits on.
     # The rest form scatter series, one per cluster.
     owner = np.full(len(mpk), -1)
     for li, f in enumerate(lines):
-        for i in np.nonzero(owner < 0)[0]:
+        for i in np.nonzero(np.isin(mk_lab, f["ks"]) & (owner < 0))[0]:
             x, y = mpk[i][0], mpk[i][1]
-            if not (f["cols"][0] - 2 <= x <= f["cols"][-1] + 2 and abs(np.interp(x, f["cols"], f["ys"]) - y) < 4):
-                continue
-            j = int(np.argmin(np.abs(f["cols"] - x)))
-            if np.linalg.norm(f["embs"][j] - emb[:, mp[i, 1], mp[i, 0]]) <= 3.0:
+            if f["cols"][0] - 2 <= x <= f["cols"][-1] + 2 and abs(np.interp(x, f["cols"], f["ys"]) - y) < 4:
                 owner[i] = li
     for li, f in enumerate(lines):
         mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero(owner == li)[0]]).reshape(-1, 2)
@@ -357,7 +352,7 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
             se.vertices_px = apply(Mi, f["vertices"])
         ex.series.append(se)
     scatters = []
-    for k in range(int(mk_lab.max()) + 1 if len(mk_lab) else 0):
+    for k in range(lab.max() + 1):
         mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero((mk_lab == k) & (owner < 0))[0]]).reshape(-1, 2)
         if len(mk) >= 2:
             scatters.append(_make_series("scatter", np.zeros((0, 2)), mk, Mi, img))
@@ -378,200 +373,85 @@ def _make_series(kind: str, line_canvas: np.ndarray, mk: np.ndarray, Mi: np.ndar
                   support=int(len(line_canvas) + len(mk)))
 
 
-@dataclass
-class Runs:
-    """The vertical runs of ridge pixels, column by column: the pieces of series crossing each column.
-
-    Arrays over runs, in column order: column, top and bottom row, sub-pixel
-    centre, heat mass, and the heat-weighted mean embedding.
-    """
-    col: np.ndarray
-    a: np.ndarray
-    b: np.ndarray
-    y: np.ndarray
-    m: np.ndarray
-    e: np.ndarray  # N x E
-    et: np.ndarray  # N x E, over the top few rows: what a link from above meets
-    eb: np.ndarray  # N x E, over the bottom few rows
-
-    def __len__(self) -> int:
-        return len(self.col)
-
-
-def column_runs(mask: np.ndarray, heat: np.ndarray, emb: np.ndarray | None = None, split_thr: float = 1.2,
-                min_piece: int = 2) -> Runs:
-    """The vertical runs of a ridge mask, column by column.
+def column_runs(mask: np.ndarray, heat: np.ndarray) -> dict[int, list[tuple[int, int, float, float]]]:
+    """Per column, the vertical runs of a series mask: (top, bottom, centre y, heat mass).
 
     A short run is a crossing of a shallow stretch of line, and its centre is the
     sub-pixel ridge (a parabola through the log heat). A long run is a steep
     stretch passing through the whole column, and its centre is the middle of
-    the heat it holds. Where two series touch or cross, their ridges fuse into one
-    run, but the embedding does not: a run is cut where the embedding jumps from
-    one pixel to the next, so each series keeps a run of its own.
+    the heat it holds.
     """
-    H, W = mask.shape
-    E = emb.shape[0] if emb is not None else 0
-    m8 = mask.astype(np.int8)
-    d = np.diff(np.concatenate([np.zeros((1, W), np.int8), m8, np.zeros((1, W), np.int8)]), axis=0)
-    ya, xa = np.nonzero(d.T == 1)  # transposed: column-major order, so runs come out column by column
-    yb, xb = np.nonzero(d.T == -1)
-    cols, top, bot = ya, xa, xb - 1  # (ya == yb after the transpose: the column index)
-    if emb is not None and len(cols):
-        # Cut runs where the embedding jumps between neighbouring pixels, keeping pieces of min_piece rows.
-        jump = np.linalg.norm(np.diff(emb, axis=1), axis=0) > split_thr  # (H-1) x W: between row r and r+1
-        cut = jump & mask[:-1] & mask[1:]
-        cy, cx = np.nonzero(cut.T)
-        cx, cy = cy, cx  # back to (row, col) naming: row cy is the last row of the upper piece
-        if len(cx):
-            order = np.lexsort((cy, cx))
-            cx, cy = cx[order], cy[order]
-            run_of = np.searchsorted(cols * H + top, cx * H + cy, side="right") - 1
-            new_top, new_bot, new_col = [], [], []
-            k = 0
-            for i in range(len(cols)):
-                a, b, c = int(top[i]), int(bot[i]), int(cols[i])
-                s0 = a
-                while k < len(cx) and run_of[k] == i:
-                    r = int(cy[k])
-                    k += 1
-                    if r + 1 - s0 >= min_piece and b - r >= min_piece:
-                        new_top.append(s0)
-                        new_bot.append(r)
-                        new_col.append(c)
-                        s0 = r + 1
-                new_top.append(s0)
-                new_bot.append(b)
-                new_col.append(c)
-            cols, top, bot = np.array(new_col), np.array(new_top), np.array(new_bot)
-    if not len(cols):
-        z = np.zeros((0, E))
-        return Runs(cols, top, bot, np.zeros(0), np.zeros(0), z, z, z)
-    # Mass, centroid and mean embedding from column-wise cumulative sums.
-    hp = np.concatenate([np.zeros((1, W), np.float64), heat.astype(np.float64)])
-    cs = np.cumsum(hp, axis=0)
-    rows = np.arange(H, dtype=np.float64)[:, None]
-    cys = np.cumsum(hp[1:] * rows, axis=0)
-    cys = np.concatenate([np.zeros((1, W)), cys])
-    mass = cs[bot + 1, cols] - cs[top, cols]
-    y = (cys[bot + 1, cols] - cys[top, cols]) / np.maximum(mass, 1e-9)
-    if emb is not None:
-        ces = np.cumsum(emb.astype(np.float64) * hp[1:][None], axis=1)
-        ces = np.concatenate([np.zeros((E, 1, W)), ces], axis=1)
-
-        def mean_emb(r0, r1):
-            return ((ces[:, r1 + 1, cols] - ces[:, r0, cols]) / np.maximum(cs[r1 + 1, cols] - cs[r0, cols], 1e-9)).T
-
-        e = mean_emb(top, bot)
-        et = mean_emb(top, np.minimum(top + 2, bot))
-        eb = mean_emb(np.maximum(bot - 2, top), bot)
-    else:
-        e = et = eb = np.zeros((len(cols), 0))
-    # Short runs: the sub-pixel ridge from a parabola through the log heat around the maximum.
-    short = (bot - top) <= 5
-    if short.any():
-        si = np.nonzero(short)[0]
-        win = np.stack([np.where(top[si] + k <= bot[si], heat[np.minimum(top[si] + k, H - 1), cols[si]], -1.0)
-                        for k in range(6)], 1)
-        r = top[si] + win.argmax(1)
-        ok = (r > 0) & (r < H - 1)
-        lg = np.log(np.clip(np.stack([heat[np.clip(r - 1, 0, H - 1), cols[si]], heat[r, cols[si]],
-                                      heat[np.clip(r + 1, 0, H - 1), cols[si]]], 1), 1e-6, 1))
-        den = lg[:, 0] - 2 * lg[:, 1] + lg[:, 2]
-        off = np.where(ok & (den < -1e-9), np.clip(0.5 * (lg[:, 0] - lg[:, 2]) / np.where(den < -1e-9, den, -1), -0.5, 0.5), 0.0)
-        y[si] = r + off
-    return Runs(cols.astype(np.int64), top.astype(np.int64), bot.astype(np.int64), y, mass, e, et, eb)
+    out: dict[int, list] = {}
+    H = mask.shape[0]
+    for c in np.nonzero(mask.any(0))[0]:
+        col = mask[:, c]
+        d = np.diff(np.concatenate([[0], col.view(np.int8), [0]]))
+        starts, ends = np.nonzero(d == 1)[0], np.nonzero(d == -1)[0] - 1
+        runs = []
+        for a, b in zip(starts, ends):
+            h = heat[a:b + 1, c]
+            if b - a <= 5:
+                r = a + int(np.argmax(h))
+                y = float(r)
+                if 0 < r < H - 1:
+                    lg = np.log(np.clip(heat[r - 1:r + 2, c], 1e-6, 1))
+                    y += _parabola_offset(*lg)
+            else:
+                y = float((h * np.arange(a, b + 1)).sum() / max(h.sum(), 1e-9))
+            runs.append((int(a), int(b), y, float(h.sum())))
+        out[int(c)] = runs
+    return out
 
 
-def peel_chains(runs: Runs, gap_pen: float = 0.5, skip_pen: float = 0.3, emb_pen: float = 1.0,
-                emb_max: float = 2.5, track_max: float = 3.5, max_skip: int = 12, min_cols: int = 8,
-                max_chains: int = 64, gap_base: float = 2.0, ema: float = 0.3, share_pen: float = 0.5) -> list[np.ndarray]:
+def peel_chains(runs: dict, gap_pen: float = 0.5, skip_pen: float = 0.3, max_skip: int = 12,
+                min_cols: int = 8) -> list[list[tuple[int, float, int, int]]]:
     """Best chains of runs, one run per column, by dynamic programming; repeated on what is left.
 
     A chain's score is the heat it collects, minus `gap_pen` per pixel of vertical
     gap between consecutive runs (touching runs cost nothing, as a continuous
-    curve's do), `skip_pen` per empty column jumped over, and `emb_pen` per unit
-    of embedding distance between consecutive runs, measured where they meet:
-    the bottom rows of the upper run against the top rows of the lower one,
-    since a steep run averages many pixels and its neighbours' where series
-    fuse. Two links are not allowed at all, whatever heat they would collect,
-    because a penalty is bounded and the heat of a wrong continuation is not: a
-    link whose embeddings differ by more than `emb_max` (or than `track_max`
-    from the chain's running mean, which remembers the series through a fused
-    stretch), and a vertical gap larger than a continuous curve could leave
-    (`gap_base`, plus the taller run's height per skipped column, since a steep
-    curve drops a run's height per column).
-
-    The best chain is taken and its runs become owned: a later chain may still
-    pass through them, for `share_pen` a column and no heat, which is how a
-    series gets across a stretch where it is fused with another and the two
-    ridges are one run. The search ends when no chain of `min_cols` runs of its
-    own is left.
+    curve's do) and `skip_pen` per empty column jumped over.
     """
-    if not len(runs):
-        return []
-    col, top, bot, mass = runs.col, runs.a.astype(float), runs.b.astype(float), runs.m
-    E, Et, Eb, Y = runs.e, runs.et, runs.eb, runs.y
-    h = bot - top + 1
-    owned = np.zeros(len(runs), bool)
-    chains: list[np.ndarray] = []
-    ucols, starts = np.unique(col, return_index=True)
-    ends = np.append(starts[1:], len(runs))
-    while len(chains) < max_chains:
-        m = np.where(owned, 0.0, mass)
-        score = m.copy()
-        track = E.copy()  # running mean of the embedding along the best chain into each run
-        back = np.full(len(runs), -1)
-        for g in range(len(ucols)):
-            c = int(ucols[g])
-            g0 = int(np.searchsorted(ucols, c - max_skip))
-            if g0 == g:
-                continue
-            p0, p1 = starts[g0], starts[g]
-            s, t = starts[g], ends[g]
-            gap = np.maximum(0, np.maximum(top[None, s:t] - bot[p0:p1, None] - 1, top[p0:p1, None] - bot[None, s:t] - 1))
-            skip = (c - col[p0:p1] - 1)[:, None]
-            below = Y[None, s:t] >= Y[p0:p1, None]
-            de = np.where(below, np.linalg.norm(Eb[p0:p1, None, :] - Et[None, s:t, :], axis=2),
-                          np.linalg.norm(Et[p0:p1, None, :] - Eb[None, s:t, :], axis=2))
-            dt = np.linalg.norm(track[p0:p1, None, :] - E[None, s:t, :], axis=2)
-            cand = (score[p0:p1, None] + m[None, s:t] - gap_pen * gap - skip_pen * skip - emb_pen * de
-                    - share_pen * owned[None, s:t])
-            gap_max = gap_base + skip * (2.0 + np.maximum(h[p0:p1, None], h[None, s:t]))
-            cand[(de > emb_max) | (dt > track_max) | (gap > gap_max)] = -np.inf
-            j = cand.argmax(0)
-            best = cand[j, np.arange(t - s)]
-            better = best > score[s:t]
-            score[s:t] = np.where(better, best, score[s:t])
-            back[s:t] = np.where(better, p0 + j, back[s:t])
-            track[s:t] = np.where(better[:, None], (1 - ema) * track[p0 + j] + ema * E[s:t], track[s:t])
-        # Take every chain whose own runs are untouched by the chains taken before it, best first;
-        # the rest are re-solved in the next pass, on what is then owned.
-        taken = owned.copy()
-        skipped, new = False, 0
-        for node0 in np.argsort(-score):
-            if score[node0] <= 0 or taken[node0]:
-                continue
-            path, node, valid = [], int(node0), True
-            while node >= 0:
-                if taken[node] and not owned[node]:
-                    valid = False
-                    break
-                path.append(node)
-                node = int(back[node])
-            if not valid:
-                skipped = True
-                continue
-            own = [n for n in path if not owned[n]]
-            taken[path] = True
-            if len(own) >= min_cols:
-                path.reverse()
-                chains.append(np.array(path))
-                new += 1
-                if len(chains) >= max_chains:
-                    break
-        owned[taken] = True
-        if not skipped or new == 0:
+    runs = {c: list(r) for c, r in runs.items() if r}
+    chains = []
+    while runs:
+        cols = sorted(runs)
+        best: dict[tuple[int, int], tuple[float, tuple[int, int] | None]] = {}
+        top = (-1.0, None)
+        for ci, c in enumerate(cols):
+            for i, (a, b, y, m) in enumerate(runs[c]):
+                score, back = m, None
+                for pj in range(ci - 1, -1, -1):
+                    pc = cols[pj]
+                    if c - pc - 1 > max_skip:
+                        break
+                    for j, (pa, pb, py, pm) in enumerate(runs[pc]):
+                        prev = best.get((pc, j))
+                        if prev is None:
+                            continue
+                        gap = max(0, a - pb - 1, pa - b - 1)
+                        cand = prev[0] + m - gap_pen * gap - skip_pen * (c - pc - 1)
+                        if cand > score:
+                            score, back = cand, (pc, j)
+                best[(c, i)] = (score, back)
+                if score > top[0]:
+                    top = (score, (c, i))
+        if top[1] is None:
             break
+        chain = []
+        node = top[1]
+        while node is not None:
+            c, i = node
+            a, b, y, m = runs[c][i]
+            chain.append((c, y, a, b))
+            node = best[node][1]
+        chain.reverse()
+        if len(chain) < min_cols:
+            break
+        chains.append(chain)
+        for c, _, a, _b in chain:
+            runs[c] = [r for r in runs[c] if r[0] != a]
+            if not runs[c]:
+                del runs[c]
     return chains
 
 
@@ -607,9 +487,6 @@ def snap_vertices(f: dict, vpk: list[tuple[float, float, float]]) -> None:
     y = np.concatenate([ys[keep], add_y])
     sp = [sp for sp, k in zip(spans, keep) if k] + [(int(np.floor(v)), int(np.ceil(v))) for v in add_y]
     o = np.argsort(x, kind="stable")
-    if "embs" in f:
-        near_i = [int(np.argmin(np.abs(cols - vx))) for vx in add_x]
-        f["embs"] = np.concatenate([f["embs"][keep], f["embs"][near_i]])[o]
     f["cols"], f["ys"] = x[o], y[o]
     f["vertices"] = list(zip(add_x, add_y))
     f["spans"] = [sp[i] for i in o]
@@ -669,7 +546,7 @@ def merge_by_colour(series: list[Series], img, tol: float = 45.0) -> list[Series
 
 
 def _end_slope(cols: np.ndarray, ys: np.ndarray, k: int, head: bool) -> float:
-    """Slope of a line through the last (or first) k samples of a trace."""
+    """Least-squares slope through the first (or last) k samples of a chain."""
     sel = slice(0, k) if head else slice(-k, None)
     x, y = cols[sel], ys[sel]
     if len(x) < 2 or x[-1] == x[0]:
@@ -678,79 +555,135 @@ def _end_slope(cols: np.ndarray, ys: np.ndarray, k: int, head: bool) -> float:
     return float(np.linalg.lstsq(A, y, rcond=None)[0][0])
 
 
-def join_cost(A: dict, B: dict, end: int = 10, overlap: int = 8, max_dx: int = 80, emb_tol: float = 4.0) -> float | None:
-    """The cost of B continuing A, or None when it cannot: ends that do not meet, or embeddings that disagree.
+def _join_cost(A: dict, B: dict, emb_tol: float = 3.0, max_dx: int = 90) -> float | None:
+    """Cost of B continuing A, or None if the pair cannot be one series.
 
-    Over a gap of dx columns, A's end is carried forward along its slope and B's
-    start carried back along its own; the nearer of the two misses is the
-    geometric error, allowed up to a tolerance that grows with the gap and the
-    slope, as the curvature of a continuous curve would let it.
+    Fragmentation shows up in two shapes:
+
+    - A short gap between an A that ends before B starts (dx > 0). The frozen
+      rule is right here: the pixel ranges of A's last run and B's first run
+      must meet (``gap <= 3 + 2 dx``). The endpoint y positions are what the
+      test should see; the endpoint slope at a turning point does not help.
+      The rule is extended beyond ``dx = 60`` with a slope-extrapolation gate,
+      which catches legend-occlusion stretches where the frozen rule would
+      otherwise forbid the join only because of the length.
+
+    - A long overlap where A and B span the same columns because an embedding
+      cluster boundary ran through a continuous ridge. There both chains are
+      halves of one ridge, so the y gap is nearly CONSTANT along the overlap
+      (the two cluster labels pick the top and the bottom of the ridge, 1-6 px
+      apart); a crossing has a y gap that varies with the local slopes. The
+      median absolute deviation and the linear drift of the gap separate the
+      two cases. The frozen rule's 8-column overlap stays as-is for short
+      overlaps.
+
+    Both branches use the embedding mean distance as a hard reject (same ridge
+    sits in one embedding cluster of the discriminative loss) and no cost is
+    returned for a pair that fails any threshold.
     """
-    dx = B["cols"][0] - A["cols"][-1]
-    if dx > max_dx or dx < -overlap or B["cols"][-1] <= A["cols"][-1]:
+    if B["cols"][-1] <= A["cols"][-1]:
+        return None  # B does not extend beyond A
+    if A["cols"][0] > B["cols"][0]:
+        return None  # A does not start first
+    de = float(np.linalg.norm(A["emb"] - B["emb"]))
+    if de > emb_tol:
         return None
-    if dx <= 0:
-        ov = A["cols"] >= B["cols"][0]
-        if np.abs(A["ys"][ov] - np.interp(A["cols"][ov], B["cols"], B["ys"])).max() > 2.5:
+    if B["cols"][0] <= A["cols"][-1]:
+        lo = int(np.ceil(B["cols"][0]))
+        hi = int(np.floor(A["cols"][-1]))
+        nov = hi - lo + 1
+        if nov < 1:
             return None
-        geo, tol = 0.0, 1.0
-    else:
-        sA = _end_slope(A["cols"], A["ys"], min(end, len(A["cols"])), False)
-        sB = _end_slope(B["cols"], B["ys"], min(end, len(B["cols"])), True)
-        geo = min(abs(A["ys"][-1] + sA * dx - B["ys"][0]), abs(B["ys"][0] - sB * dx - A["ys"][-1]))
+        ov = np.arange(lo, hi + 1)
+        diff = np.interp(ov, A["cols"], A["ys"]) - np.interp(ov, B["cols"], B["ys"])
+        if nov <= 8:
+            # Short overlap: frozen's max |diff| <= 2.5 is the test, unchanged.
+            if np.abs(diff).max() > 2.5:
+                return None
+            return float(np.abs(diff).mean()) + de + 0.1
+        # Long overlap: evidence that these are two halves of one ridge.
+        if not set(A.get("ks", [])).isdisjoint(B.get("ks", [])):
+            return None  # same-cluster overlap means two different series kept apart on purpose
+        if A.get("q", 0.0) < 0.3 or B.get("q", 0.0) < 0.3:
+            return None
+        if A.get("n", len(A["cols"])) < 50 or B.get("n", len(B["cols"])) < 50:
+            return None
+        med = float(np.median(diff))
+        mad = float(np.median(np.abs(diff - med)))
+        a_lin, _ = np.polyfit(ov.astype(float), diff, 1)
+        drift = float(abs(a_lin * (ov[-1] - ov[0])))
+        if abs(med) > 6.0 or mad > 1.2 or drift > 2.5:
+            return None
+        return abs(med) + 2.0 * mad + 0.5 * drift + de + 0.0005 * nov
+    # No overlap: B's start sits past A's end.
+    dx = int(B["cols"][0] - A["cols"][-1])
+    if dx > max_dx:
+        return None
+    a0, a1 = A["spans"][-1]
+    b0, b1 = B["spans"][0]
+    gap = max(0, b0 - a1 - 1, a0 - b1 - 1)
+    if gap > 3 + 2.0 * dx:
+        return None
+    if dx > 60:
+        sA = _end_slope(A["cols"], A["ys"], min(10, len(A["cols"])), head=False)
+        sB = _end_slope(B["cols"], B["ys"], min(10, len(B["cols"])), head=True)
+        geo = min(abs(A["ys"][-1] + sA * dx - B["ys"][0]),
+                  abs(B["ys"][0] - sB * dx - A["ys"][-1]))
         tol = 2.5 + 0.25 * dx * (1.0 + min(abs(sA), abs(sB)))
         if geo > tol:
             return None
-    de = float(np.linalg.norm(A["embs"][-end:].mean(0) - B["embs"][:end].mean(0)))
-    if de > emb_tol:
-        return None
-    return 6.0 * geo / tol + de + 0.03 * max(dx, 0)
+    # Normalise so a good join sits well under the no_join threshold.
+    return 0.03 * (gap + dx) + de
 
 
-def merge_fragments(frags: list[dict], emb_tol: float = 4.0, end: int = 10, no_join: float = 8.0) -> list[dict]:
-    """Join chains end to end into series, as one assignment of ends to starts.
+def merge_fragments(frags: list[dict], emb_tol: float = 3.0, no_join: float = 5.0) -> list[dict]:
+    """Join chain fragments that belong to one series.
 
-    A chain ends where a link was refused (an embedding jump, a gap, a crossing
-    it could not pass) and the series goes on in another chain. Each end may
-    continue into at most one start and each start from at most one end, chosen
-    together by least total cost, so two series cannot both claim one
-    continuation. The cost is the geometric miss of `join_cost` plus the
-    embedding distance between the ends; a join dearer than `no_join` is not made.
+    Pairs can meet at a small gap or share columns outright; `_join_cost`
+    tests both. The joins are picked globally by linear assignment so one
+    chain is not two series' continuation and two chains do not both claim
+    the same successor.
     """
-    items = [{"cols": f["cols"], "ys": f["ys"], "embs": f["embs"], "spans": f["spans"], "q": f["q"],
-              "n": len(f["cols"])} for f in frags]
+    items = [{"cols": f["cols"], "ys": f["ys"], "emb": f["emb"], "ks": [f["k"]], "n": len(f["cols"]),
+              "spans": f["spans"], "q": f["q"]} for f in frags]
     n = len(items)
     if n < 2:
         return items
-    C = np.full((n, n), 1e6)
+    C = np.full((n, n), np.inf)
     for i in range(n):
         for j in range(n):
-            if i != j:
-                c = join_cost(items[i], items[j], end=end, emb_tol=emb_tol)
-                if c is not None:
-                    C[i, j] = c
-    big = np.full((2 * n, 2 * n), 1e6)
+            if i == j:
+                continue
+            c = _join_cost(items[i], items[j], emb_tol=emb_tol)
+            if c is not None:
+                C[i, j] = c
+    # 2n x 2n assignment: either continue into another chain or into one's own ghost.
+    big = np.full((2 * n, 2 * n), 1e9)
     big[:n, :n] = C
-    big[:n, n:] = np.where(np.eye(n, dtype=bool), no_join, 1e6)
-    big[n:, :n] = np.where(np.eye(n, dtype=bool), no_join, 1e6)
+    diag_no = np.where(np.eye(n, dtype=bool), no_join, 1e9)
+    big[:n, n:] = diag_no  # row i's own "end here" ghost column
+    big[n:, :n] = diag_no  # col j's own "start here" ghost row
     big[n:, n:] = 0.0
     ri, cj = linear_sum_assignment(big)
-    nxt = {int(i): int(j) for i, j in zip(ri, cj) if i < n and j < n and C[i, j] < 1e6}
+    nxt = {int(i): int(j) for i, j in zip(ri, cj) if i < n and j < n and C[i, j] < no_join}
     has_prev = set(nxt.values())
-    out = []
+    out, seen = [], set()
     for i in range(n):
-        if i in has_prev:
+        if i in has_prev or i in seen:
             continue
         A = dict(items[i])
+        seen.add(i)
         j = nxt.get(i)
-        while j is not None:
+        while j is not None and j not in seen:
+            seen.add(j)
             B = items[j]
             keep = B["cols"] > A["cols"][-1]
             w = A["n"] / (A["n"] + B["n"])
             A["cols"] = np.concatenate([A["cols"], B["cols"][keep]])
             A["ys"] = np.concatenate([A["ys"], B["ys"][keep]])
             A["spans"] = A["spans"] + [sp for sp, k in zip(B["spans"], keep) if k]
-            A["embs"] = np.concatenate([A["embs"], B["embs"][keep]])
+            A["emb"] = w * A["emb"] + (1 - w) * B["emb"]
+            A["ks"] = A["ks"] + B["ks"]
             A["q"] = w * A["q"] + (1 - w) * B["q"]
             A["n"] += int(keep.sum())
             j = nxt.get(j)
