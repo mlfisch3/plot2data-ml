@@ -137,6 +137,18 @@ Measured in this worktree with the brainstormer's committed change (`af04090`), 
 
 Step24 (`c78db3f`) is af04090 with three guards: line-stroke per-peak veto only when `len(iso) >= 3 AND size <= stroke + 2` (fixes the `size_at = 3.0` false veto on `X`/`*`); raw-peak fallback when `len(iso) < 3` (fixes the triangle-centroid pull on packed scatters); `add_seeds` capped at 3 per blob, only trusted when `len(iso) >= 5` (fixes the merged-blob flood). On mpl-val: precision stays up (+5 to +10 pp vs v3), recall recovers to v3's level, error cut by a third. On plotly: precision +7 to +9 pp, error cut in half, recall drops a bit on simple (-5 pp) - the raw-peak fallback is less accurate on hollow/open Plotly markers whose centres the mixture would have placed well.
 
+### Probe sets (geometry only, --refine, standard numbers)
+
+The brainstormer's step24.sh writes `out/t4/eval-<k>-step24.txt`. Below is the subset finished so far (v3 vs step24):
+
+| set | recall v3 all / simple | recall step24 all / simple | precision v3 | precision step24 | err v3 | err step24 |
+| --- | --- | --- | --- | --- | --- | --- |
+| dense | 0.765 / 0.760 | 0.810 / 0.808 (+0.045 / +0.048) | 0.856 / 0.855 | 0.930 / 0.933 (+0.074 / +0.078) | 0.168 | 0.105 (-0.063) |
+| row | 0.700 / 0.700 | 0.667 / 0.667 (-0.033) | 0.849 | 0.868 (+0.019) | 0.135 | 0.120 (-0.015) |
+| shapes | 0.977 / 0.976 | 0.985 / 0.984 (+0.008) | 0.936 / 0.935 | 0.984 / 0.984 (+0.048) | 0.118 | 0.069 (-0.049) |
+
+Row is the one probe still regressing in step24: the dash/line-stroke veto fires on line+markers series whose line stroke is close to the marker size. Fixed in step25 (dash veto on scatter only; iso filter by elongation).
+
 ### Probe sets (per-marker diagnosis)
 
 Measured either at af04090 (step23) or at c78db3f (step24). The three probe sets measured with step24-fill are re-run with the current branch so they share one semantics. See `teams/t4-markers/tools/diag_delta.py v3 step23` and `v3 step24` for the Markdown tables.
