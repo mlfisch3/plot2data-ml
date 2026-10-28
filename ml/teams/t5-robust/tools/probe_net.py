@@ -94,8 +94,35 @@ def probe(net, reader, path: str, out_dir: str) -> None:
         f = res.xfit if ax == "x" else res.yfit
         print(f"fit {ax}: " + (f"{f.scale} a={f.a:.6g} b={f.b:.6g} inliers {f.inliers}/{f.used} resid {f.resid_px:.2f}px"
                               if f else "none"))
-    print(f"loose labels: {len(ex.loose_labels)}  " + "  ".join(f"[{b[0]:.0f},{b[1]:.0f},{b[2]:.0f},{b[3]:.0f}]" for b in ex.loose_labels[:6]))
+    # Loose labels, with the sem class membership inside each box (TICK_LABEL vs TEXT vs other).
+    print(f"loose labels: {len(ex.loose_labels)}")
+    from p2d.synth.mpl_render import TICK_LABEL as _TL, TEXT as _TX
+    for b in ex.loose_labels[:8]:
+        # Convert back to canvas pixels for sampling.
+        q = apply(M, [[b[0], b[1]], [b[2], b[3]]])
+        x0, y0, x1, y1 = int(round(q[0, 0])), int(round(q[0, 1])), int(round(q[1, 0])), int(round(q[1, 1]))
+        H_, W_ = sa.shape
+        x0 = max(0, min(W_, x0)); x1 = max(0, min(W_, x1))
+        y0 = max(0, min(H_, y0)); y1 = max(0, min(H_, y1))
+        patch = sa[y0: y1 + 1, x0: x1 + 1]
+        total = max(1, patch.size)
+        frac_cls = {CLASS_NAMES[c]: float((patch == c).sum()) / total for c in range(len(CLASS_NAMES)) if (patch == c).any()}
+        print(f"  src[{b[0]:.0f},{b[1]:.0f},{b[2]:.0f},{b[3]:.0f}] canvas[{x0},{y0},{x1},{y1}] "
+              f"size {max(1, (y1 - y0) * (x1 - x0))}px classes: " +
+              " ".join(f"{k}={v:.2f}" for k, v in frac_cls.items()) +
+              f"  cy={(b[1] + b[3]) / 2:.1f}  plot_top={ex.plot_area[1] if ex.plot_area else 'None'}")
     print(f"series: {len(ex.series)}  " + "  ".join(f"{se.kind}/{len(se.line_px)}pts/{len(se.markers_px)}mk/col{se.color}" for se in ex.series))
+    # For each series, how many of its traced pixels land on sem=GRID (the drop rule in extract).
+    # prepare() returns M as source->canvas (anchor in source px, apply(M, ...) draws on the canvas).
+    from p2d.synth.mpl_render import GRID as _GR
+    for i, se in enumerate(ex.series):
+        if len(se.line_px) == 0:
+            continue
+        pts = apply(M, se.line_px)  # source px -> canvas px for sem sampling
+        xi = np.clip(np.round(pts[:, 0]).astype(int), 0, sa.shape[1] - 1)
+        yi = np.clip(np.round(pts[:, 1]).astype(int), 0, sa.shape[0] - 1)
+        grid_frac = float((sa[yi, xi] == _GR).mean())
+        print(f"  series {i} {se.kind} pts={len(se.line_px)} col={se.color} GRID-frac={grid_frac:.2f} support={se.support}")
     for wmsg in res.warnings:
         print(f"warn: {wmsg}")
 
