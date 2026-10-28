@@ -216,9 +216,13 @@ class LineMeasure:
         span = np.array([r[1] - r[0] if r else np.nan for r in runs])
         # Stroke width: ink area over path length, column by column (a straight stroke of width t
         # at slope m puts t * sqrt(1 + m^2) of ink into a column), the median over the columns.
+        # The network's trace is the slope reference: a bad cen pick (fill, swatch, label) would
+        # distort the slope seen at that column and let its own neighbours slip through the
+        # merged-with-something check.
+        slope_yc = np.gradient(yc, xs.astype(float))
         slope = np.gradient(np.where(have, cen, yc), xs.astype(float))
         with np.errstate(invalid="ignore"):
-            t_col = mass / np.sqrt(1 + slope ** 2)
+            t_col = mass / np.sqrt(1 + slope_yc ** 2)
         t = float(np.nanmedian(t_col[have])) if have.any() else 1.0
         t = max(t, 0.6)
         # The network's ridge bounds a clean run: its mask spans the whole of a spike even where
@@ -230,9 +234,9 @@ class LineMeasure:
             ext[i] = max(yc[lo:hi].max() - yc[lo:hi].min(), self.ridge_ext[max(0, i - 1):i + 2].max())
         clean = have.copy()
         for i in np.nonzero(have)[0]:
-            if span[i] > ext[i] + t * math.sqrt(1 + slope[i] ** 2) + max(3.0, 3 / self.s) + 2:
+            if span[i] > ext[i] + t * math.sqrt(1 + slope_yc[i] ** 2) + max(3.0, 3 / self.s) + 2:
                 clean[i] = False  # merged with something
-            elif abs(slope[i]) < 2.0 and t_col[i] < 0.55 * t:
+            elif abs(slope_yc[i]) < 2.0 and t_col[i] < 0.55 * t:
                 clean[i] = False  # occluded, under a glyph, a butt cap, or the stroke's end
         # Columns under a marker are the marker's, not the line's.
         under_marker = np.zeros(n, bool)
