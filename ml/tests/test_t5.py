@@ -66,6 +66,8 @@ def test_real_benchmark_truth_parsers(tmp_path):
     t = load_truth({"kind": "fred"}, str(fred))
     assert t["UNRATE"][0].tolist() == pytest.approx([2000.0, 2001.0])  # the missing value is dropped
     assert t["CIVPART"][0][1] == pytest.approx(2000.0 + 182 / 366)
+    t = load_truth({"kind": "fred", "q": "&cosd=2000-06-01&width=900"}, str(fred))
+    assert t["CIVPART"][0].tolist() == pytest.approx([2000.0 + 182 / 366, 2001.0])  # the chart window cuts every series
     noaa = tmp_path / "c.csv"
     noaa.write_text("# comment\nyear,month,decimal date,average,deseasonalized,ndays,sdev,unc\n1958,3,1958.2027,315.71,314.44,-1,-9.99,-0.99\n1958,4,1958.2877,317.45,315.16,-1,-9.99,-0.99\n")
     t = load_truth({"kind": "noaa"}, str(noaa))

@@ -65,9 +65,15 @@ def load_truth(meta: dict, path: str) -> dict[str, tuple[np.ndarray, np.ndarray]
     elif kind == "fred":
         rows = list(csv.DictReader(io.StringIO(text)))
         cols = [c for c in rows[0].keys() if c != "observation_date"]
+        # The chart's date window (cosd/coed) applies to every series drawn; the file is only cut for the first.
+        q = dict(p.split("=", 1) for p in meta.get("q", "").strip("&").split("&") if "=" in p)
+        lo = _year(q["cosd"]) if "cosd" in q else -np.inf
+        hi = _year(q["coed"]) if "coed" in q else np.inf
         for r in rows:
-            for c in cols:
-                out.setdefault(c, []).append((_year(r["observation_date"]), _float(r[c])))
+            x = _year(r["observation_date"])
+            if lo <= x <= hi:
+                for c in cols:
+                    out.setdefault(c, []).append((x, _float(r[c])))
     elif kind == "giss":
         lines = [ln for ln in text.splitlines() if ln and ln[0].isdigit() or ln.startswith("Year")]
         rows = list(csv.DictReader(io.StringIO("\n".join(lines))))
