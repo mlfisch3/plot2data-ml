@@ -120,3 +120,11 @@ Next: launch the probe suite plus the two standard sets from this worktree at br
 - Guard verification: `size_at` returns 1-3 for `X`, `*`, `.` at every size (empty cardinal arms); confirmed and relayed to brainstormer. Their step24 fix (`len(iso) >= 3 AND size <= stroke + 2`) is correct, recovers ~300 TP on mpl-val.
 - Veto verification: `text >= data` sem-TEXT veto rate on real markers is 0.02-0.10% across labels and mpl-val, well below the 3% safety ceiling the brainstormer set; recommended that variant over the broader `non_data >= data` (1.26% on mpl-val). Reserved for step25.
 - Tools: `teams/t4-markers/tools/diag_delta.py`, `perchart_delta.py`, `verify_text_veto.py` on branch.
+
+## Wed 28 Oct 2026, 17:25 EDT (curator)
+
+- Step24 fully measured: brainstormer's `eval-*-step24.txt` for val, plotly, dense, row, shapes, labels, hollow (`out/t4/`); my per-marker diag `out/t4/diag-*-step24/` for the same seven sets plus multi, lines (val, plotly, dense/shapes/row diag used step24 behaviour because of mid-flight marker.py edit, so step23 outputs for those four sets are also effectively step24 diagnoses but tagged step23).
+- Corpus+real step24: `out/t4/corpus-step24.txt` (series median err 0.067 → 0.079, modest regression; coverage up to 100% on scatter-markers / scatter-halo-colours), `real-step24.txt` (byte-identical to v3).
+- Step25 (`e4edf2b`) committed: dash veto scatter-only, iso elongation filter, sem[TEXT] veto.
+- step25.sh died silently 12+ min into val eval (GPU 100% + dxg driver errors in dmesg + load 33 earlier). Pinged brainstormer; eval-val-step25.txt stayed 0 bytes.
+- Killed my dense step24 fill at 40/150 charts (GPU thrashing). The eval numbers from brainstormer cover dense/shapes/row at step24; the step23 (= af04090) per-marker diag is a reasonable baseline-of-record for those sets since the gap is a before/after of the step24 fixes.
