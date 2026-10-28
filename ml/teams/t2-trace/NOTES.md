@@ -89,3 +89,9 @@ What I measured/reported during this round:
 - Added teams/t2-trace/tools/compare_runs.py for side-by-side before/after tables.
 
 Next action: wait for brainstormer's tightened merge candidate ("ready - measure tag=X"), then run t2c-measure-live.sh. Standing offer: if the merge keeps regressing on multi-series charts, propose moving the fix into cluster_embeddings instead (merge same-ridge clusters BEFORE chaining), which naturally cannot create cross-series false joins.
+
+## Wed 28 Oct 2026, 16:31 EDT curator
+
+Brainstormer shipped tightened overlap-merge (live-overlap-merge-v2): still regressed on "all" (-0.030 line_found vs frozen); "simple" nearly flat. Same 10 charts fail under both v1 and v2 (tightening didn't help the regressors). Analysis in out/t2c/val-regressions-v2.txt. The regression pattern says merge is picking up GHOST chains that drop_duplicates would otherwise remove, so a wrong merge takes a ghost+real pair and the real line is lost to Hungarian matching afterwards. Suggested swap: run drop_duplicates BEFORE merge_fragments, or filter merge candidates by chain quality (q, min_support). Both appear in the brainstormer's inbox.
+
+Oracle computed from inspect-val-v2.json (out/t2c/merge-oracle.txt): perfect same-series merge gives line_found 0.848 on mpl-val (vs 0.757 baseline) = +0.091 ceiling. Any merge-only fix is bounded by this. The predecessor's measured oracle for cluster-fix (joint-tracker ceiling) was 0.91 on 60-chart subset.
