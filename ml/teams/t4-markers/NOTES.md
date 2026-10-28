@@ -112,3 +112,11 @@ State on arrival:
 - Untracked: `ml/p2d/zoom.py` (brainstormer's step 1 WIP, higher-scale tile pass), `ml/tests/test_probe_t4.py` (predecessor's invariant test for the probe generator). The former is brainstormer's turf, left alone; the latter is mine, committing now.
 
 Next: launch the probe suite plus the two standard sets from this worktree at branch head on the GPU, tag `step23`, into `out/t4/*-step23*`; while that runs, slice the diagnosis of af04090 by stage and cause to tell real/false markers from "false markers that happened to touch a line" (per the predecessor's `line_dist` field), and update CASES.md with the delta.
+
+## Wed 28 Oct 2026, 16:41 EDT (curator)
+
+- Step23 (`af04090`) per-marker diag done on 6/9 sets (dense, shapes, row, labels, hollow, multi, lines; val/plotly running). Mid-flight mtime realisation: brainstormer edited markers.py at 16:21:17 before committing step24 at `c78db3f`, so labels/hollow/multi/lines/val/plotly actually used step24 behaviour (import happened after the edit for each new process). Dense/shapes/row got clean af04090. Plan: rename the dirty step23 outputs to step24 after the run, then fill dense/shapes/row at step24.
+- Standard scoreboard numbers from the brainstormer's `step24.sh`: mpl-val --refine: recall 0.598/0.850 (+0.005/+0.005 vs v3), precision 0.799/0.875 (+0.095/+0.050), err 0.086/0.071 (-33%/-37%). plotly-v1 --refine: recall 0.445/0.783 (-0.020/-0.046 vs v3), precision 0.871/0.903 (+0.073/+0.085), err 0.044/0.027 (-52%/-67%). mpl-val is a clean win on every axis; plotly keeps a simple-recall regression (-4.6 pp), driven by two catastrophic charts (500134, 500021: line+markers series lost ALL markers under step24).
+- Guard verification: `size_at` returns 1-3 for `X`, `*`, `.` at every size (empty cardinal arms); confirmed and relayed to brainstormer. Their step24 fix (`len(iso) >= 3 AND size <= stroke + 2`) is correct, recovers ~300 TP on mpl-val.
+- Veto verification: `text >= data` sem-TEXT veto rate on real markers is 0.02-0.10% across labels and mpl-val, well below the 3% safety ceiling the brainstormer set; recommended that variant over the broader `non_data >= data` (1.26% on mpl-val). Reserved for step25.
+- Tools: `teams/t4-markers/tools/diag_delta.py`, `perchart_delta.py`, `verify_text_veto.py` on branch.

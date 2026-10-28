@@ -126,24 +126,37 @@ Measured in this worktree with the brainstormer's committed change (`af04090`), 
 
 ### Standard sets (geometry only, `--refine`)
 
-| set | metric | v3 all / simple | af04090 all / simple | delta |
-| --- | --- | --- | --- | --- |
-| mpl-val 200 | marker_recall | 0.593 / 0.845 | 0.544 / 0.826 | -0.048 / -0.019 |
-| mpl-val 200 | marker_precision | 0.704 / 0.825 | 0.812 / 0.896 | +0.108 / +0.071 |
-| mpl-val 200 | marker_err_median_pct | 0.128 / 0.112 | 0.082 / 0.070 | -0.047 / -0.042 |
-| plotly 150 | marker_recall | 0.465 / 0.829 | 0.399 / 0.780 | -0.066 / -0.049 |
-| plotly 150 | marker_precision | 0.798 / 0.819 | 0.903 / 0.915 | +0.105 / +0.096 |
-| plotly 150 | marker_err_median_pct | 0.091 / 0.081 | 0.030 / 0.025 | -0.061 / -0.056 |
-
-The error cut by about a third, precision up by 10 points, recall down a touch (and most of that is on the rope charts in "all"). On "simple" (the one that describes screenshots) precision gains 7 points at the cost of 2 recall points.
-
-### Probe sets (per-marker diagnosis, measured and still landing)
-
-| set | recall v3 -> step23 | precision v3 -> step23 | err v3 -> step23 (raw %) | FP causes delta | FN stages delta |
+| set | metric | v3 all / simple | af04090 (step23) all / simple | step24 all / simple | delta vs v3 (step24) |
 | --- | --- | --- | --- | --- | --- |
-| dense | 0.765 -> 0.812 (+0.046) | 0.856 -> 0.925 (+0.069) | 0.168 -> 0.105 (-0.063) | dup -2194, legend -28, marker_ink +51, grid +31 | peak_off -1518, taken -662, unlabelled -128, moved +978, dropped +13 |
-| shapes | 0.977 -> 0.985 (+0.008) | 0.936 -> 0.984 (+0.048) | 0.118 -> 0.069 (-0.049) | dup -1132, grid -19, legend +16 | taken -149, dropped -25, unlabelled -10, moved +3 |
-| row, labels, hollow, multi, lines, val, plotly | pending | pending | pending | pending | pending |
+| mpl-val 200 | marker_recall | 0.593 / 0.845 | 0.544 / 0.826 | 0.598 / 0.850 | +0.005 / +0.005 |
+| mpl-val 200 | marker_precision | 0.704 / 0.825 | 0.812 / 0.896 | 0.799 / 0.875 | +0.095 / +0.050 |
+| mpl-val 200 | marker_err_median_pct | 0.128 / 0.112 | 0.082 / 0.070 | 0.086 / 0.071 | -0.042 / -0.041 |
+| plotly 150 | marker_recall | 0.465 / 0.829 | 0.399 / 0.780 | 0.445 / 0.783 | -0.020 / -0.046 |
+| plotly 150 | marker_precision | 0.798 / 0.819 | 0.903 / 0.915 | 0.871 / 0.903 | +0.073 / +0.085 |
+| plotly 150 | marker_err_median_pct | 0.091 / 0.081 | 0.030 / 0.025 | 0.044 / 0.027 | -0.047 / -0.054 |
+
+Step24 (`c78db3f`) is af04090 with three guards: line-stroke per-peak veto only when `len(iso) >= 3 AND size <= stroke + 2` (fixes the `size_at = 3.0` false veto on `X`/`*`); raw-peak fallback when `len(iso) < 3` (fixes the triangle-centroid pull on packed scatters); `add_seeds` capped at 3 per blob, only trusted when `len(iso) >= 5` (fixes the merged-blob flood). On mpl-val: precision stays up (+5 to +10 pp vs v3), recall recovers to v3's level, error cut by a third. On plotly: precision +7 to +9 pp, error cut in half, recall drops a bit on simple (-5 pp) - the raw-peak fallback is less accurate on hollow/open Plotly markers whose centres the mixture would have placed well.
+
+### Probe sets (per-marker diagnosis)
+
+Measured either at af04090 (step23) or at c78db3f (step24). The three probe sets measured with step24-fill are re-run with the current branch so they share one semantics. See `teams/t4-markers/tools/diag_delta.py v3 step23` and `v3 step24` for the Markdown tables.
+
+| set | tag | recall v3 -> after | precision v3 -> after | err v3 -> after (raw %) | FP causes delta | FN stages delta |
+| --- | --- | --- | --- | --- | --- | --- |
+| dense (step23 = af04090) | step23 | 0.765 -> 0.812 (+0.046) | 0.856 -> 0.925 (+0.069) | 0.168 -> 0.105 (-0.063) | dup -2194, legend -28, marker_ink +51, grid +31 | peak_off -1518, taken -662, unlabelled -128, moved +978, dropped +13 |
+| shapes (step23 = af04090) | step23 | 0.977 -> 0.985 (+0.008) | 0.936 -> 0.984 (+0.048) | 0.118 -> 0.069 (-0.049) | dup -1132, grid -19, legend +16 | taken -149, dropped -25, unlabelled -10, moved +3 |
+| row (step23 = af04090) | step23 | 0.700 -> 0.667 (-0.032) | 0.849 -> 0.868 (+0.019) | 0.135 -> 0.120 (-0.015) | dup -570 | **dropped +1062**, taken -232, peak_off -87, moved +80 |
+| labels (step24) | step24 | 0.891 -> 0.847 (-0.044) | 0.593 -> 0.602 (+0.008) | 0.146 -> 0.115 (-0.032) | text -210, dup -90, bg -14, marker_ink +17 | dropped +248, moved +71, unlabelled -42, taken -5 |
+| hollow (step24) | step24 | 0.825 -> 0.822 (-0.003) | 0.877 -> 0.923 (+0.045) | 0.138 -> 0.096 (-0.042) | dup -405, marker_ink -13 | **dropped +163, moved +49**, taken -119 |
+| multi (step24) | step24 | 0.733 -> 0.766 (+0.033) | 0.838 -> 0.876 (+0.038) | 0.141 -> 0.088 (-0.053) | dup -1693, marker_ink +227 | peak_off -1739, taken -810, **moved +1445**, no_heat -59, dropped +110 |
+| lines (step24, no-markers charts) | step24 | - | - | - | line_ink -105, legend -4 | - |
+| val (pending diag) | pending | pending | pending | pending | pending | pending |
+| plotly (pending diag) | pending | pending | pending | pending | pending | pending |
+
+Notes:
+- The "moved" FN stage (markers that reached the pipeline but ended beyond tolerance after refinement) is up on every set where the mixture or the convention correction runs. On dense, shapes, hollow, multi, it is the price of the ink-based centring; the `err_median_pct` improvement shows the move is usually TOWARD the drawn centre, just occasionally past tolerance for a few.
+- The "dropped" FN stage (markers whose peak had a label but which measure_series returned no centre for) is up on sets that have line+markers at tight sizes: row (+1062), labels (+248), hollow (+163). This is still the dash-veto / mass-filter signature, lighter after step24's guards but not gone.
+- The lines set shows the dash veto still fires on dense, spiky lines (105 fewer line-ink FPs, from 526 to 421) but is not aggressive on all of them. A full win here would mean 0 FP on no-marker charts.
 
 ### F10. Asymmetric shapes under the ink-centroid refinement, no isolated examples to measure the convention
 
