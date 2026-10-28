@@ -55,7 +55,10 @@ def main(data: str, limit: int, ckpt: str) -> None:
         reads = read_crops(m, [c for _, _, c in items], device="cpu")
         for (grp, t, _), (text, c) in zip(items, reads):
             ok = norm(text) == norm(t["text"])
-            v = parse_value(text)
+            try:
+                v = parse_value(text)
+            except (OverflowError, ValueError):
+                v = None
             vok = v is not None and abs(v - t["value"]) <= 1e-6 * max(1.0, abs(t["value"])) + 1e-12
             for g in (grp, "TOTAL" + ("/rot" if grp.endswith("/rot") else "")):
                 stats[g]["n"] += 1

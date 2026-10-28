@@ -34,8 +34,33 @@ sys.path.insert(0, os.environ.get("P2D_ROOT") or os.path.join(os.path.dirname(os
 from p2d.calibrate import fit_axis  # noqa: E402
 from p2d.dates import resolve  # noqa: E402
 from p2d.evaluate import calib_error, draw, gt_value_to_px, load_net  # noqa: E402
-from p2d.ocr import crop, load_reader, parse_value, read_crops  # noqa: E402
+from p2d import ocr as _ocr  # noqa: E402
+from p2d.ocr import crop, load_reader, read_crops  # noqa: E402
 from p2d.pipeline import Result, run  # noqa: E402
+
+# The frozen base's parse_value raises OverflowError on readings like 'e+01' or
+# '1e+999' where int(exp) is huge; the live tree fixes it. Wrap it so the
+# baseline diag can run against P2D_ROOT without patching the frozen tree.
+_parse_value_raw = _ocr.parse_value
+
+
+def _parse_value_safe(text):
+    try:
+        return _parse_value_raw(text)
+    except (OverflowError, ValueError):
+        return None
+
+
+_ocr.parse_value = _parse_value_safe
+# pipeline.py in the frozen base imports parse_value by name at module load; patch there too.
+try:
+    from p2d import pipeline as _pl  # noqa: E402
+
+    if getattr(_pl, "parse_value", None) is _parse_value_raw:
+        _pl.parse_value = _parse_value_safe
+except Exception:
+    pass
+parse_value = _parse_value_safe
 
 
 def norm_text(s: str) -> str:
