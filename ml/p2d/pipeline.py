@@ -77,6 +77,86 @@ _MULT = re.compile(r"^(?:x|\(x)?(?:1e([-+]?\d+)|10\^([-+]?\d+))\)?$")
 _OFFSET = re.compile(r"^([-+])(\d*\.?\d+(?:e[-+]?\d+)?)$")
 
 
+def _parse_factor(text: str) -> tuple[float, float] | None:
+    """Return (scale, shift) if `text` is a printed multiplier or offset."""
+    t = text.replace(" ", "")
+    m = _MULT.match(t)
+    if m:
+        return 10.0 ** int(m.group(1) or m.group(2)), 0.0
+    m = _OFFSET.match(t)
+    if m:
+        v = float(m.group(2))
+        return 1.0, (v if m.group(1) == "+" else -v)
+    return None
+
+
+def _end_search(img: np.ndarray, ex: Extraction, axis: str) -> list[list[int]]:
+    """Candidate text boxes at the axis end, measured on source pixels.
+
+    When the printed multiplier (`1e6`) has no sem component of its own (small
+    text, big canvas, or an edge-of-plot location), `loose_labels` is empty and
+    `axis_factor` cannot find it. This fallback scans a strip just outside the
+    plot at the axis end, finds dark-ink components, and returns the component
+    boxes most likely to be the multiplier text.
+    """
+    if ex.plot_area is None:
+        return []
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = ex.plot_area
+    if axis == "y":
+        # The multiplier for a y axis sits above the plot area. Either side can host the axis;
+        # scan a strip across both ends.
+        strip_y = (max(0, int(y0) - 60), max(1, int(y0) - 2))
+        strips = []
+        wq = max(60, int(0.35 * (x1 - x0)))
+        for cx in (int(x0), int(x1)):
+            lo, hi = max(0, cx - wq), min(W, cx + wq)
+            if hi > lo:
+                strips.append((strip_y, (lo, hi)))
+    else:
+        # x axis: the multiplier sits to the right of the plot area, below the x axis.
+        strips = [((max(1, int(y1) + 2), min(H, int(y1) + 60)), (int(x1) - 10, min(W, int(x1) + 100)))]
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    paper = int(np.median(gray))
+    cands: list[list[int]] = []
+    for (ry0, ry1), (rx0, rx1) in strips:
+        if ry1 <= ry0 or rx1 <= rx0:
+            continue
+        strip = gray[ry0:ry1, rx0:rx1]
+        ink = (paper - strip.astype(int)) > 30
+        if ink.sum() < 4:
+            continue
+        n, lab = cv2.connectedComponents(ink.astype(np.uint8))
+        for i in range(1, n):
+            rows, cols = np.where(lab == i)
+            if rows.size < 4:
+                continue
+            r0, r1 = int(rows.min()), int(rows.max())
+            c0, c1 = int(cols.min()), int(cols.max())
+            # Keep text-shaped components: tall enough to be text, wide enough for 2+ glyphs,
+            # not a long horizontal line.
+            w, h = c1 - c0 + 1, r1 - r0 + 1
+            if h < 4 or h > 40 or w < 4 or w > 300:
+                continue
+            if w > 10 * h:
+                continue
+            cands.append([rx0 + c0, ry0 + r0, rx0 + c1 + 1, ry0 + r1 + 1])
+    # Join components close along the horizontal axis into one box (digits + 'e' + exponent).
+    # Gap grows with the height of the two pieces: `1e` + `-` + `5` has larger gaps than a single
+    # word, and a sign or caret between digits sits in the gap but is often lost to the ink test.
+    cands.sort(key=lambda b: b[0])
+    merged: list[list[int]] = []
+    for b in cands:
+        if merged:
+            m = merged[-1]
+            hb = max(m[3] - m[1], b[3] - b[1])
+            if b[0] - m[2] <= max(10, 1.2 * hb) and abs((b[1] + b[3]) - (m[1] + m[3])) < max(12, 0.8 * hb):
+                merged[-1] = [m[0], min(m[1], b[1]), b[2], max(m[3], b[3])]
+                continue
+        merged.append(list(b))
+    return merged
+
+
 def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[float, float, str | None]:
     """A printed multiplier or offset for an axis: value = label * scale + shift.
 
@@ -84,31 +164,36 @@ def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[flo
     axis, outside the plot area. It is surfaced as a warning, never applied
     silently.
     """
-    if reader is None or ex.plot_area is None or not ex.loose_labels:
+    if reader is None or ex.plot_area is None:
         return 1.0, 0.0, None
     x0, y0, x1, y1 = ex.plot_area
     w, h = x1 - x0, y1 - y0
-    cands = []
+    cands: list[tuple[float, list[int]]] = []
     for b in ex.loose_labels:
         cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
         if axis == "y" and b[3] <= y0 + 3 and y0 - cy < 0.15 * h + 30 and (abs(cx - x0) < 0.25 * w or abs(cx - x1) < 0.25 * w):
             cands.append((abs(cx - x0) + (y0 - cy), b))
         if axis == "x" and b[1] >= y1 - 3 and cy - y1 < 0.2 * h + 40 and cx > x1 - 0.3 * w:
             cands.append((abs(cx - x1) + (cy - y1), b))
-    if not cands:
-        return 1.0, 0.0, None
-    cands.sort(key=lambda c: c[0])
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    text, conf = read_crops(reader, [crop(gray, cands[0][1])])[0]
-    t = text.replace(" ", "")
-    m = _MULT.match(t)
-    if m:
-        e = int(m.group(1) or m.group(2))
-        return 10.0 ** e, 0.0, t
-    m = _OFFSET.match(t)
-    if m:
-        v = float(m.group(2))
-        return 1.0, (v if m.group(1) == "+" else -v), t
+    # Loose labels first: they are what the net surfaced as separate text pieces.
+    for _, b in sorted(cands, key=lambda c: c[0]):
+        text, _ = read_crops(reader, [crop(gray, b)])[0]
+        got = _parse_factor(text)
+        if got is not None:
+            return got[0], got[1], text.replace(" ", "")
+    # Explicit source-pixel search at the axis end: catches multipliers whose sem component is
+    # missing or absorbed into another label. Each candidate is grown by a few pixels before the
+    # reader sees it so leading/trailing glyphs are not cut.
+    H, W = img.shape[:2]
+    for b in _end_search(img, ex, axis):
+        pad_x, pad_y = 3, 2
+        pb = [max(0, b[0] - pad_x), max(0, b[1] - pad_y),
+              min(W, b[2] + pad_x), min(H, b[3] + pad_y)]
+        text, _ = read_crops(reader, [crop(gray, pb)])[0]
+        got = _parse_factor(text)
+        if got is not None:
+            return got[0], got[1], text.replace(" ", "")
     return 1.0, 0.0, None
 
 
