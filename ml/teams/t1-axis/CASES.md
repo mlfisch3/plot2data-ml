@@ -141,7 +141,66 @@ cd /home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/base/ml && source ../.venv/bin/activ
 python -m p2d.evaluate --ckpt runs/v3/best.pt --data /home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/t1-axis/ml/data/t1-probe --limit 640 --ocr runs/ocr1/best.pt
 ```
 
-Per-style numbers (calibration within 0.5% / scale right, on the axis under test): see the table below, filled from
-`out/t1/diag-probe-base/summary.txt` and re-measured after each announced change.
+Per-style numbers from the frozen base (within 0.5% / scale right; n = 40 per style), filled from
+`out/t1/diag-probe-base/summary.txt`:
 
-(table pending the baseline run)
+| style             | x within | x scale | y within | y scale |
+| ----------------- | -------- | ------- | -------- | ------- |
+| t1-crowded_y      | 1.00     | 1.00    | 1.00     | 1.00    |
+| t1-dates          | 0.20     | 0.65    | 0.95     | 1.00    |
+| t1-mult_sci       | 1.00     | 1.00    | 0.10     | 1.00    |
+| t1-neg_small      | 1.00     | 1.00    | 1.00     | 1.00    |
+| t1-nogrid_noticks | 0.97     | 0.97    | 0.88     | 0.97    |
+| t1-offset         | 1.00     | 1.00    | 0.00     | 1.00    |
+| t1-pow10_edge     | 0.88     | 0.93    | 0.40     | 0.53    |
+| t1-right_axis     | 0.97     | 1.00    | 0.93     | 1.00    |
+| t1-rot30          | 0.97     | 1.00    | 0.97     | 1.00    |
+| t1-rot45          | 0.88     | 1.00    | 0.95     | 1.00    |
+| t1-rot90          | 0.00     | 0.95    | 0.97     | 1.00    |
+| t1-sci_e          | 1.00     | 1.00    | 0.97     | 1.00    |
+| t1-tiny           | 0.97     | 1.00    | 0.78     | 1.00    |
+| t1-two_lin        | 0.97     | 0.97    | 1.00     | 1.00    |
+| t1-two_log        | 0.65     | 0.65    | 0.57     | 0.57    |
+| t1-units          | 0.97     | 1.00    | 0.97     | 1.00    |
+| **overall**       | **0.841**| **0.945**| **0.778**| **0.942**|
+
+Each style has an axis under test (`meta["probe_axis"]`); the other axis stays near 1.00 by design. The targets are
+`t1-rot90` (0.00) and `t1-dates` (0.20) on x; `t1-offset` (0.00), `t1-mult_sci` (0.10), `t1-pow10_edge` (0.40) and
+`t1-two_log` (0.57) on y. These mirror the mpl-val classes: rot90 is class 6, dates class 10, offset and mult_sci
+class 4, pow10_edge class 1 variant, two_log class 1.
+
+The ablations (true text on predicted ticks / true ticks through parser+fitter) say where the gap goes:
+
+| set                | pipeline x | true text x | true ticks x | pipeline y | true text y | true ticks y |
+| ------------------ | ---------- | ----------- | ------------ | ---------- | ----------- | ------------ |
+| mpl-val (200)      | 0.845      | 0.925       | 0.985        | 0.765      | 0.835       | 0.910        |
+| plotly-v1 (150)    | 0.947      | 0.960       | 0.980        | 0.840      | 0.913       | 0.973        |
+| t1-probe (640)     | 0.841      | 0.944       | 0.955        | 0.778      | 0.803       | 0.830        |
+
+On the probe the fitter/parser leaves y stuck at 0.830 even with true ticks and true texts, because 77 of 142
+failing y axes are "multiplier_missed" (every t1-offset and most of t1-mult_sci): the probe forces the multiplier
+to be applied, and if the fitter does not get it, the error is 10^6. The multiplier/offset path is the biggest
+single lever on the probe set.
+
+## 11. Superscript taken as the whole label (added by the colour-aware boxes)
+
+Introduced by commit 244ce7b (brainstormer's `label_from_source` rewrite); not present in the frozen base.
+`out/t1/boxes-mpl-new.txt` shows the new boxes next to the true ink: on seeds 9000016 (`10^-1`, `10^0`, `10^1`),
+9000021 (`1e2`, `1e3`, `1e4`), 9000024 (`10^3`, `10^4`), 9000039 (log x) and 9000074 (y log, `1e2..1e5`), the box
+is 1 to 3 pixels wide and sits at the row range of the tick MARK rather than the label row range. Example from
+9000016 x: tick at (250, 680); returned box (250, 680, 252, 689); true label ink at (227, 698, 271, 722).
+
+Reason, as of 244ce7b's `_label_band`, confirmed by the per-tick overlay (`out/t1/crops/9000016-xticks-truebox.png`
+and `9000074-xticks-truebox.png`): matplotlib's `10^k` ticks on these charts are 7 to 10 px long with a 5 to 8 px
+gap to the label text; the tick-mark run is 1 to 2 columns wide, so the `line` test in `_label_band` does not fire
+(a tick mark is a thin vertical streak, not a horizontal line across the window), the tick mark is taken as the
+first glyph band (h_est about 10, w about 2), and `gap_max = max(1, int(0.3 * h_est))` is 3, too small to bridge
+the 5 to 8 px gap to the real label. The colour re-filter then uses the tick mark's colour (black), so the
+re-band is the same tick mark. The brainstormer's prototype is "find the strongest ink block in the window and
+include smaller blocks within about 1.8x its height that center over the tick": a two-pass that would skip the
+thin tick-mark run and take the main label block instead.
+
+Impact on the pipeline is bounded by whether class 1 (two-label log) still fires: if both labels are correct text
+read from the thin box, calibration still works; if the digit is cut, every `10^k` becomes 10 and the axis fits
+as linear. On mpl-val this hit 9000015, 9000027, 9000044, 9000106, 9000154 before the rewrite (class 1); the new
+rewrite would do the same by returning only the superscript. Probe: `t1-pow10_edge/x` 0.88 within is partly this.
