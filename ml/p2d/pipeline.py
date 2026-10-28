@@ -7,16 +7,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
 
+from .axis import TickRead, candidates, decode_axis
 from .calibrate import AxisFit, fit_axis
 from .dates import resolve
-from .extract import Extraction, extract, refine_lines, refine_markers, refine_ticks, run_net
-from .ocr import crop, parse_value, read_crops
+from .extract import Extraction, extract, refine_labels, refine_lines, refine_markers, refine_ticks, run_net
+from .ocr import crop, decode, parse_value, read_crops, read_logits
 from .sampling import auto_step, resample
 
 
@@ -29,36 +31,46 @@ class Result:
     series: list[dict] = field(default_factory=list)  # data units
     warnings: list[str] = field(default_factory=list)
     date_axes: dict = field(default_factory=dict)  # axis -> True when its values are days since 1970
+    reads: dict = field(default_factory=dict)  # axis -> [TickRead], with how each label was read
 
 
-def read_ticks(reader, img: np.ndarray, ticks: list[dict]) -> list[tuple[float, str, float, float | None]]:
+def read_ticks(reader, img: np.ndarray, ticks: list[dict]) -> list[TickRead]:
+    """Read every tick's label: the greedy text, and the top-k readings for the joint decode."""
     boxes = [(t["pos"], t["label_box"]) for t in ticks if t["label_box"] is not None]
     if reader is None or not boxes:
         return []
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     crops = [crop(gray, b) for _, b in boxes]
-    reads = read_crops(reader, crops)
     out = []
-    for (pos, _), (text, conf) in zip(boxes, reads):
-        out.append((pos, text, conf, parse_value(text)))
+    for (pos, _), lp in zip(boxes, read_logits(reader, crops)):
+        text, conf = decode(lp)
+        out.append(TickRead(pos, text, conf, parse_value(text), lp, candidates(lp)))
     return out
 
 
-def as_dates(reads, axis: str):
+def as_dates(reads: list[TickRead], axis: str) -> bool:
     """If an axis's labels are mostly not numbers but are dates, re-read them as days since 1970."""
-    numeric = sum(r[3] is not None for r in reads)
+    numeric = sum(r.value is not None for r in reads)
     if len(reads) < 2 or numeric >= len(reads) / 2:
-        return reads, False
+        return False
     # Dates run left to right on x and bottom to top on y.
-    order = sorted(range(len(reads)), key=lambda i: reads[i][0] if axis == "x" else -reads[i][0])
-    vals = resolve([reads[i][1] for i in order])
+    order = sorted(range(len(reads)), key=lambda i: reads[i].pos if axis == "x" else -reads[i].pos)
+    vals = resolve([reads[i].text for i in order])
     if sum(v is not None for v in vals) < 2:
-        return reads, False
-    out = list(reads)
+        return False
     for i, v in zip(order, vals):
-        p, t, c, _ = reads[i]
-        out[i] = (p, t, c, v)
-    return out, True
+        reads[i].value = v
+    return True
+
+
+def fit_reads(reads: list[TickRead], dates: bool, hint: str | None = None) -> AxisFit | None:
+    """Calibrate one axis from its readings: jointly when the reader's log-probs are there, else plainly."""
+    if not reads:
+        return None
+    if dates or all(r.logits is None for r in reads):
+        return fit_axis([r.pos for r in reads], [np.nan if r.value is None else r.value for r in reads],
+                        [r.text for r in reads], hint=hint)
+    return decode_axis(reads, hint=hint)
 
 
 _MULT = re.compile(r"^(?:x|\(x)?(?:1e([-+]?\d+)|10\^([-+]?\d+))\)?$")
@@ -100,10 +112,22 @@ def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[flo
     return 1.0, 0.0, None
 
 
-def calibrate(ex: Extraction, reads_x, reads_y):
-    xfit = fit_axis([r[0] for r in reads_x], [np.nan if r[3] is None else r[3] for r in reads_x], [r[1] for r in reads_x])
-    yfit = fit_axis([r[0] for r in reads_y], [np.nan if r[3] is None else r[3] for r in reads_y], [r[1] for r in reads_y])
-    return xfit, yfit
+def apply_factor(fit: AxisFit | None, reads: list[TickRead], scale: float, shift: float) -> AxisFit | None:
+    """A printed multiplier or offset: the labels are in units of it, the values are not."""
+    for r in reads:
+        if r.value is not None:
+            r.value = r.value * scale + shift
+    if fit is None:
+        return fit
+    if fit.scale == "log":
+        if scale > 0:
+            fit.a += math.log10(scale)
+        if shift:
+            fit.warnings.append("an offset is printed on a log axis and was not applied")
+        return fit
+    fit.a = fit.a * scale + shift
+    fit.b = fit.b * scale
+    return fit
 
 
 def to_data(ex: Extraction, xfit: AxisFit | None, yfit: AxisFit | None, step_px: float | None = None,
@@ -141,20 +165,27 @@ def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: 
         ex = refine_lines(img, ex)
         ex = refine_ticks(img, ex)
         ex = refine_markers(img, ex)
+    if reader is not None and oracle_ticks is None:
+        ex = refine_labels(img, ex)
     if oracle_ticks is not None:
-        rx = [(p, "", 1.0, v) for p, v in oracle_ticks["x"]]
-        ry = [(p, "", 1.0, v) for p, v in oracle_ticks["y"]]
+        rx = [TickRead(p, "", 1.0, v) for p, v in oracle_ticks["x"]]
+        ry = [TickRead(p, "", 1.0, v) for p, v in oracle_ticks["y"]]
+        xfit, yfit = fit_reads(rx, False), fit_reads(ry, False)
     else:
-        rx, xdate = as_dates(read_ticks(reader, img, ex.xticks), "x")
-        ry, ydate = as_dates(read_ticks(reader, img, ex.yticks), "y")
+        rx, ry = read_ticks(reader, img, ex.xticks), read_ticks(reader, img, ex.yticks)
+        xdate, ydate = as_dates(rx, "x"), as_dates(ry, "y")
+        xfit, yfit = fit_reads(rx, xdate), fit_reads(ry, ydate)
         factors = {}
         for name, reads in (("x", rx), ("y", ry)):
             scale, shift, text = axis_factor(reader, img, ex, name)
             if text is not None:
                 factors[name] = text
-                reads[:] = [(p, t, c, None if v is None else v * scale + shift) for p, t, c, v in reads]
-    xfit, yfit = calibrate(ex, rx, ry)
-    res = Result(ex=ex, xfit=xfit, yfit=yfit, tick_reads={"x": rx, "y": ry})
+                if name == "x":
+                    xfit = apply_factor(xfit, reads, scale, shift)
+                else:
+                    yfit = apply_factor(yfit, reads, scale, shift)
+    res = Result(ex=ex, xfit=xfit, yfit=yfit, tick_reads={"x": [r.as_tuple() for r in rx], "y": [r.as_tuple() for r in ry]},
+                 reads={"x": rx, "y": ry})
     if oracle_ticks is None:
         res.date_axes = {"x": xdate, "y": ydate}
         for name, text in factors.items():

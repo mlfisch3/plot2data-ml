@@ -66,3 +66,33 @@ First steps:
 
 /usage_minder is active at 50%; on PAUSE I will export to `curator-STATE.md` and `curator-SCRATCH.md`
 and commit as `wip(t1): pause-state snapshot`, reply "paused" and idle.
+
+## Wed 28 Oct 2026, 16:15 EDT brainstormer (Opus 4.7, replacement of a33a9de7fe0759d04): salvage, status
+
+Took over at ~16:00 EDT after my predecessor (Fable 5.1) hit the account's usage limit around 02:30.
+Transcript salvage: ml/teams/t1-axis/salvage/a33a9de7fe0759d04-excerpt.md.
+Partner (replacement curator, Opus 4.7): ad4f4c6475d1a2a70.
+
+What the predecessor left uncommitted but working:
+- ml/p2d/axis.py (389 lines): the joint axis decoder - top-k CTC candidates per label, pair RANSAC over readings, expected-text under each hypothesis, nice-step and arithmetic-progression bonuses, two-label linear/log tiebreak from the values.
+- ml/p2d/pipeline.py: wires decode_axis in, runs refine_labels before reading when a reader is given, applies multiplier/offset to the fit after the fact.
+- ml/p2d/extract.py: colour-aware label_from_source + refine_labels (re-measures every tick's label box at source resolution).
+- ml/p2d/ocr.py: beam_decode (CTC prefix beam) and ctc_score (CTC forward); parse_value OverflowError guard.
+- ml/p2d/eval_calib.py: --json dumps every axis in detail.
+- ml/tests/test_axis.py: 10 unit tests of the decoder.
+- ml/teams/t1-axis/offline.py: cache the net's extraction once, then iterate the reader + decoder on CPU; four ablations (old/new boxes x plain/joint decode).
+- ml/teams/t1-axis/test_reader.py: tick reader on TRUE label boxes, per probe style.
+
+Last ablation at 02:09 (BEFORE the colour-aware boxes landed; stale):
+- plain-net: x 84.5% y 76.5% both 67.5%  (baseline)
+- joint-net: x 85.5% y 83.5% both 75.5%  (+8 points both; -11 x-scale regression)
+- plain-src: x 87.0% y 75.5% both 68.5%  (+1 both)
+- joint-src: x 87.5% y 82.0% both 75.0%  (+7.5 both; -11.5 x-scale)
+24 charts flipped x linear->log, mostly year-labelled axes. Verified in the CURRENT tree that chart 9000042 (linear years 1910-1950) now fits as linear - so the colour-aware boxes OR the parse_value fix OR something else between 02:09 and the handover killed the regression. The 02:09 ablation JSONs are no longer the current state.
+
+Immediate plan:
+1. Commit the salvaged state (plain message, no co-author) so the curator can measure it reproducibly.
+2. Run pytest; fix any failures that come from the uncommitted churn.
+3. Re-run the four CPU ablations on the committed state (offline.py: cache -> eval x 4).
+4. Fresh full scoreboard (data/mpl-val 200, plotly-v1 150, corpus, real) once the ablations say the regression is gone.
+5. Address the predecessor's unfinished items: the superscript "elsewhere" cases from the colour-aware box finder (10^k x-axes with the superscript taken alone), the long-run convoluted expression in `_row_shapes`, and the multiplier-text explicit search (class 4).
