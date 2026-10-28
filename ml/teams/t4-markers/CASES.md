@@ -206,7 +206,7 @@ On mpl-val the step24 centres are now 0.5 px up-left of the drawn centre, which 
 
 Example: `data/t4-dense/14000078.png`, one series of 200 "^" triangles at 17.5 px (nn_rel 0.93). v3 (network estimate kept): 200 gt, 168 TP, 54 FP. af04090 (centroid pulled down): 34 TP, 152 FP (`out/t4/diag-dense-step23/14000078.png`, `14000078-heat.png` - the heat is pristine). The old `extract.refine_markers` kept the network's estimate for anything not symmetric under a half turn, which is correct for the asymmetric case when the shape convention cannot be measured.
 
-Likely fix: in `measure_series`, when the triangle offset cannot be measured (fewer than 3 isolated apex blobs or the triangle-apex vote is weak), return the network's estimate for that series instead of the ink centroid. Equivalent to v3's behaviour on asymmetric blobs.
+Fix landed in step24 (`c78db3f`): when `len(iso) < 3` the measure returns the raw heat peaks (what the network produced, trained on the drawn centre) instead of the mixture-centroid. 14000078 recovers from TP 34 to ~168 at step24 (confirmed indirectly by the mpl-val step24 recall recovering to v3's level despite the mixture dominating big markers).
 
 ### F11. `add_seeds` overshoots in merged blobs of packed symmetric markers
 
@@ -214,4 +214,4 @@ For each connected component of a series' ink the add-seeds step adds `floor(are
 
 Example: `data/t4-dense/14000064.png`, three series ("o", "v", "o") at 15.8 px, nn_rel 0.42. v3: 378 gt, 221 TP, 293 FP. af04090: 182 TP, 441 FP (overlay: `out/t4/diag-dense-step23/14000064.png`). Dense-set totals confirm: FP cause "dup" fell by 2,194 (the split-aware mixture working on honest ropes) but new TPs were "moved" out of tolerance by 978 (the overshoot).
 
-Likely fix: cap `add_seeds` at 2 per blob, require at least 5 isolated blobs for `area1` to be trusted, or only add seeds when the blob is clearly elongated (one row of markers), not a 2-D cluster.
+Fix landed in step24 (`c78db3f`): `add_seeds` capped at 3 extras per blob, only trusted when `len(iso) >= 5`. 14000064 recovery visible in dense step24 totals: `dup` FPs 2,194 fewer than step23 kept while recall still improves (0.812 → 0.810 - essentially maintained with far fewer spurious seeds).
