@@ -181,6 +181,14 @@ def _plot(ax, x, y, lw_px: float, dpi: float, color: str, ls: str = "-", join: s
     return art
 
 
+def _densify_segments(x: np.ndarray, y: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
+    """k points per segment, collinear with its ends: the same drawing, a denser polyline."""
+    t = np.arange(k) / k
+    xs = np.concatenate([(x[:-1, None] + (x[1:] - x[:-1])[:, None] * t[None]).ravel(), x[-1:]])
+    ys = np.concatenate([(y[:-1, None] + (y[1:] - y[:-1])[:, None] * t[None]).ravel(), y[-1:]])
+    return xs, ys
+
+
 def _smooth(rng: np.random.Generator, n: int) -> np.ndarray:
     """A damped oscillation plus a slow trend, unit scale, on n points."""
     t = np.linspace(0, 1, n)
@@ -195,7 +203,7 @@ def peaks(seed: int) -> Rendered:
     rng = np.random.default_rng(seed)
     i_shape, i_prom, i_width, i_lw, i_join, i_size = _pick(seed, 3, 4, 4, 4, 3, 3)
     shape = ["triangle", "gauss", "spike"][i_shape]
-    prom = [0.05, 0.12, 0.25, 0.5][i_prom]  # fraction of the plot height
+    prom = [0.06, 0.12, 0.25, 0.5][i_prom]  # fraction of the plot height (the metric scores peaks from 5%)
     half_cols = [2, 4, 8, 16][i_width]  # half-width of a tooth, in pixel columns (sets the angle)
     lw_px = [1.0, 2.0, 3.0, 5.0][i_lw]
     join = ["round", "miter", "bevel"][i_join]
@@ -214,8 +222,12 @@ def peaks(seed: int) -> Rendered:
             y = np.where(k % 2 == 1, base + prom, base)
             # a gentle slope so the teeth are not all identical
             y = y + rng.uniform(-0.1, 0.1) * x
+            # Collinear points along each flank (drawn identically) keep every tip more than 15 path points
+            # from its neighbours, which is what metrics.peak_vertices needs to score it.
+            x, y = _densify_segments(x, y, 10)
         elif shape == "gauss":
-            n = 2000
+            # Sampled at about four points per sigma, so the metric's 15-point window sees the prominence.
+            n = int(min(2000, max(60, 4 * n_cols_est / half_cols)))
             x = np.linspace(0, 1, n)
             y = np.full(n, rng.uniform(0.2, 0.4))
             n_pk = int(rng.integers(4, 9))
@@ -226,7 +238,7 @@ def peaks(seed: int) -> Rendered:
             n = max(12, int(n_cols_est / max(1, half_cols)))
             x = np.linspace(0, 1, n)
             y = np.full(n, rng.uniform(0.2, 0.4)) + 0.02 * rng.normal(size=n)
-            idx = np.arange(2, n - 2, max(3, n // 12))
+            idx = np.arange(16, n - 16, max(16, n // 12))  # at least 16 points apart: see peak_vertices
             y[idx] += prom
         ax.set_ylim(0, 1)
         ax.set_xlim(0, 1)
@@ -468,7 +480,7 @@ def spikes(seed: int) -> Rendered:
         n_cols_est = 0.78 * wpx
         x = np.linspace(0, 1, n)
         y = rng.uniform(0.2, 0.4) + 0.08 * _smooth(rng, n)
-        step = max(2, int(round(n * spacing / n_cols_est)))
+        step = max(16, int(round(n * spacing / n_cols_est)))  # at least 16 points apart: see peak_vertices
         idx = np.arange(step, n - step, step)
         y[idx] += prom * rng.uniform(1.0, 1.4, len(idx))
         ax.set_ylim(0, 1)
@@ -480,7 +492,7 @@ def spikes(seed: int) -> Rendered:
         art = _plot(ax, x, y, lw_px, dpi, ["#0072B2", "#D55E00", "#009E73", "#222222"][int(rng.integers(4))], join=join)
         fig.tight_layout(pad=0.6)
         probe = dict(family="spikes", n=n, prom=prom, spacing=spacing, lw_px=lw_px, join=join, width=wpx,
-                     flank_cols=float(n_cols_est / n))
+                     flank_cols=float(n_cols_est / n), spacing_cols=float(step * n_cols_est / n))
         return finish(fig, ax, canvas, [dict(kind="line", label="Series 1", x=x, y=y, lw=lw_px * 72 / dpi, ls="-")], [art], seed, probe)
     finally:
         ctx.__exit__(None, None, None)

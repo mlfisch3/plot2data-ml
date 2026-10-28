@@ -148,3 +148,9 @@ Per-series RMS by what the series is (simple / all, median % ph): solid lines 0.
 
 Per-series RMS by canvas scale (simple): s < 0.5 (images wider than about 1,500 px) 0.068%; 0.5 to 0.7: 0.326%; 0.7 to 1: 0.208%; 1.0: 0.226%; s > 1 (small images, upscaled): 0.400%.
 In the scoreboard's unit the large images are the best, not the worst: the pixel error grows with 1/s but the plot height grows faster. The resolution loss shows in the peaks (section 2: median inward 0.42% ph at s < 0.5 against 0.23% at s = 1) and in absolute pixels, which is what `retina-2x` on the corpus measures against a classical engine working at native resolution.
+
+## A note on the peak metric (`metrics.peak_vertices`, not to be changed, but to be known)
+
+An extremum of the drawn path is scored only when it stands out by 5% of the plot height against every point within 15 path points on each side; the comparison is against the window's extreme in the same direction, so two tips of similar height within 15 points of each other cancel and neither is scored.
+A periodic wave with tips closer than 16 path points (the corpus `sawtooth-sharp`: 81 points, 15 teeth, 5.4 points per tooth) has no scored turning point under this definition, and a dense series with spikes every few samples scores none either, whatever the extraction does there.
+The probe sets keep every tip at least 16 path points from its neighbours (collinear points along the flanks, which draw identically) so that the standard metric scores them; `corpus_diag.py` measures the sawtooth's tips with a prominence against the window's minimum instead.
