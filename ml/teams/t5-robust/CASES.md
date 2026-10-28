@@ -198,10 +198,10 @@ Scored against the publisher's data; RMS in % of the data span (not axis span); 
 
 | source | found | median rms | median of found | within 1% | within 0.5% | failed |
 | --- | --- | --- | --- | --- | --- | --- |
-| base (6b313e9 code + v3 ckpt) | **67%** | 1.86% | 1.99% | 28% | 25% | 15 |
-| a7aed7d + v3 ckpt | 57% | **0.48%** | 0.47% | **42%** | **35%** | 18 |
+| base (6b313e9 code + v3 ckpt) | 67% | 1.86% | 1.99% | 28% | 25% | 15 |
+| a7aed7d + v3 ckpt | 57% | **0.48%** | **0.47%** | 42% | **35%** | 18 |
 | t5-zoom + a7aed7d | 57% | 0.75% | 0.44% | 40% | 35% | 16 |
-| submission (t5-zoom + --tta shift) | TBD (queue8) | TBD | TBD | TBD | TBD | TBD |
+| submission (t5-zoom + --tta shift) | 63% | 0.75% | 0.65% | **42%** | 32% | **14** |
 
 a7aed7d finds 10pt fewer series than base but is 74% more accurate on median rms, +14pt within-1%, +10pt within-0.5%. Three charts shift from catastrophically wrong to within 0.1% at a7aed7d:
 
@@ -218,7 +218,9 @@ What dominates the 18 failures at a7aed7d:
 - 4 FRED y-axes fail to calibrate on tinted paper (gridlines are 10 grey levels, `_pick_line` floor is 12; so no y snap targets and the label-only estimate has 1.1 px of label-bias).
 - 2 OWID log-y axes read linearly (minor-decade labels confuse the detector).
 
-t5-zoom degrades the median rms over a7aed7d (0.75 vs 0.48) because two charts regress (owid-military rows 82-190% at zoom vs 6% at a7aed7d; owid-gdp-per-capita-log one series 13.9% at zoom vs 0.19% at a7aed7d), but it saves 2 failures (18 to 16) and holds within-0.5% at 35%. If --tta shift (queue8) averages out the zoom regressions, the submission is a clean dominance over base; if not, the brainstormer may want to assess dropping t5-zoom for the real benchmark alone.
+t5-zoom degrades the median rms over a7aed7d (0.75 vs 0.48) because two charts regress (owid-military rows 82-190% at zoom vs 6% at a7aed7d; owid-gdp-per-capita-log one series 13.9% at zoom vs 0.19% at a7aed7d), but it saves 2 failures (18 to 16) and holds within-0.5% at 35%.
+
+The submission (t5-zoom + --tta shift) sits between the four at the median (0.75% rms, same as zoom; a7aed7d is better at 0.48%), but it dominates base on everything that matters: find rate 63% (base 67%; a7aed7d 57%: submission recovers 6pp of what zoom lost); within-1% 42% (base 28%); failures 14 (base 15, a7aed7d 18, zoom 16, submission the lowest). Compared to base: submission's accuracy on found series is 2.9x better (median rms 0.65% of found vs 1.99%), find rate drops 4pp, failure count drops 1. The failure trade is: submission avoids base's catastrophic misreads (owid-population-3 cov 0% nan% → 0.2% cov 99%; owid-co2-per-capita 13-29% rms → 0.3-0.6%) at the cost of declining 4 base-found series it is not confident about. For a "lives depend on it" use the submission is the right trade: a near-perfect value or no value, never a wrong one that reads "right".
 
 ### 9.8 Standard scoreboard, end-to-end, same checkpoint (`runs/v3/best.pt` unless noted)
 
