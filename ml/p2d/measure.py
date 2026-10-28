@@ -278,7 +278,10 @@ class LineMeasure:
                     right_dn = max(right_dn, r[1] - q[1])
                     over_up = max(over_up, r[0] - q[0])
                     over_dn = max(over_dn, q[1] - r[1])
-            sided = lambda v: np.inf if v == -np.inf else v  # noqa: E731
+            # A side with no reach (the trace's edge, or a long gap) returns 0, not inf: an
+            # apex must have ink falling away on BOTH sides, so a run at the end of a trace
+            # that is only unopposed on one side is not an apex and does not insert a vertex.
+            sided = lambda v: 0.0 if v == -np.inf else v  # noqa: E731
             peak = min(1.0, max(0.0, min(sided(left_up), sided(right_up)) / t)) if over_up <= EDGE_TOL else 0.0
             trough = min(1.0, max(0.0, min(sided(left_dn), sided(right_dn)) / t)) if over_dn <= EDGE_TOL else 0.0
             # Less than a quarter of a stroke is antialiasing, not a turn; it must not eat into the other sign.
