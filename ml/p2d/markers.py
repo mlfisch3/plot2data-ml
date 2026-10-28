@@ -325,12 +325,17 @@ def measure_series(img_f: np.ndarray, paper: np.ndarray, colour, peaks: np.ndarr
     counts = np.bincount(comp, minlength=n_cc)
 
     # Isolated blobs: one peak, not touching the window edge, a few pixels at least.
+    # A blob whose principal extents are very elongated is a line fragment, not a candidate
+    # marker (500021 line's components misread as isolated); drop it from the measurement.
     iso = []
     for i, c in enumerate(comp):
         if c == 0 or counts[c] != 1:
             continue
         bx, by, bw, bh, area = stats[c]
         if bx <= 0 or by <= 0 or bx + bw >= W or by + bh >= H or area < 3:
+            continue
+        patch_i = np.where(lab[by:by + bh, bx:bx + bw] == c, w[by:by + bh, bx:bx + bw], 0.0)
+        if elongation(patch_i) > 4.0:
             continue
         iso.append((i, c, max(bw, bh), area, bw, bh))
     rec.n_isolated = len(iso)
@@ -349,8 +354,11 @@ def measure_series(img_f: np.ndarray, paper: np.ndarray, colour, peaks: np.ndarr
         bx, by, bw, bh = stats[c, 0], stats[c, 1], stats[c, 2], stats[c, 3]
         return bx, by, np.where(lab[by:by + bh, bx:bx + bw] == c, w[by:by + bh, bx:bx + bw], 0.0)
 
-    # Dashes of a dashed line: long thin blobs, whichever way they lie.
-    if len(iso) >= 3:
+    # Dashes of a dashed line misclassified as scatter: isolated blobs are long and thin. Only fire
+    # the veto on scatter series (no owning line): a line+markers series's isolated blobs often
+    # include marker+dash merged shapes that look elongated (500134, 500021). The line_stroke
+    # per-peak veto below handles dashes on line+markers.
+    if line_px is None and len(iso) >= 3:
         el = np.array([elongation(blob_patch(c)[2]) for _, c, _, _, _, _ in iso])
         if np.median(el) > 2.0:
             rec.notes.append("dashes")

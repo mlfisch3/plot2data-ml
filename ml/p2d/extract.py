@@ -18,7 +18,7 @@ from scipy.spatial import cKDTree
 
 from .data import (CANVAS_H, CANVAS_W, H_CORNER, H_LINE, H_MARKER, H_VERTEX, H_XTICK, H_YTICK, MEAN, STD, apply,
                    fit_transform)
-from .synth.mpl_render import DATA, TICK_LABEL
+from .synth.mpl_render import DATA, TEXT, TICK_LABEL
 
 
 @dataclass
@@ -289,7 +289,14 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
     else:
         roi = np.ones((H, W), bool)
     ink = (lh > line_thr) & roi
-    mpk = [p for p in peaks(mh, marker_thr, nms=2) if roi[int(round(p[1])), int(round(p[0]))]]
+    # A marker peak that lands on a pixel the network classes as text more strongly than data
+    # (sem[TEXT] >= sem[DATA]) is almost certainly a glyph the heat triggered on: digits of value
+    # labels, the printed end values on real charts, text annotations. The curator's measurement on
+    # mpl-val GT sem maps gave a 0.02% false-veto rate for this condition (3 of 15,781 markers),
+    # against 1.26% if we also include LEGEND_SYMBOL/TICK_LABEL, so we keep the condition to TEXT.
+    mpk = [p for p in peaks(mh, marker_thr, nms=2)
+           if roi[int(round(p[1])), int(round(p[0]))]
+           and sem[TEXT, int(round(p[1])), int(round(p[0]))] < sem[DATA, int(round(p[1])), int(round(p[0]))]]
     ys, xs = np.nonzero(ink)
     pts = np.column_stack([xs, ys])
     mp = np.array([[int(round(p[0])), int(round(p[1]))] for p in mpk], np.int64).reshape(-1, 2)
