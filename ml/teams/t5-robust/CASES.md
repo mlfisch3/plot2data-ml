@@ -240,3 +240,28 @@ Reading:
 
 Base plotly numbers ARE in hand (the predecessor's `--viz` crash hid the `--json` run that completed; metrics text file is intact).
 
+### 9.9 Submission summary (`t5-zoom + a7aed7d code + --tta shift`)
+
+The three ingredients compose: native pass gives the data-accuracy gain, zoom-crop training fixes the native-pass gridline-ghost regression, --tta shift fixes the native-pass OCR-threshold regression. Headline numbers at the submission versus `base = 6b313e9 + v3`:
+
+| set | metric | base | submission | delta |
+| --- | --- | --- | --- | --- |
+| mpl-val e2e | line_rms_median_pct | 0.441 | 0.280 | **-36%** |
+| mpl-val e2e | peak_err_median_pct | 2.29 | 1.76 | -23% |
+| mpl-val e2e | marker_recall | 0.481 | 0.570 | +9pp |
+| mpl-val e2e | marker_precision | 0.640 | 0.719 | +8pp |
+| mpl-val e2e | frame_err_median_px | 1.42 | 0.96 | -32% |
+| mpl-val e2e | calib_y_within_0.5pct | 0.775 | 0.810 | +3.5pp |
+| Chart.js corpus | median rms | 0.067% | 0.072% | +0.005pp |
+| Chart.js corpus | worst rms | 61.222% | 0.580% | **-60.642pp** |
+| plotly-v1 e2e | line_rms_median_pct | 0.250 | TBD (queue8/sweep) | TBD |
+| chartjs-val e2e | line_rms_median_pct | 0.343 | TBD (queue8) | TBD |
+| real-bench | median rms | 1.86% | TBD (queue8) | TBD |
+| real-bench | within 0.5% | 25% | TBD | TBD |
+
+The one tie-of-sorts: corpus median rises 0.005pp (0.067% to 0.072%) because the three easy linear-single cases regress a few bp under the native pass, while the two hardest cases collapse (log-log 1.326% to 0.580%; offset-annotation 61.222% to 0.020%). Net on all 25 series: p90 and worst both improve by orders of magnitude; the arithmetic mean of the 25 drops substantially (base mean 2.615%, submission mean ~0.113%); the median is flat.
+
+Probe-set deltas (section 9.5), chartjs-val e2e deltas (section 9.2), and real-bench deltas (section 9.7) are filled in by `t5-gpu-queue8.sh` after the brainstormer's plotly tta=shift finishes.
+
+Submission mechanism, in one sentence per piece: the **native-resolution forward pass** (72d21cf) reads a chart larger than 768x512 at its own pixel count instead of downsampling to the canvas, so refinement and marker detection see the pixels the user screenshotted; the **zoom-crop fine-tune** (`runs/t5-zoom`) trained the same net on 35% zoom-crops of the three source corpora, teaching sem to call native-scale gridline pixels GRID consistently (the drop rule in extract then removes the 23 minor-log-gridline ghosts that native-mode-at-v3 kept); **--tta shift** averages the sem/heat maps of the normal and a half-pixel-shifted forward pass, nudging sub-threshold label connected components over threshold (the "1e6" box in offset-annotation gets a slightly different crop, the OCR reads "1e6", axis_factor applies the multiplier).
+
