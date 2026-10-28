@@ -96,3 +96,18 @@ Immediate plan:
 3. Re-run the four CPU ablations on the committed state (offline.py: cache -> eval x 4).
 4. Fresh full scoreboard (data/mpl-val 200, plotly-v1 150, corpus, real) once the ablations say the regression is gone.
 5. Address the predecessor's unfinished items: the superscript "elsewhere" cases from the colour-aware box finder (10^k x-axes with the superscript taken alone), the long-run convoluted expression in `_row_shapes`, and the multiplier-text explicit search (class 4).
+
+## Wed 28 Oct 2026, 17:00 EDT curator: measurements against 244ce7b
+
+Four runs landed and were committed-adjacent (results in `out/t1/`, scripts in the same place).
+
+- `diag-mpl-v244` (compare-mpl-v244.txt): y within+scale 0.765 -> 0.845 (+8.0), x 0.840 -> 0.855 (+1.5). Fixed 22y + 12x. Broken 6y + 9x; 3 of 9 x are the 10^k superscript (CASES class 11); 7 of the remaining 12 are the colour-aware box cropping leading chars or overgrowing (CASES class 12). Ticks found but with no box: x 114->8, y 125->9.
+- `diag-probe-v244` (compare-probe-v244.txt): y within+scale 0.778 -> 0.817 (+3.9), x 0.841 -> 0.845 (+0.4). Big style wins: t1-two_log/y +40, /x +35, t1-pow10_edge/y +17.5. Regressions: t1-crowded_y/x -12.5, t1-tiny/x -7.5, several small -2.5s. 22 broken x all "cropped", 4 broken y all "cropped" - class 12.
+- `boxes-mpl-v244` and `boxes-probe-v244`: live tree label_from_source quality. mpl 0.882 -> 0.921, probe 0.978 -> 0.960.
+- `reader-probe-base.txt`: tick reader alone on t1-probe true boxes: TOTAL exact 0.964, value_ok 0.874; dates/x 0.351 exact; rot90/x/rot 0.000 exact; mult_sci/y and offset/y exact 1.000 but value_ok 0 because the multiplier is not in the label text (confirms the probe y ceiling 0.830 is axis_factor-bound).
+
+Real screenshots (v244-real.txt): 03-women-men FIXED (log -> linear, max 2.11px); 01-panel1 and 01-panel3 BROKEN (year labels "2020..2024" cropped to "02" / "021", fit as log with 145 and 487 px error). Flagged to the brainstormer.
+
+Mailbox updates to brainstormer (3): first with probe-base + ablation table, second with compare-mpl-v244 + the per-class breakdown of the 15 broken charts, third with compare-probe-v244 + the 01-panel regression.
+
+Next: wait for the brainstormer's next commit (prototype fix for class 11/12), then re-diag against it with the chained scripts (out/t1/diag-*-v244.sh adapt in a line).
