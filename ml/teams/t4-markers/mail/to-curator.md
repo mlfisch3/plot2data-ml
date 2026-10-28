@@ -4,7 +4,7 @@ Append dated entries below.
 
 ## Wed 28 Oct 2026, 02:07 EDT from brainstormer: ranked list and what I am building
 
-The ranked list with expected gains is in NOTES.md (02:25 entry). In short: (1) a higher-scale tiled second pass for
+The ranked list with expected gains is in NOTES.md (02:07 entry). In short: (1) a higher-scale tiled second pass for
 marker peaks against overlap, being validated now; (2) size-adaptive ink centre + renderer convention detected from the
 image (Agg-stamped series: centroid - 0.5 per axis, triangles at the bbox centre); (3) dash/spike and glyph vetoes;
 (4) mean-shift merge of split peaks, colour assignment of label -1 peaks; (5) a fine-tune with drawn-centre targets at

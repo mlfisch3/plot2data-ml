@@ -74,3 +74,21 @@ Large markers on mpl-val, separated ones only (nearest neighbour >= 12 px), from
 So for (1) of your plan the win is on asymmetric shapes and on big thin shapes; the symmetric big ones are already fine on recall, and only their precision of centre is in play.
 
 GPU: 100% busy with a t5 training (`runs/t5-zoom`) plus four evaluations from other teams. My Plotly diagnosis took 50 minutes for 150 charts. The frozen-tree probe baselines are queued most-wanted first (dense, shapes diagnosis, then the rest, then the evaluate numbers): expect dense and shapes within about an hour, the whole suite later. For your own iteration, measure on `--limit 60` subsets, and `teams/t4-markers/tools/probe_suite.sh <tag> [<tree>/ml] [--no-diag] [--sets "dense shapes"]` runs any subset of the suite from any tree into `out/t4/*-<tag>*`; `python teams/t4-markers/tools/suite_table.py v3 <tag>` prints the before/after table.
+
+## Wed 28 Oct 2026, 03:05 EDT from curator: Plotly diagnosis (exact ground truth, no snapping)
+
+`out/t4/diag-plotly/summary.json` (150 held-out Plotly charts, geometry only, --refine, measured before any p2d edit).
+16,517 true markers, 9,627 returned, 7,681 hit: recall 0.465, precision 0.798, median error 0.091%.
+9,050 of the 16,517 (55%) have a neighbour within 3 px (the ropes: line+markers recall 0.21, scatter 0.83).
+Separated markers do well: recall by nearest-neighbour distance 8-12 px 0.89, 12-20 px 0.96, > 20 px 0.94. Misses there are no_heat (144 of 318) and taken.
+FN stages: taken 3,638, peak_off 3,397, no_heat 893, no_peak 714, unlabelled 143, dropped 32, moved 19. FP causes: dup 1,327 (55%), line_ink 461 (19%), marker_ink 147, grid 10, bg 1.
+
+The part that matters for your step (2), because Plotly's recorded centre IS the drawn centre: median error of matched markers by symbol:
+- filled symmetric: circle 0.010%, cross 0.008%, diamond 0.019%, pentagon 0.029%, hexagon 0.049%, square 0.056%. That is 0.05 to 0.25 px: the centroid refinement is exact where it runs, which also proves the mpl-val 0.11% is the GT jitter.
+- open (hollow): circle-open 0.11%, diamond-open 0.096%, square-open 0.126%, triangle-up-open 0.287%: 10x worse. `refine_markers` keeps the network estimate for them (its blob is a thin ring, the w > 0.5 component is broken or touches the window edge, or the asymmetry test fails on a partial ring).
+- thin strokes: x 0.115% (antialiased 1 px strokes never reach w > 0.5 as one component).
+- asymmetric: star 0.187%, triangle-down 0.178%, triangle-up 0.129% (network estimate kept; Plotly's data point is the centroid, so for Plotly the centroid would be right).
+Recall by symbol (all, ropes included): circle 0.91, cross 0.88, diamond-open 0.76, square-open 0.73, triangle-down 0.69, circle-open 0.66, triangle-up-open 0.65, hexagon 0.51, star 0.45, pentagon 0.44, x 0.38, diamond 0.35, triangle-up 0.28, square 0.25 (the low ones are the symbols the rope charts happened to use).
+Grouping: 182 returned marker series, 33 impure (purity 0.96), 55 of 129 true series split.
+
+So for Plotly and Chart.js the centre work is: hollow rings and thin-stroke shapes (x, +) need a centre measurement that works on a ring or on strokes (a template fit or the centroid of the ring's pixels including the antialiased ones), and asymmetric shapes need the renderer convention you planned.

@@ -20,6 +20,8 @@ Geometry only, `--refine`, v3:
 | mpl-val 200 | 15,748 / 13,251 / 9,333 | 0.593 / 0.845 | 0.704 / 0.825 | 0.128% / 0.112% |
 | plotly-v1 first 150 | 16,517 / 9,627 / 7,681 | 0.465 / 0.829 | 0.798 / 0.819 | 0.091% / 0.081% |
 
+Plotly per-marker diagnosis (`out/t4/diag-plotly/`): 9,050 of the 16,517 markers (55%) have a neighbour within 3 px (line+markers recall 0.21, scatter 0.83); separated markers are found at 0.89 (8-12 px), 0.96 (12-20 px), 0.94 (> 20 px). Misses: taken 3,638, peak_off 3,397, no_heat 893, no_peak 714, unlabelled 143. Spurious: dup 1,327 (55%), line_ink 461 (19%), marker_ink 147, grid 10. Grouping: 182 returned marker series, 33 impure, 55 of 129 true series split.
+
 The "all" column is owned by a handful of charts whose line+markers series draw a marker at every one of 800 to 6,000 points, at 0.2 to 0.7 px spacing, so the markers fuse into a thick line.
 mpl-val: the five worst charts hold 64% of the 6,415 misses (9000180: 1,574 markers, 1,310 missed; 9000146: 1,516 / 932; 9000026: 868 / 835; 9000142: 1,006 / 529; 9000188: 752 / 498).
 Plotly: one chart (500107: 6,081 markers on five line+markers series, 2.5 points per pixel column) holds 58% of the 8,836 misses, the top five 85%.
@@ -89,6 +91,8 @@ Consequences:
 - on a renderer that does not snap (Chart.js, Plotly), a learned half-pixel bias is 0.09% of a 560 px plot; the Chart.js scatter cases read 0.06-0.10% against the classical engine's 0.02-0.03% (`out/base/v3-corpus.txt`). Measured on the source pixels (CPU, no network): the ink-blob centroids of `scatter-halo-colours` reproduce the published values to 0.07-0.09 px RMS in y (0.015-0.020% of the 475 px plot) after a least-squares axis fit, and `scatter-markers` to 0.07 px (0.013%); the centroids' fractional parts are uniform (Chart.js does not snap). So on these charts 0.02% is the floor of an exact centroid, and the 0.06-0.10% the pipeline reports is its own centre error and calibration, not the image. `bias_check.py` apportions it between the raw peak and the refined centre (queued).
 `probe_t4` keeps `markers_px` as the exact value position (the convention of every other set and of the scoreboard) and records the drawn centre beside it as `markers_drawn_px`; `marker_diag` reports the error against both, and the per-axis bias of the returned centre against the drawn one.
 Error by shape on mpl-val (median, matched markers, against the recorded centre): s 0.086%, d 0.089%, + 0.099%, X 0.081%, o 0.197%, D 0.157%, * 0.223%, ^ 0.356%, < 0.182%: the asymmetric shapes, where the network's estimate stands, are twice to three times worse than the symmetric ones that `refine_markers` re-measures.
+On Plotly, whose recorded centre is the drawn centre, the same figure separates what the refinement measures from what it leaves to the network (`out/t4/diag-plotly/summary.json`): filled symmetric symbols circle 0.010%, cross 0.008%, diamond 0.019%, pentagon 0.029%, hexagon 0.049%, square 0.056% (0.05 to 0.25 px: the centroid is exact where it runs); open symbols circle-open 0.11%, diamond-open 0.096%, square-open 0.126%, triangle-up-open 0.287% and the thin-stroke x 0.115% (the ring or the strokes never form one component above the ink-weight threshold, so the network estimate stands); asymmetric star 0.187%, triangle-down 0.178%, triangle-up 0.129%.
+So the centre precision problem is hollow rings, thin strokes and asymmetric shapes; filled symmetric markers are already measured to a twentieth of a pixel.
 
 ### F9. Notes on the metric (not changed; reported beside it)
 
