@@ -170,6 +170,36 @@ Notes:
 - The "dropped" FN stage (markers whose peak had a label but which measure_series returned no centre for) is up on sets that have line+markers at tight sizes: row (+1062), labels (+248), hollow (+163). This is still the dash-veto / mass-filter signature, lighter after step24's guards but not gone.
 - The lines set shows the dash veto still fires on dense, spiky lines (105 fewer line-ink FPs, from 526 to 421) but is not aggressive on all of them. A full win here would mean 0 FP on no-marker charts.
 
+### Per-shape error on Plotly (step24, matched markers, median %)
+
+The triangle convention and the mixture-centre work are visible on Plotly's symbols because Plotly draws at the exact value position (no snap jitter):
+
+| symbol | v3 | step24 | delta |
+| --- | --- | --- | --- |
+| triangle-down | 0.178 | 0.049 | -0.129 |
+| triangle-up | 0.129 | 0.016 | -0.113 |
+| x (thin strokes) | 0.115 | 0.031 | -0.084 |
+| star | 0.187 | 0.120 | -0.067 |
+| hexagon | 0.049 | 0.022 | -0.026 |
+| pentagon | 0.029 | 0.020 | -0.009 |
+| circle, cross, diamond, square | ~0.01-0.06 | ~0.01-0.06 | ~0 |
+| circle-open, diamond-open, square-open, triangle-up-open | 0.11, 0.10, 0.13, 0.29 | 0.10, 0.10, 0.13, 0.28 | ~0 (hollow rings still at network's estimate) |
+
+Triangles improved by an order of magnitude; hollow symbols are unchanged (the ink-weight > 0.5 threshold does not capture a ring, so the mixture mass is too low and the fallback keeps the raw peak).
+
+### Returned-centre bias on isolated symmetric markers (source px)
+
+The snap back-out on matplotlib (Agg) is visible:
+
+| set | tag | dx mean / median | dy mean / median | abs median |
+| --- | --- | --- | --- | --- |
+| val | v3 (ink centroid, = drawn centre) | -0.21 / -0.00 | -0.17 / -0.00 | 0.00 |
+| val | step24 (snapped-back) | -0.46 / -0.50 | -0.44 / -0.50 | 0.71 |
+| plotly | v3 (ink centroid, = drawn = value) | -0.05 / -0.00 | -0.03 / -0.00 | 0.04 |
+| plotly | step24 (ink centroid) | -0.01 / -0.00 | -0.02 / -0.00 | 0.04 |
+
+On mpl-val the step24 centres are now 0.5 px up-left of the drawn centre, which is the EXACT VALUE POSITION in matplotlib (Agg stamps the drawn marker at `floor(value + 1.0)`, so the drawn pixel sits half a pixel down-right of the value). That is the correct target, and `err_median_pct` drops from 0.128% to 0.082% against the ground-truth value. `err_drawn_median_pct` goes up slightly (markers no longer at the snap-aligned centre), by construction.
+
 ### F10. Asymmetric shapes under the ink-centroid refinement, no isolated examples to measure the convention
 
 `measure_series` places a marker's centre at the centroid of its blob of ink, and corrects for the triangle convention (matplotlib: bbox centre; Plotly: centroid) only when there are enough **isolated** blobs to measure the apex direction and the centroid-to-bbox offset. On a chart whose triangles overlap (packed scatter, nn_rel < 1) there are no isolated blobs, no correction is measured, and the centre lands at the ink centroid - about `size / 6` below the drawn bbox centre for a "^" triangle. For a 17.5 px triangle this is 2.9 source px, borderline the 3 px matching tolerance.
