@@ -57,12 +57,21 @@ def main() -> None:
     ap.add_argument("--data", required=True)
     ap.add_argument("--out", default=None, help="directory for per-chart overlays")
     ap.add_argument("--json", default=None, help="per-chart rows JSON")
+    ap.add_argument("--fit-canvas", action="store_true",
+                    help="pass native=False to pipeline.run (ignored by a baseline p2d that lacks the flag)")
     a = ap.parse_args()
     loader = _load_loader()
     net = load_net(a.ckpt)
     reader = load_reader(a.ocr)
     if a.out:
         os.makedirs(a.out, exist_ok=True)
+    # The baseline pipeline has no `native` kwarg; the live tree's does. Call with whichever is accepted.
+    import inspect as _ins
+
+    sig_params = _ins.signature(run).parameters
+    extra_kw: dict = {}
+    if "native" in sig_params:
+        extra_kw["native"] = not a.fit_canvas
     allrows, per_chart = [], []
     for f in sorted(os.listdir(a.data)):
         if not f.endswith(".json"):
@@ -71,7 +80,7 @@ def main() -> None:
         cid = meta["id"]
         img = cv2.imread(os.path.join(a.data, cid + ".png"))[..., ::-1].copy()
         truth = loader.load_truth(meta, os.path.join(a.data, cid + ".data.csv"))
-        res = run(net, reader, img)
+        res = run(net, reader, img, **extra_kw)
         rows = loader.score_chart(meta, truth, res)
         xs_ = res.xfit.scale if res.xfit else "-"
         ys_ = res.yfit.scale if res.yfit else "-"
@@ -91,7 +100,8 @@ def main() -> None:
           f"within 1% {np.mean(np.nan_to_num(v, nan=1e9) < 1):.0%}  "
           f"within 0.5% {np.mean(np.nan_to_num(v, nan=1e9) < 0.5):.0%}  failed {np.isnan(v).sum()}")
     if a.json:
-        json.dump({"p2d_root": P2D_ROOT, "ckpt": a.ckpt, "per_chart": per_chart}, open(a.json, "w"), default=float, indent=1)
+        json.dump({"p2d_root": P2D_ROOT, "ckpt": a.ckpt, "fit_canvas": a.fit_canvas, "per_chart": per_chart},
+                  open(a.json, "w"), default=float, indent=1)
 
 
 if __name__ == "__main__":
