@@ -141,10 +141,19 @@ def ctc_score(logits: np.ndarray, text: str) -> float:
 
 
 def normalise_crop(gray: np.ndarray) -> np.ndarray:
-    """Dark text on light paper, scaled to H, padded to W, values in [-1, 1]."""
+    """Dark text on light paper, scaled to H, padded to W, values in [-1, 1].
+
+    A crop much taller than wide is a 90-degree rotated label (matplotlib rotates
+    counter-clockwise, so text reads bottom-to-top in the crop); rotating the crop
+    90 degrees clockwise brings the text back to its normal reading order before
+    the reader, which was trained on horizontal text, sees it.
+    """
     g = gray.astype(np.float32)
     if g.size == 0:
         return np.zeros((H, W), np.float32)
+    h, w = g.shape
+    if h > 1.5 * w and h > 10:
+        g = np.rot90(g, k=-1)  # 90 degrees clockwise
     border = np.concatenate([g[0], g[-1], g[:, 0], g[:, -1]])
     if np.median(border) < g.mean():  # light text on dark: invert
         g = 255 - g
