@@ -26,6 +26,7 @@ Styles:
   nogrid_noticks        no tick marks, no gridlines, no spines (labels only).
   tiny                  a small low-resolution figure with 7 pt labels.
   right_axis            y labels on the right.
+  spine_out             (--style only) spines offset outward from the plot area, tick marks on them.
 """
 
 from __future__ import annotations
@@ -56,6 +57,8 @@ from .mpl_render import (AXIS, BG, DATA, GRID, LEGEND_SYMBOL, TEXT, TICK_LABEL, 
 
 STYLES = ["rot30", "rot45", "rot90", "two_lin", "two_log", "crowded_y", "mult_sci", "offset", "pow10_edge", "dates",
           "neg_small", "units", "sci_e", "nogrid_noticks", "tiny", "right_axis"]
+# Styles only made on request (--style), so the seed cycle of STYLES and data/t1-probe stay as they were.
+EXTRA_STYLES = ["spine_out"]  # the spines moved outward from the plot area ('minimal' house style), ticks on them
 
 FONTS = ["DejaVu Sans", "Liberation Sans", "Liberation Serif", "Lato", "Ubuntu", "FreeSans", "Nimbus Sans",
          "TeX Gyre Heros", "Liberation Sans Narrow", "Noto Sans Mono", "DejaVu Serif", "C059", "P052"]
@@ -293,6 +296,13 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
     elif style == "right_axis":
         ax.yaxis.tick_right()
         ax.yaxis.set_major_formatter(StyledFormatter(str(rng.choice(["plain", "thousands"])), minus=minus))
+    elif style == "spine_out":
+        off = float(rng.uniform(3, 14))
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_position(("outward", off))
+        ax.spines["bottom"].set_position(("outward", off))
+        ax.tick_params(direction=str(rng.choice(["out", "in", "inout"])), length=float(rng.uniform(2, 7)))
 
     # Plain formatting of the axis not under test, so the probe isolates one thing.
     for name, axis, is_log in (("x", ax.xaxis, xlog), ("y", ax.yaxis, ylog)):
@@ -302,7 +312,7 @@ def _generate(rng: np.random.Generator, seed: int, style: str, rc: dict) -> Rend
         if isinstance(f, mticker.ScalarFormatter):
             f.set_scientific(False)
             f.set_useOffset(False)
-    if style not in ("nogrid_noticks",):
+    if style not in ("nogrid_noticks", "spine_out"):
         if rng.random() < 0.5:
             ax.spines["top"].set_visible(False)
             ax.spines["right" if style != "right_axis" else "left"].set_visible(False)
@@ -525,7 +535,7 @@ def main() -> None:
     ap.add_argument("--start", type=int, default=11000000)
     ap.add_argument("--count", type=int, required=True)
     ap.add_argument("--workers", type=int, default=3)
-    ap.add_argument("--style", default=None, choices=STYLES, help="one style for every seed (default: by seed)")
+    ap.add_argument("--style", default=None, choices=STYLES + EXTRA_STYLES, help="one style for every seed (default: by seed)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     jobs = [(a.out, s, a.style) for s in range(a.start, a.start + a.count)]
