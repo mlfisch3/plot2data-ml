@@ -113,3 +113,20 @@ Per-chart (val-regressions-v3.txt): 17 gained, 8 lost. Multi-series charts (5-6 
 The pivot that fixed it: EXACT frozen rule for dx <= 60; slope-extrapolation only as a secondary gate for dx 60..90; overlap case requires ks-disjoint + q>=0.3 + len>=50 + median<=6 + MAD<=1.2 + drift<=2.5 (brainstormer's rule). Hungarian + no_join=5.0 prevents double-claim.
 
 Brainstormer running plotly + 3 probes next to verify no regression, then will commit. I will run the full probe sweep after that.
+
+## Wed 28 Oct 2026, 17:04 EDT brainstormer
+
+Committed v3 overlap-merge (4ab8ee0) and the first REPORT.md (bff8e88).
+
+Measurements landed:
+- mpl-val 200: found 0.7570 -> 0.7809 (+0.024) all, 0.8859 -> 0.8993 (+0.013) simple.
+- plotly-v1 150: found 0.8608 -> 0.8738 (+0.013) all, slight regression on simple (-0.009).
+- t2-cross 100: found 0.9167 -> 0.9267 (+0.010).
+- t2-samecolour 100: found 0.9000 -> 0.9125 (+0.013).
+
+Working on dedupe pass now:
+- live-dedupe-v1 (envelope removed, per-column interp y check, support sort): too lax (pred counts rose to 22, no gain on found).
+- live-dedupe-v2 (envelope kept but window 4 -> 1, tol 3.0 -> 2.5, support sort): measuring (GPU contested).
+
+Next if dedupe-v2 is a modest win: ship and update report. If regression: revert to v3-only.
+Follow-up work on branch for next session: direction-head training (scaffolding in place, no consumer in extract.py yet) and the predecessor's whole-ridge-graph tracker (preserved at 9b97b78).
