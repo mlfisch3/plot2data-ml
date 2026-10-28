@@ -209,10 +209,14 @@ def analyse(meta, img, sem_gt, inst_gt, out, M, ex, lab_store):
 
     rows_p = []
     leg = meta.get("legend_bbox")
+    # Distance to the nearest point of a traced line: can a decoder veto this return as a dash or a spike?
+    traced = [se.line_px for se in ex.series if se.kind == "line" and len(se.line_px)]
+    traced = np.vstack(traced) if traced else np.zeros((0, 2))
     for j, (x, y) in enumerate(pm):
         a = dict(pattr[j])
         a.update(x=float(x), y=float(y))
         a["heat"] = heat_max_at(x, y, r=1)
+        a["d_line_px"] = float(np.hypot(traced[:, 0] - x, traced[:, 1] - y).min()) if len(traced) else np.inf
         d_gt = float(np.hypot(gm[:, 0] - x, gm[:, 1] - y).min()) if len(gm) else np.inf
         a["d_gt_px"] = d_gt
         if matched_p[j] >= 0:
@@ -396,6 +400,14 @@ def main():
     S["stage_by_kind"] = {k: dict(collections.Counter(g["stage"] for g in gt_all if g["kind"] == k)) for k in S["by_kind"]}
     S["fp_cause_by_pred_kind"] = {k: dict(collections.Counter(p["cause"] for p in pr_all if p["pred_kind"] == k and p["cause"] != "ok"))
                                   for k in ("line", "scatter")}
+    # How many spurious returns, and how many correct ones, sit within 2 px of a traced line.
+    S["near_traced_line"] = {
+        "fp_line_ink_within_2px": sum(1 for p in pr_all if p["cause"] == "line_ink" and p["d_line_px"] <= 2.0),
+        "fp_line_ink": sum(1 for p in pr_all if p["cause"] == "line_ink"),
+        "fp_any_within_2px": sum(1 for p in pr_all if p["cause"] != "ok" and p["d_line_px"] <= 2.0),
+        "tp_within_2px": sum(1 for p in pr_all if p["cause"] == "ok" and p["d_line_px"] <= 2.0),
+        "tp": sum(1 for p in pr_all if p["cause"] == "ok"),
+    }
     errs = np.array([g["err_pct"] for g in gt_all if g["stage"] == "ok"])
     S["err_median_pct"] = float(np.median(errs)) if len(errs) else None
     errd = np.array([g["err_drawn_pct"] for g in gt_all if g["stage"] == "ok"])
