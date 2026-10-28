@@ -136,3 +136,15 @@ Confirmed without the network (label maps and grey levels of mpl-val, 200 charts
 So the ink of a matplotlib tick mark or gridline is pixel-snapped to a position +0.3 px (mean) from the true tick, by an amount that depends on the sub-pixel phase of the truth and reaches +0.7 px; `refine_ticks` measures that ink correctly (its +0.21 / +0.28 bias is the ink's) and the network's raw estimate, unbiased at 0.27 px median, is already at the floor set by this quantisation (a uniform error of width 1 px has median 0.25).
 Consequence: on matplotlib the tick floor cannot be lowered by measuring marks or gridlines more carefully; it can only be lowered by a renderer-specific offset (here -0.3 px) or by fitting the data line's own registration.
 What this does to a 400 px plot: 0.3 px is 0.075% of full scale, the size of the best corpus numbers; the corpus decomposition (section 6) says how much of each corpus error is this calibration offset.
+
+## 5. Is the source-pixel refinement a loss? No: neutral on the median, and the lever is what it declines to measure
+
+On the same 132 matched simple series (raw network trace versus refined, scored on the same columns): median per-series RMS raw 0.185% versus refined 0.183%; 24% of series end up worse, 5% by more than 0.02%; 10% better by more than 0.02%.
+Refinement moves 56% of the columns; of those it improves 22% by more than 0.25 px (median 0.46 px -> 0.03 px) and worsens 4.5% by more than 0.25 px (median 0.34 -> 1.10 px: thick lines (43% have lw > 3 px), steep (36% have abs slope > 2), partial runs). The worsened columns are 2.5% of all columns and hold 0.6% of the squared error.
+On "all" charts the median goes 0.295% -> 0.307%: the same picture with more dense series.
+The 60-chart difference the brainstormer saw (0.146% without, 0.160% with) is the median of 34 series moving by one series; it is not a systematic loss, and `refine_markers` (0.077% -> 0.095% marker error) is a separate matter for team 4.
+
+Per-series RMS by what the series is (simple / all, median % ph): solid lines 0.150 / 0.253 (84% of series, 93 to 95% of the squared error); dashed or dotted 0.238 / 0.467; plain `line` 0.146 / 0.239; `line+markers` 0.307 / 0.323; `area` 0.354 / 0.906; `step` 2.68 / 1.31 (vertical risers are scored at their midpoint and traced as steep runs).
+
+Per-series RMS by canvas scale (simple): s < 0.5 (images wider than about 1,500 px) 0.068%; 0.5 to 0.7: 0.326%; 0.7 to 1: 0.208%; 1.0: 0.226%; s > 1 (small images, upscaled): 0.400%.
+In the scoreboard's unit the large images are the best, not the worst: the pixel error grows with 1/s but the plot height grows faster. The resolution loss shows in the peaks (section 2: median inward 0.42% ph at s < 0.5 against 0.23% at s = 1) and in absolute pixels, which is what `retina-2x` on the corpus measures against a classical engine working at native resolution.
