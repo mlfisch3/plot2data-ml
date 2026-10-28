@@ -182,7 +182,7 @@ failing y axes are "multiplier_missed" (every t1-offset and most of t1-mult_sci)
 to be applied, and if the fitter does not get it, the error is 10^6. The multiplier/offset path is the biggest
 single lever on the probe set.
 
-## 11. Superscript taken as the whole label (added by the colour-aware boxes)
+### 11. Superscript taken as the whole label (added by the colour-aware boxes)
 
 Introduced by commit 244ce7b (brainstormer's `label_from_source` rewrite); not present in the frozen base.
 `out/t1/boxes-mpl-new.txt` shows the new boxes next to the true ink: on seeds 9000016 (`10^-1`, `10^0`, `10^1`),
@@ -205,7 +205,7 @@ read from the thin box, calibration still works; if the digit is cut, every `10^
 as linear. On mpl-val this hit 9000015, 9000027, 9000044, 9000106, 9000154 before the rewrite (class 1); the new
 rewrite would do the same by returning only the superscript. Probe: `t1-pow10_edge/x` 0.88 within is partly this.
 
-## 12. Colour-aware box crops the leading "0." / overgrows into a neighbour (added by 244ce7b)
+### 12. Colour-aware box crops the leading "0." / overgrows into a neighbour (added by 244ce7b)
 
 Introduced by the same `label_from_source` rewrite. From `compare-mpl-v244.txt`, 15 charts broke; 7 of them are
 this class. Three charts (9000016/21/24) are the superscript (class 11); the rest split as follows (seed, axis,
