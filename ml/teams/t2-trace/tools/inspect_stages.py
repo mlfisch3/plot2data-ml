@@ -274,6 +274,18 @@ def diagnose(meta, out, M, rec: Recorder, ex, row, line_thr=0.25, final_canvas=N
         refusals = []
         for A, B in zip(kept_pieces[:-1], kept_pieces[1:]):
             dx = float(B["cols"][0] - A["cols"][-1])
+            # Per-column column overlap (set intersection of A's and B's columns), used to measure
+            # whether the two chains are the same ridge where they overlap.
+            cs = np.intersect1d(A["cols"].astype(int), B["cols"].astype(int))
+            n_ov = int(len(cs))
+            if n_ov > 0:
+                ya = np.array([A["ys"][np.where(A["cols"].astype(int) == c)[0][0]] for c in cs])
+                yb = np.array([B["ys"][np.where(B["cols"].astype(int) == c)[0][0]] for c in cs])
+                ov_med = float(np.median(np.abs(ya - yb)))
+                ov_p90 = float(np.percentile(np.abs(ya - yb), 90))
+            else:
+                ov_med = 0.0
+                ov_p90 = 0.0
             if dx <= 0:
                 ov = A["cols"] >= B["cols"][0]
                 ygap = float(np.abs(A["ys"][ov] - np.interp(A["cols"][ov], B["cols"], B["ys"])).max()) if ov.any() else 0.0
@@ -287,7 +299,8 @@ def diagnose(meta, out, M, rec: Recorder, ex, row, line_thr=0.25, final_canvas=N
             slope = float((A["ys"][-1] - A["ys"][ka]) / max(A["cols"][-1] - A["cols"][ka], 1))
             extrap = float(abs(A["ys"][-1] + slope * max(dx, 0) - B["ys"][0]))
             refusals.append(dict(dx=round(dx, 1), ygap=round(ygap, 1), de=round(de, 2), extrap=round(extrap, 1),
-                                 lenA=len(A["cols"]), lenB=len(B["cols"])))
+                                 lenA=len(A["cols"]), lenB=len(B["cols"]),
+                                 n_ov=n_ov, ov_med=round(ov_med, 2), ov_p90=round(ov_p90, 2)))
         rep["refusals"] = refusals
         # Verdict: first failing stage.
         found = cov > 0.5

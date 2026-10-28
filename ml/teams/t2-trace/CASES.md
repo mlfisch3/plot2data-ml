@@ -88,6 +88,14 @@ Baseline: `python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/t2-<name> -
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | cross | 2-4 smooth sines of distinct colours, 3-25 shallow crossings each | 300 | 0.827 | 0.780 | 0.714 | 0.111% | 17.2% |
 | samecolour | two series in one colour (solid + dashed, or solid + thick), crossing, sometimes a third series | 240 | 0.900 | 0.812 | 0.743 | 0.379% | 6.6% |
+| shallowx | 2-3 near-horizontal series that cross at angles under about 15 degrees in pixels (ylim padded 1.5x so pixel per data unit is small); only hop, no near-parallel confusion | 230 | 0.758 | 0.654 | 0.654 | 0.020% | 0.087% |
+| legocclude | 2-4 series whose body passes behind a 2-3 column legend box with a frame; the legend occludes 100-200 pixel columns across the series | 303 | 0.818 | 0.718 | 0.694 | 0.098% | 0.716% |
+
+Stage attribution (diag.py on 40 charts, frozen tree):
+- shallowx: heat 1.000 -> cluster 0.998 -> chain 1.000 -> merged 1.000 -> final 0.902 (loss is in drop_duplicates on ghost traces at crossings)
+- legocclude: heat 0.998 -> cluster 0.983 -> chain 0.889 -> merged 0.888 -> final 0.834 (loss starts at chain, which breaks across the legend box; merge_fragments does not bridge the gap)
+
+Finding: shallowx chains perfectly (1.000). The hop at shallow angles was expected to be the dominant failure here but is not; the loss is at drop_duplicates, where the ghost traces beside the real line at crossings sometimes shadow the real one. legocclude confirms the chain-gap bridging rule needs to span >50 column gaps for a wide occlusion.
 
 `samecolour`: the 202 members of a same-colour pair lose 11% and 24 of them come back with RMS above 5% (a hop onto the twin), 56% are partial; the 38 differently coloured third series in the same charts lose 5%, none hops (RMS over 5%: 0). Solid + dashed (11% lost) and solid + thick (10%) behave alike. The network does separate same-colour series most of the time (the overlay `viz-samecolour/12030000.png` shows a solid and a dash-dot of one colour kept apart through two crossings); the failure is at the crossings, as in `cross`, only more often.
 

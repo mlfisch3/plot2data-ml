@@ -19,6 +19,8 @@ the extractor can be measured against one failure at a time:
     multi      six series of mixed styles, the hardest charts of the validation set
     markers    lines under large markers, the ridge interrupted by the marker blobs
     wide       figures 1400 to 1800 px wide, scaled to 0.43 to 0.55 on the canvas, with ordinary 1 to 2 px lines
+    shallowx   two near-horizontal sines that cross at angles under 15 degrees - isolates hop separately from near-parallel runs
+    legocclude a legend box drawn ON TOP of the series body (not next to it): tests chain-gap recovery across a wide occlusion
 
 Seeds encode the case: seed = 12_000_000 + 10_000 * case_index + i. The output
 format is the one `p2d.synth.build` writes (PNG, sem.png, inst.png, json), so the
@@ -61,7 +63,7 @@ from .mpl_render import (AXIS, BG, DATA, GRID, LEGEND_SYMBOL, TEXT, TICK_LABEL, 
 SEED_BASE = 12_000_000
 CASE_STRIDE = 10_000
 CASES = ["cross", "steep", "parallel", "samecolour", "dotted", "thin", "small", "dense", "legend", "area", "step",
-         "clipped", "multi", "markers", "wide"]
+         "clipped", "multi", "markers", "wide", "shallowx", "legocclude"]
 
 COLOURS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
            "#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
@@ -375,10 +377,72 @@ def case_wide(rng: np.random.Generator, spec: dict) -> dict:
     return spec
 
 
+def case_shallowx(rng: np.random.Generator, spec: dict) -> dict:
+    """Two or three series that cross each other at shallow angles only.
+
+    Each series is the shared common_trend plus a slowly-varying offset:
+    y_j(t) = common(t) + off_j(t) where off_j is a low-frequency sine of
+    small amplitude. Because off_j oscillates slowly through zero, the lines
+    cross whenever the j_1 and j_2 offsets are equal, and they are near
+    parallel to each other at the crossing (tangent angle under about 15
+    degrees in data units; the ylim is set so the pixel angle matches).
+    """
+    n = int(rng.integers(200, 400))
+    k = int(rng.choice([2, 2, 3]))
+    x = unit_x(rng, n)
+    t = np.linspace(0, 1, n)
+    cols = rng.permutation(10)[:k]
+    # Shared slow trend keeps the lines close in y.
+    common = 0.3 * np.sin(2 * np.pi * float(rng.uniform(0.5, 1.0)) * t + float(rng.uniform(0, 2 * np.pi)))
+    for j in range(k):
+        # Each series: small, slow offset to keep crossings shallow.
+        amp = float(rng.uniform(0.06, 0.14))
+        f = float(rng.uniform(0.8, 1.8))
+        phase = float(rng.uniform(0, 2 * np.pi))
+        off = amp * np.sin(2 * np.pi * f * t + phase)
+        y = common + off
+        spec["series"].append(line(x, y, COLOURS[cols[j]], lw=float(rng.uniform(1.4, 2.4)), label=f"Series {j + 1}"))
+    # Make the plot y-span wide so vertical pixel per unit stays low: the crossings land shallow.
+    all_y = np.concatenate([s["y"] for s in spec["series"]])
+    span = all_y.max() - all_y.min() + 1e-6
+    pad = 1.5 * span  # pad >> span so the lines fill a small fraction of the plot: crossings are shallow in pixels.
+    spec["ylim"] = (float(all_y.min() - pad), float(all_y.max() + pad))
+    return spec
+
+
+def case_legocclude(rng: np.random.Generator, spec: dict) -> dict:
+    """A legend box drawn ON TOP of the series body (not next to it).
+
+    Series stay in the middle of the plot, where the legend will sit. The
+    legend has >=2 columns and a frame, and is placed centre or centre-right
+    at exactly where the series body runs. This blocks the ridge over a block
+    of columns and tests the chain-gap bridging under a wide occlusion.
+    """
+    n = int(rng.integers(80, 300))
+    k = int(rng.choice([2, 3, 3, 4]))
+    x = unit_x(rng, n)
+    t = np.linspace(0, 1, n)
+    cols = rng.permutation(10)[:k]
+    labels = ["Alpha metric", "Beta metric", "Baseline", "Treatment group", "Control", "Model A - updated 2026"]
+    for j in range(k):
+        _, y = S.shape(rng, t, kind=str(rng.choice(["sines", "trend_noise", "poly"])))
+        y = y * 0.35 + float(rng.uniform(-0.15, 0.15))
+        spec["series"].append(line(x, y, COLOURS[cols[j]], lw=float(rng.uniform(1.4, 2.5)),
+                                   label=labels[j % len(labels)]))
+    # Shrink the y-span so the legend naturally sits over the series body.
+    all_y = np.concatenate([s["y"] for s in spec["series"]])
+    pad = 0.05 * (all_y.max() - all_y.min() + 1e-6)
+    spec["ylim"] = (float(all_y.min() - pad), float(all_y.max() + pad))
+    spec["legend"] = str(rng.choice(["center", "center left", "center right"]))
+    spec["legend_frame"] = True
+    spec["legend_ncol"] = int(rng.choice([2, 2, 3]))
+    return spec
+
+
 BUILDERS = {"cross": case_cross, "steep": case_steep, "parallel": case_parallel, "samecolour": case_samecolour,
             "dotted": case_dotted, "thin": case_thin, "small": case_small, "dense": case_dense, "legend": case_legend,
             "area": case_area, "step": case_step, "clipped": case_clipped, "multi": case_multi, "markers": case_markers,
-            "wide": case_wide}
+            "wide": case_wide, "shallowx": case_shallowx, "legocclude": case_legocclude}
 
 
 # ----------------------------------------------------------------------------- rendering
