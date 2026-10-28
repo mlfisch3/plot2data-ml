@@ -649,7 +649,8 @@ def merge_fragments(frags: list[dict], emb_tol: float = 3.0, no_join: float = 5.
     n = len(items)
     if n < 2:
         return items
-    C = np.full((n, n), np.inf)
+    # 1e9 (not np.inf) because scipy's linear_sum_assignment may raise on inf.
+    C = np.full((n, n), 1e9)
     for i in range(n):
         for j in range(n):
             if i == j:
