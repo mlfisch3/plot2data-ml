@@ -29,3 +29,8 @@ Going after 1 first (it is the general mechanism the others plug into), then 2 a
 - The first diagnosis, with counts and mechanisms, is in mail/to-brainstormer.md (02:02). In one line: y loses 9 points to the fitter's two-decade tie-break, 7 to reading/grouping (leading glyph dropped by the speck filter or absorbed by the axis class; tick-mark slivers and corner labels taken as the label; rotated x labels), 7.5 to labels that get no box (small text on big charts after the canvas downscale); all 6 multiplier charts fail because the '1e6' gets no box.
 - Probe generator p2d/synth/probe_t1.py (16 styles, one per failure family; style by seed), checked by overlaying the recorded geometry on the renders (out/t1/gtviz). data/t1-probe: 640 charts at seeds 11,000,000+ generating now.
 - Lesson: a pkill pattern must contain the team directory name (t1-axis); a generic script name matched across worktrees.
+
+## Wed 28 Oct 2026, 02:17 EDT curator: the brainstormer's source-resolution box finder, tested from true ticks
+
+- teams/t1-axis/test_boxes.py scores extract.label_from_source from the true tick positions against the label ink, CPU only: mpl-val 0.882 ok of 1922 labels, probe 0.978 of 7079. Seven mechanical misses found with row profiles (tick mark one pixel off the anchor row taken as the band; max_h=70 truncation; offset spines; dense x labels read as a line; rotated labels stopping after one glyph; superscripts consumed as attached; image-edge labels). Sent as mail 02:16.
+- Women/men real chart: '2021' drawn at equal spacing after 1970..2010; log absorbs the 5 px misplacement and wins on inlier count. Reproduced on the CPU; rule proposed (arithmetic progression => linear).
