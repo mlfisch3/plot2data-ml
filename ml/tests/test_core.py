@@ -167,3 +167,33 @@ def test_crop_shift_keeps_the_middle_third_of_the_plot_in_view():
     for _ in range(50):
         s = _crop_shift(rng, 50.0, 350.0, 400.0, 768)
         assert 0 <= s <= 768 - 400
+
+
+def test_tta_fuses_passes_back_into_the_primary_canvas():
+    """A fake network that marks one fixed source pixel: every pass must land it on the same canvas pixel."""
+    import torch
+    from p2d.data import N_HEAT, N_SEM, apply
+    from p2d.extract import inv_affine
+    from p2d.tta import run_net_tta
+
+    class Net:
+        def __init__(self):
+            self.M = None  # set per pass from the canvas size, below
+
+        def __call__(self, x):
+            B, C, H, W = x.shape
+            # The darkest canvas pixel is the dot; put a heat peak there.
+            g = x[0].mean(0)
+            idx = int(torch.argmin(g))
+            heat = torch.full((1, N_HEAT, H, W), -10.0)
+            heat[0, :, idx // W, idx % W] = 10.0
+            return {"sem": torch.zeros(1, N_SEM, H, W), "heat": heat, "emb": torch.zeros(1, 8, H, W)}
+
+    img = np.full((300, 400, 3), 255, np.uint8)
+    img[120, 200] = 0  # one black pixel
+    out, M = run_net_tta(Net(), img, device="cpu", native=True, tta="shift+scale")
+    cx, cy = apply(M, [[200, 120]])[0]
+    hy, hx = np.unravel_index(np.argmax(out["heat"][0]), out["heat"][0].shape)
+    assert abs(hx - cx) <= 1 and abs(hy - cy) <= 1
+    # Three passes fused: the primary (exactly 1 at the peak), the shifted and the scaled ones.
+    assert 0.3 < out["heat"][0].max() <= 1.0

@@ -136,13 +136,19 @@ def to_data(ex: Extraction, xfit: AxisFit | None, yfit: AxisFit | None, step_px:
 
 
 def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: bool = True,
-        native: bool = True) -> Result:
+        native: bool = True, tta: str | None = None) -> Result:
     """`oracle_ticks` ({"x": [(pos, value)], "y": ...}) bypasses detection and reading, for ablations.
 
     `native` reads a chart larger than the training canvas at its own resolution
-    (`extract.placement`); off, it is scaled to fit the canvas as in training.
+    (`data.placement`); off, it is scaled to fit the canvas as in training.
+    `tta` names extra network passes to fuse in (`tta.passes_for`).
     """
-    out, M = run_net(net, img, native=native)
+    if tta:
+        from .tta import run_net_tta
+
+        out, M = run_net_tta(net, img, native=native, tta=tta)
+    else:
+        out, M = run_net(net, img, native=native)
     ex = extract(out, M, img)
     if refine:
         ex = refine_lines(img, ex)
