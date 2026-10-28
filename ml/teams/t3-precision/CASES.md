@@ -122,3 +122,17 @@ Scale: 0.21 px at s = 0.7 to 1, 0.36 to 0.38 at s < 0.5.
 All four spines visible (43 charts): max-corner error median 0.75 px, p90 1.75. Some hidden (157): median 2.11, p90 15.0.
 The worst are spineless house styles where the corner heat lands on the first gridline below the true top: 9000023 highcharts +211 px, 9000049 +97, 9000133 excel +74, 9000036 news +67 (all with the top edge invisible).
 A low top edge also truncates the series ROI (`extract` keeps ink within the frame plus 3 px).
+
+Confirmed without the network (label maps and grey levels of mpl-val, 200 charts; tick-mark ink is the AXIS class in the band just outside the axis, gridline ink the GRID class across the plot):
+
+| drawn ink, centroid minus true position | n | bias (px) | median abs | frac [-0.5,-0.25) | [-0.25,0) | [0,0.25) | [0.25,0.5) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| x tick marks (label map) | 722 | +0.23 | 0.32 | +0.13 | -0.12 | +0.59 | +0.37 |
+| x tick marks (grey levels) | 662 | +0.29 | 0.35 | +0.19 | -0.05 | +0.63 | +0.44 |
+| x gridlines | 380 | +0.28 | 0.32 | +0.21 | -0.02 | +0.63 | +0.37 |
+| y tick marks (label map) | 620 | +0.30 | 0.33 | +0.19 | -0.06 | +0.69 | +0.39 |
+| y gridlines | 569 | +0.31 | 0.37 | +0.24 | -0.06 | +0.64 | +0.43 |
+
+So the ink of a matplotlib tick mark or gridline is pixel-snapped to a position +0.3 px (mean) from the true tick, by an amount that depends on the sub-pixel phase of the truth and reaches +0.7 px; `refine_ticks` measures that ink correctly (its +0.21 / +0.28 bias is the ink's) and the network's raw estimate, unbiased at 0.27 px median, is already at the floor set by this quantisation (a uniform error of width 1 px has median 0.25).
+Consequence: on matplotlib the tick floor cannot be lowered by measuring marks or gridlines more carefully; it can only be lowered by a renderer-specific offset (here -0.3 px) or by fitting the data line's own registration.
+What this does to a 400 px plot: 0.3 px is 0.075% of full scale, the size of the best corpus numbers; the corpus decomposition (section 6) says how much of each corpus error is this calibration offset.
