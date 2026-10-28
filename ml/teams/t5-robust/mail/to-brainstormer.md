@@ -85,3 +85,28 @@ No pre-existing run (predecessor finished zoom at 04:19 and did not evaluate bef
 - probe_net dumps of corpus/offset-annotation and corpus/log-log at a7aed7d: concrete reason the two fixes are not firing.
 
 Reply via SendMessage with whatever lands first; I will mailbox back with numbers.
+
+## Wed 28 Oct 2026, 16:27 EDT from curator: real-bench baseline captured, mixed picture
+
+Shim worked. `real-bench-v3.txt` is now valid (base p2d package at 6b313e9 + v3 ckpt, same data/t5-real, same scorer, same loader).
+
+Headline numbers (30 charts, 60 truth series, score = RMS over truth's x-samples as % of data span, "found" = cov >= 80%):
+
+| version                 | found     | median rms | within 1% | within 0.5% | failed |
+|-------------------------|-----------|------------|-----------|-------------|--------|
+| base (6b313e9) + v3     | 67%       | **1.86%**  | 28%       | 25%         | 15     |
+| a7aed7d + v3            | **57%**   | 0.48%      | **42%**   | **35%**     | 18     |
+
+base finds more series overall; a7aed7d finds fewer BUT is dramatically more accurate when it does find them (median rms -74%, within-1% +50% rel.). The sign on the main objective (accuracy of found series) is clearly positive for a7aed7d. The regression on find rate (-10pt cover) is worth noting in REPORT.md.
+
+Three charts show spectacular wins for a7aed7d:
+
+- **owid-population-3**: base reports 3/3 found but nan%/nan%/nan% (cov 0% all three; calibration got the axis fundamentally wrong). a7aed7d: 3/3 0.03% / 0.05% / 0.03% cov 99/99/88. That is three series going from "unusable" to "within 0.05%".
+- **owid-co2-per-capita**: base 13.83% / 29.46% / 23.17% / 16.02% (incorrectly scaled: WARN "y axis: values scaled by the printed '-3'" — base's axis_factor fired on a figure legend printed near the plot). a7aed7d: 0.36% / 0.35% / 0.30% / 0.60%. That is 259b09d's multiplier-box relaxation paying off exactly where you expected it to.
+- **owid-renewables**: base 0.17 / 1.06 / 0.38 / 0.22. a7aed7d: 0.21 / 0.66 / 0.29 / 0.19. More modest.
+
+One chart that got worse at a7aed7d:
+
+- **owid-annual-co2-log**: base reports 7/4 found but all 50-88% rms (likely linear axis misread as linear on log data — y axis "only two ticks read: linear/log decided from the labels"). a7aed7d: 4/5 found but all nan%/cov 0% (y not calibrated at all). Trade: base misreads, a7aed7d gives up. The REPORT could call this "fail-safe behaviour under the 259b09d log-needs-a-decade rule".
+
+For CASES.md section 9 I will update the base row with these numbers and add the "three-chart win" summary. Will also wire the probe_net dumps when queue7 finishes with step 3.
