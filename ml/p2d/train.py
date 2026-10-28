@@ -68,7 +68,9 @@ def main() -> None:
 
     net = PlotNet(a.encoder).to(device).to(memory_format=torch.channels_last)
     if a.init:
-        net.load_state_dict(torch.load(a.init, map_location=device)["model"])
+        fresh = net.load_weights(torch.load(a.init, map_location=device)["model"])
+        if fresh:
+            print(f"fresh (not in --init): {sorted(set(k.split('.')[0] for k in fresh))}", flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     warm = 500
 

@@ -22,7 +22,8 @@ from .model import PlotNet
 
 def load_net(ckpt: str, device: str = "cuda") -> PlotNet:
     st = torch.load(ckpt, map_location=device)
-    net = PlotNet(st.get("encoder", "resnet34"), pretrained=False).to(device)
+    has_dir = any(k.startswith("dir.") for k in st["model"])
+    net = PlotNet(st.get("encoder", "resnet34"), pretrained=False, dir_head=has_dir).to(device)
     net.load_state_dict(st["model"])
     net.eval()
     return net

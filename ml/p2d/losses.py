@@ -53,6 +53,15 @@ def discriminative(emb: torch.Tensor, ids: torch.Tensor, dv: float = 0.5, dd: fl
     return pull + push + reg
 
 
+def direction(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Smooth L1 on the next/previous-column offsets, over the pixels where they are defined."""
+    m = target[:, 2:3] > 0.5
+    if not m.any():
+        return pred.sum() * 0
+    d = F.smooth_l1_loss(pred.float(), target[:, :2], reduction="none")
+    return (d * m).sum() / (m.sum() * 2)
+
+
 def plotnet_loss(out: dict, batch: dict) -> tuple[torch.Tensor, dict]:
     sem_w = torch.tensor(SEM_WEIGHTS, device=out["sem"].device)
     l_sem = F.cross_entropy(out["sem"].float(), batch["sem"], weight=sem_w)
@@ -62,6 +71,10 @@ def plotnet_loss(out: dict, batch: dict) -> tuple[torch.Tensor, dict]:
     l_emb = discriminative(out["emb"], batch["emb_id"])
     loss = l_sem + l_heat + 0.5 * l_emb
     parts = {"sem": l_sem.item(), "heat": l_heat.item(), "emb": l_emb.item()}
+    if "dir" in out and "dir" in batch:
+        l_dir = direction(out["dir"], batch["dir"])
+        loss = loss + l_dir
+        parts["dir"] = l_dir.item()
     for i, n in enumerate(["line", "marker", "vertex", "xtick", "ytick", "corner"]):
         parts["h_" + n] = l_heat_c[i].item()
     return loss, parts

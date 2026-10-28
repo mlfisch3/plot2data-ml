@@ -28,6 +28,9 @@ H_LINE, H_MARKER, H_VERTEX, H_XTICK, H_YTICK, H_CORNER = range(6)
 N_HEAT = 6
 N_SEM = 7
 MAX_SERIES = 16
+N_DIR = 2  # vertical offset of the series' centre line in the next column, and in the previous one
+DIR_SCALE = 8.0  # pixels per unit of the direction target
+DIR_CLIP = 8.0  # units: offsets beyond this (64 px per column) are clipped
 
 SIGMA = {H_LINE: 1.0, H_MARKER: 1.5, H_VERTEX: 1.5, H_XTICK: 1.5, H_YTICK: 1.5, H_CORNER: 2.0}
 
@@ -184,7 +187,7 @@ class PlotDataset(Dataset):
             # Photometric changes on the canvas, which is what the network sees.
             cimg = augment_photometric(cimg.astype(np.uint8), rng).astype(np.float32)
 
-        heat, region, aux = self.targets(meta, M)
+        heat, region, dirs = self.targets(meta, M)
         # Embedding targets: the region around each series' true path, else its ink.
         emb_id = np.where(region > 0, region, cinst).astype(np.int64)
         # Normalised on the GPU (see `to_device`), so the batch crosses processes as bytes.
@@ -193,6 +196,7 @@ class PlotDataset(Dataset):
             "sem": torch.from_numpy(csem.astype(np.uint8)),
             "heat": torch.from_numpy(heat.astype(np.float16)),
             "emb_id": torch.from_numpy(emb_id.astype(np.uint8)),
+            "dir": torch.from_numpy(dirs.astype(np.float16)),
             "index": i,
         }
 
@@ -213,6 +217,7 @@ class PlotDataset(Dataset):
 
         line_d = np.full((H, W), np.inf, np.float32)
         mark_pts, vert_pts = [], []
+        curves: dict[int, tuple[int, np.ndarray]] = {}  # sid -> (first column, y per column)
         for k, sr in enumerate(meta["series"][: MAX_SERIES - 1]):
             sid = k + 1
             path = apply(M, sr["path_px"]) if sr["path_px"] else np.zeros((0, 2))
@@ -227,6 +232,8 @@ class PlotDataset(Dataset):
                 region[take] = sid
                 region_d[take] = d[take]
                 vert_pts.append(turning_vertices(path))
+                if len(path) <= 0.5 * (x1 - x0):  # a curve one value per column can represent
+                    curves[sid] = column_curve(path)
             if len(mk):
                 mk = mk[(mk[:, 0] >= x0) & (mk[:, 0] <= x1) & (mk[:, 1] >= y0) & (mk[:, 1] <= y1)]
                 mark_pts.append(mk)
@@ -253,7 +260,41 @@ class PlotDataset(Dataset):
         heat[H_YTICK] = points_heat(apply(M, [t["anchor"] for t in meta["yticks"]]) if meta["yticks"] else [], SIGMA[H_YTICK])
         a = meta["plot_area"]
         heat[H_CORNER] = points_heat(apply(M, [[a[0], a[1]], [a[2], a[1]], [a[0], a[3]], [a[2], a[3]]]), SIGMA[H_CORNER], 7)
-        return heat, region, None
+        return heat, region, direction_targets(region, curves, H, W)
+
+
+def column_curve(path: np.ndarray) -> tuple[int, np.ndarray]:
+    """A polyline as one y per canvas column over its x extent: (first column, ys)."""
+    o = np.argsort(path[:, 0], kind="stable")
+    px, py = path[o, 0], path[o, 1]
+    c0, c1 = int(np.ceil(px[0])), int(np.floor(px[-1]))
+    if c1 < c0:
+        return c0, np.zeros(0)
+    return c0, np.interp(np.arange(c0, c1 + 1), px, py)
+
+
+def direction_targets(region: np.ndarray, curves: dict[int, tuple[int, np.ndarray]], H: int, W: int) -> np.ndarray:
+    """Per pixel of a series' region: the offset to its centre line in the next and the previous column.
+
+    Channel 0 is next, 1 is previous, in units of DIR_SCALE px, clipped at DIR_CLIP;
+    channel 2 is 1 where the target is defined (a pixel of a resolvable series
+    whose curve continues into that column) and 0 elsewhere.
+    """
+    out = np.zeros((N_DIR + 1, H, W), np.float32)
+    for sid, (c0, ys) in curves.items():
+        if len(ys) < 2:
+            continue
+        py, px = np.nonzero(region == sid)
+        if not len(px):
+            continue
+        i = px - c0
+        for ch, step in ((0, 1), (1, -1)):
+            ok = (i + step >= 0) & (i + step < len(ys))
+            off = (ys[np.clip(i + step, 0, len(ys) - 1)] - py) / DIR_SCALE
+            out[ch, py[ok], px[ok]] = np.clip(off[ok], -DIR_CLIP, DIR_CLIP)
+        inside = (i >= 0) & (i < len(ys))
+        out[2, py[inside], px[inside]] = 1.0
+    return out
 
 
 def to_device(b: dict, device) -> dict:
@@ -270,7 +311,7 @@ def to_device(b: dict, device) -> dict:
             v = (v.float() - mean) / std
         elif k in ("sem", "emb_id"):
             v = v.long()
-        elif k == "heat":
+        elif k in ("heat", "dir"):
             v = v.float()
         out[k] = v
     return out
