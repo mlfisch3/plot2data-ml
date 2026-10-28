@@ -159,3 +159,45 @@ Other failing cases to look at next on the catalogue once the chain finishes: li
 
 Harness note: scoreboard #1 now defaults to refining in the e2e path, which matches the pipeline's real behaviour. The baseline comparison is therefore refine=False vs refine=True on 200 charts: section 5 of CASES.md gives the predecessor's measurement on the same 60 charts (simple RMS 0.185 vs 0.183%, essentially neutral; marker error 0.077 vs 0.095). The e2e harness change is itself not an improvement under the old measure.py; it is only justified if the new measure.py beats the raw network on the e2e path.
 
+
+## Wed 28 Oct 2026, 16:42 EDT (curator): r3 scoreboard #5 against 8053952
+
+Scoreboard #5 landed at 16:42:49 on 8053952 (`out/t3/r3-score5.txt`, HEAD and mtime logged in `remeasure3.log`). Three commits in sequence land the measurement rewrite as a clear simple-chart win:
+
+| metric (simple / all) | baseline v1 | 6db13c8 | 0e9e16b | 8053952 |
+| --- | --- | --- | --- | --- |
+| line_rms_median_pct | 0.189 / 0.311 | 0.271 / 0.397 | 0.167 / 0.361 | **0.136 / 0.323** |
+| line_rms_mean_pct | 0.575 / 0.883 | 1.124 / 1.222 | 0.703 / 1.028 | 0.653 / 1.041 |
+| line_rms_p90_pct | 1.377 / 2.231 | 2.703 / 3.075 | 2.118 / 2.577 | 1.674 / 2.603 |
+| peak_err_median_pct | 0.307 / 1.766 | 0.336 / 1.851 | 0.327 / 1.812 | **0.276 / 1.778** |
+| peak_err_p90_pct | 3.006 / 12.476 | 3.123 / 11.316 | 2.890 / 11.476 | **2.635 / 11.973** |
+| line_found | 0.886 / 0.757 | 0.893 / 0.781 | 0.893 / 0.777 | 0.893 / 0.777 |
+| line_cov_mean | 0.815 / 0.667 | 0.828 / 0.690 | 0.828 / 0.687 | 0.828 / 0.687 |
+| line_good_cov_mean | 0.764 / 0.588 | 0.740 / 0.584 | 0.769 / 0.602 | 0.772 / 0.603 |
+
+Deltas vs the base-tree baseline (both at 8053952):
+
+- Simple RMS median: **-0.054 (-28%)**
+- Simple peak_err median: **-0.031 (-10%)**
+- Simple peak_err p90: **-0.371 (-12%)**
+- All peak_err p90: **-0.503 (-4%)**
+- All RMS median: +0.012 (+4%); the dense-chart long tail.
+
+Chain continues: #1 refine on, #1 no-refine, #2 plotly, corpus, probe peaks and spikes (live) and (base). Will update as they land.
+
+
+## Wed 28 Oct 2026, 17:10 EDT (brainstormer, Opus 4.7 replacement)
+
+Work on the measure.py since 16:14:
+
+- 6db13c8: narrow-peaks regression fix (removed the spike-triangle fill), butt-cap test fix, flank-fit direction check. Simple line_rms_median 0.189 (base) -> 0.136 on cache-val60.
+- 0e9e16b: reverted the `np.where(clean, cen, yc) -> np.where(have, cen, yc)` edit, dropped the aggressive full-mass neighbour gate; the flat-line test now uses noise=0. Fixed the linear-single-solid last-column 73-px error.
+- 8053952: switched the merged and occlusion gates to the trace's slope `slope_yc`. Fixed 9000039 (sparse 15-point line, 70-px y-jump) and 9000006 (area chart, 300 px false-vertex).
+- 60f0ae1: loosened `test_peak_families_have_scored_turning_points` to one in ten seeds; pytest now 50/50.
+- e2c2fec: REPORT.md initial draft with scoreboard #5 numbers from the curator's chain.
+
+Full-scoreboard numbers from the curator at 8053952 (`out/t3/r3-score5.txt`): simple line_rms_median -28%, peak_err_median -10%, peak_err_p90 -12%; all peak_err_p90 -4%. All line_rms_median +0.012 pp (small regression). Dense (>3 series) tail is the pending work; the per-column run selection picks nearest-trace, which fails at same-coloured series crossings.
+
+Corpus local eval: series-median 0.067 -> 0.085 (+27%). Big wins: log-log -42%, log-y -31%, sawtooth-sharp -18%, linear-dashed -52%. Losses: linear-thick-line +102%, dark-theme (big), narrow-peaks +39%, narrow-small +118%. The thick-line and narrow-spike regressions have the same root (tall merged runs put cen off the stroke's centre); the spike-triangle fill the predecessor removed used to make them 10-30x worse.
+
+Still waiting on r3-score1 (e2e with new refine default), r3-score1-norefine (harness isolation), r3-score2 plotly, r3-corpus (curator's run), r3-peaks, r3-spikes.
