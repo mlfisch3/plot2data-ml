@@ -101,15 +101,17 @@ End-to-end:
 
 | metric | base | a7aed7d | t5-zoom (ckpt swap) | submission (t5-zoom + --tta shift) |
 | --- | --- | --- | --- | --- |
-| line_rms_median_pct (all / simple) | 0.343 / 0.285 | 0.308 / 0.252 | 0.280 / 0.258 | TBD (queue8) |
-| line_found | 0.773 | 0.795 | 0.784 | TBD |
-| peak_err_median_pct (all / simple) | 0.636 / 0.408 | 0.454 / 0.260 | 0.449 / 0.240 | TBD |
-| marker_recall / precision | 0.590 / 0.813 | 0.557 / 0.727 | 0.613 / 0.715 | TBD |
-| yticks_err_median_px | 0.751 | 0.637 | 0.662 | TBD |
-| frame_found | 0.920 | 0.920 | 0.900 | TBD |
-| frame_err_median_px / p90 | 2.06 / 26.8 | 1.15 / 22.5 | 1.22 / 20.0 | TBD |
-| calib_y_within_0.5pct | 0.84 | 0.81 | 0.80 | TBD |
-| calib_y_err_median_pct | 0.234 | 0.207 | 0.208 | TBD |
+| line_rms_median_pct (all / simple) | 0.343 / 0.285 | 0.308 / 0.252 | 0.280 / 0.258 | 0.299 / 0.260 |
+| line_found | 0.773 | 0.795 | 0.784 | 0.784 |
+| peak_err_median_pct (all / simple) | 0.636 / 0.408 | 0.454 / 0.260 | 0.449 / 0.240 | 0.494 / 0.271 |
+| marker_recall / precision | 0.590 / 0.813 | 0.557 / 0.727 | 0.613 / 0.715 | 0.609 / **0.873** |
+| yticks_err_median_px | 0.751 | 0.637 | 0.662 | 0.690 |
+| frame_found | 0.920 | 0.920 | 0.900 | 0.890 |
+| frame_err_median_px / p90 | 2.06 / 26.8 | 1.15 / 22.5 | 1.22 / 20.0 | 1.19 / 16.7 |
+| calib_y_within_0.5pct | 0.84 | 0.81 | 0.80 | 0.81 |
+| calib_y_err_median_pct | 0.234 | 0.207 | 0.208 | 0.214 |
+
+Submission vs base on Chart.js: peak_err -22% to -34%, marker_precision +6pp (TTA kills marginal false positives, same mechanism as on mpl-val), frame_err_p90 -38% (26.8 to 16.7 px). Soft regressions on frame_found (-3pp) and calib_y_within_0.5pct (-3pp): a frame-head confidence floor on `plot_frame` is in-flight on the brainstormer's side (see REPORT.md) and should recover both without changing anything else.
 
 Geometry only (`--refine`):
 
