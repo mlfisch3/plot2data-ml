@@ -1,3 +1,31 @@
 # t1-axis notes
 
 Dated entries, newest last. Both agents write here.
+
+## Wed 28 Oct 2026, 01:40 EDT brainstormer: read everything, baseline reproduced, ranked ideas
+
+Baseline v3 end to end on mpl-val (200): line_found 0.547 all / 0.624 simple; calib within 0.5%: x 0.845, y 0.775; calibrated at all: x 0.92, y 0.94; scale right: x 0.91, y 0.89.
+Geometry alone (true ticks, --refine) finds 0.757 / 0.886, so the whole gap from 0.55 to 0.76 is calibration: a chart whose x or y axis fails to calibrate loses every series, and a chart whose calibration is off by more than 1% loses all its good-coverage credit.
+Note the v1 oracle-ticks run (true tick positions and values) still has calib_y_within 0.915 and scale_ok 0.915: that is the two-tick linear/log tie-break in fit_axis alone, which chooses linear for "10, 100" and for exact powers of ten with ratio below 100.
+
+Tools added: `p2d.eval_calib --json` dumps every axis in detail (true ticks, predicted ticks, text read, confidence, parsed value, fit, error). `ocr.beam_decode` (CTC prefix beam search, top-k strings with log P) and `ocr.ctc_score` (log P of a given string under the logits), unit-checked against each other.
+
+Ranked candidate improvements for the calibration area, with my guess of the gain on the mpl-val scoreboard (calib within 0.5%, and line_found which follows it):
+
+1. Joint decoding of an axis (top-k readings per label, the linear or log map that explains the most labels, then the text the map predicts at every disagreeing label scored under its CTC log-probs, so a misread digit or a dropped minus is corrected instead of thrown away; the nice-step rule decides linear versus log on two-label axes; RANSAC ties broken by progression regularity instead of pair order). Expected: +4 to +8 points on calib_y_within, +2 to +4 on x; line_found +4 to +7 points. Also fixes the v1-oracle residual (two-tick log axes).
+2. Rotated x labels (12% of mpl charts rotate 30/45/90; the reader never saw a rotated crop): estimate the angle from the label mask, de-rotate the crop, read. Expected: most of the calib_x_found gap (8%) if the no-fit axes are mostly rotated ones; to be confirmed by the buckets.
+3. Multiplier and offset text (matplotlib's "1e6" and "+1.2e3", 3 to 5% of mpl y axes; the corpus offset-annotation case): read the loose text near the axis end with the beam reader and a strict grammar; also when it touches the top label.
+4. Crowded labels merged into one box by the (3,5) dilation in label_boxes: split a box that spans two ticks, or read with the map-predicted text per tick. Expected: +1 to +2 points on y.
+5. Fine-tune the tick reader on crops cut with the predicted boxes' statistics, rotations, more fonts (from ocr1, short). Expected: +1 to +2 points.
+6. Date axes: more formats, and the mixed case where some labels parse as numbers. Small on mpl-val (12% of charts have date x axes, most already read).
+
+Going after 1 first (it is the general mechanism the others plug into), then 2 and 3.
+
+## Wed 28 Oct 2026, 02:05 EDT curator: baseline reproduced, diagnosis tools, first diagnosis, probe generator
+
+- Standard mpl-val e2e run from this tree before any edit matched out/base/v3-e2e-ocr.txt exactly (out/t1/base-mpl-e2e.txt, rows out/t1/rows-mpl.json, overlays of the first 40 in out/t1/viz-mpl).
+- Baseline Plotly e2e run with --viz crashes in evaluate.draw (cv2.drawMarker on a non-finite marker pixel, chart 0500012); reported to the brainstormer. The later Plotly run picked up the brainstormer's live edits, so it is not a baseline. Rule from the judge from now on: every "before" number is measured in /home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/base (commit 6b313e9); my diag.py takes P2D_ROOT for that.
+- Tools: teams/t1-axis/diag.py (per-tick diagnosis with ink-based grouping classes, two CPU ablations, overlays with the text read), reclass.py (re-classification from the JSON), sheet.py (contact sheets), gt_overlay.py (ground truth over a render, for generator checks).
+- The first diagnosis, with counts and mechanisms, is in mail/to-brainstormer.md (02:02). In one line: y loses 9 points to the fitter's two-decade tie-break, 7 to reading/grouping (leading glyph dropped by the speck filter or absorbed by the axis class; tick-mark slivers and corner labels taken as the label; rotated x labels), 7.5 to labels that get no box (small text on big charts after the canvas downscale); all 6 multiplier charts fail because the '1e6' gets no box.
+- Probe generator p2d/synth/probe_t1.py (16 styles, one per failure family; style by seed), checked by overlaying the recorded geometry on the renders (out/t1/gtviz). data/t1-probe: 640 charts at seeds 11,000,000+ generating now.
+- Lesson: a pkill pattern must contain the team directory name (t1-axis); a generic script name matched across worktrees.
