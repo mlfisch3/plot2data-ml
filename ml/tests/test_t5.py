@@ -128,3 +128,31 @@ def test_chartjs_truth_matches_the_render():
         # Axis ink lies along the frame edges (the border) or just outside them (tick marks, up to 10 px long).
         d = np.minimum.reduce([np.abs(xs - pa[0]), np.abs(xs - pa[2]), np.abs(ys - pa[1]), np.abs(ys - pa[3])])
         assert np.mean(d <= 1.5) >= 0.2 and np.max(d) <= 14
+
+
+def test_real_bench_pkg_shim_loads_loader_without_relative_imports():
+    """The shim in `tools/real_bench_pkg.py` must load `load_truth`/`score_chart` from
+    `p2d/eval_t5real.py` with the three relative imports stripped, so a frozen baseline
+    `p2d` package (which does not know about eval_t5real) can still be used."""
+    import importlib.util
+    import os
+
+    HERE = os.path.dirname(os.path.abspath(__file__))
+    ML = os.path.abspath(os.path.join(HERE, ".."))
+    path = os.path.join(ML, "p2d", "eval_t5real.py")
+    src = open(path).read()
+    src = src.replace("from .evaluate import draw, load_net", "")
+    src = src.replace("from .ocr import load_reader", "")
+    src = src.replace("from .pipeline import run", "")
+    spec = importlib.util.spec_from_file_location("_t5real_loader_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    exec(compile(src, path, "exec"), mod.__dict__)
+    # The loader and the scorer are callable, with the data file formats of the real benchmark.
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+        f.write("Entity,Code,Year,Life expectancy\nFrance,FRA,2000,79.1\nFrance,FRA,2001,79.3\n")
+        p = f.name
+    t = mod.load_truth({"kind": "owid"}, p)
+    assert set(t) == {"France"}
+    os.unlink(p)

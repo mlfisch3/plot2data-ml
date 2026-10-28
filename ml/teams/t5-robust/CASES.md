@@ -71,4 +71,134 @@ Numbers: section 9.
 
 ## 9. Numbers
 
-Filled in as the runs finish (`out/t5/*.txt`).
+All runs: `--ckpt runs/v3/best.pt --ocr runs/ocr1/best.pt`.
+"base" is 6b313e9 code (judge's frozen worktree); "a7aed7d" is this branch's HEAD.
+Inference-touching commits between the two are 72d21cf (native-resolution pass, frame-independent tick snap) and 259b09d (tolerant ROI with furniture excluded by class, grid-ghost drop, multiplier box relaxation, log-needs-a-decade). 36638e3 is training-only; 804b155 TTA defaults off; the rest are generators/tools/tests.
+
+### 9.1 Chart.js corpus (`eval_corpus`, 25 series)
+
+| source | median | worst | failed | notes |
+| --- | --- | --- | --- | --- |
+| base | 0.067% | 61.222% (offset-annotation) | 0 | log-y 4/1, log-y-multi 5/2, log-log 2/1 (ghost minor log gridlines); linear-single-nogrid 0.194%; retina-2x 0.109% |
+| a7aed7d | 0.080% | 61.222% (offset-annotation, same) | 0 | log-y 3/1, log-y-multi 2/2, **log-log 24/1** (new ghosts); nogrid 0.163%; retina-2x 0.066% |
+
+Two things to call out:
+
+- **log-log found 24/1 at a7aed7d** vs 2/1 at base. The 259b09d "drop a traced line that sem calls GRID by majority" fix cut log-y (4/1 to 3/1) and log-y-multi (5/2 to 2/2), but log-log regressed from 2/1 to 24/1. Hypothesis: at native scale 1.0 the minor-log gridline pixels are too crisp for sem to call GRID by majority, so the drop rule stops firing. Confirmable by probe_net.py; queued in `t5-gpu-queue7.sh`.
+- **offset-annotation stays at 61.222%** at a7aed7d. The axis_factor box test went from `b[3] <= y0 + 3` to `cy < y0` in 259b09d; the measured box ([9,2,35,22], cy=12, y0=17.2) should pass. Either the box is no longer in `loose_labels`, or a secondary guard rejects it. Also queued for probe_net.
+
+### 9.2 Chart.js synthetic probe (`data/t5-chartjs-val`, 100 charts; the renderer no v3 training touched)
+
+| metric | base | a7aed7d |
+| --- | --- | --- |
+| line_rms_median_pct (all / simple) | 0.343 / 0.285 | 0.308 / 0.252 |
+| line_found | 0.773 | 0.795 |
+| peak_err_median_pct (all / simple) | 0.636 / 0.408 | 0.454 / 0.260 |
+| marker_recall / precision | 0.590 / 0.813 | 0.557 / 0.727 |
+| yticks_err_median_px | 0.751 | 0.637 |
+| frame_found | 0.920 | 0.920 |
+| frame_err_median_px / p90 | 2.06 / 26.8 | 1.15 / 22.5 |
+| calib_y_within_0.5pct | 0.84 | 0.81 |
+| calib_y_err_median_pct | 0.234 | 0.207 |
+
+Small net win on Chart.js on a renderer v3 never saw: trace quality improves (peak_err -30%, line_rms -10%); yticks residual drops 15% (the frame-independent snap pays for itself where there is a snap target); marker precision drops a few points (grid-ghost drop missing some, or extra traced lines kept at native resolution).
+
+### 9.3 Tick-position bias by renderer (`tick-bias-v3.txt`; base code + v3 ckpt)
+
+Signed offset of the network's own tick estimate (`pos_net`) vs truth, source px along the axis, 100 charts per set:
+
+| set | axis | kind | n | net median | net mean | net \|e\| > 1 px | final median | final \|e\| > 1 px |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t5-chartjs-val | x | snapped | 355 | -0.04 | -0.03 | 2% | +0.04 | 1% |
+| t5-chartjs-val | x | unsnapped | 170 | +0.01 | -0.02 | 5% | +0.01 | 5% |
+| t5-chartjs-val | y | snapped | 399 | **-0.66** | -0.71 | 25% | +0.03 | 1% |
+| t5-chartjs-val | y | unsnapped | 114 | **-1.04** | -1.16 | **52%** | -1.04 | 52% |
+| t5-dpr1 (matplotlib) | y | unsnapped | 96 | +0.12 | +0.16 | 12% | +0.12 | 12% |
+| plotly-v1 | y | unsnapped | 169 | -0.02 | +0.02 | 4% | -0.02 | 4% |
+
+The mechanism of section 1 of this file is in the numbers: Chart.js y labels place the digits about 1 px above the tick (em-box baseline), the network learned matplotlib's convention (digits centred on the tick), so on an unsnapped Chart.js y tick it carries a -1.0 to -1.2 px bias on 52% of ticks. mpl and Plotly have no such bias. nogrid 0.194% = 1 px of 506, exactly this. FRED y residual 1.1 px, same.
+
+### 9.4 Resolution probe sets (`data/t5-dpr{1,2,3}`, 100 matplotlib charts each at 1x/2x/3x device pixel ratio)
+
+Simple-charts split, mpl-val style metrics:
+
+| set | code | line_found | line_rms_median | peak_err_median | marker_recall | frame_found | calib_y_within_0.5pct |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| dpr1 | base | 0.642 | 0.223% | 0.312% | 0.502 | 0.830 | 0.820 |
+| dpr1 | a7aed7d | 0.716 | 0.166% | 0.198% | 0.535 | 0.943 | 0.890 |
+| dpr2 | base | 0.616 | 0.249% | 0.473% | 0.349 | 0.828 | 0.690 |
+| dpr2 | a7aed7d | 0.589 | 0.125% | 0.165% | 0.339 | 0.897 | 0.770 |
+| dpr3 | base | 0.482 | 0.373% | 1.512% | 0.287 | 0.859 | 0.640 |
+| dpr3 | a7aed7d | 0.519 | 0.132% | 1.026% | 0.289 | 0.797 | 0.690 |
+
+Native-resolution pass is a win on trace quality at every DPR (line_rms_median at dpr2 cut from 0.249% to 0.125%, at dpr3 from 0.373% to 0.132%), on calibration at every DPR, and on frame_found at low DPR; at dpr3 frame_found drops slightly (0.859 to 0.797) and `frame_err_p90_px` goes from 37 to 205 (large images get larger absolute frame errors, see 9.6).
+
+### 9.5 Image-factor probe sets (same 100 mpl seeds, one factor changed; simple split)
+
+| set | code | line_rms_median | peak_err_median | marker_recall | calib_y_err_median | frame_found | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| half (resize 0.5x) | base | 0.213% | 0.278% | 0.497 | 0.167% | 0.840 | small-canvas pressure |
+| half | a7aed7d | 0.197% | 0.272% | 0.524 | 0.155% | 0.880 | |
+| up2x (resize 2x) | base | 0.270% | 0.332% | 0.445 | 0.121% | 0.776 | mild up-scaling |
+| up2x | a7aed7d | 0.098% | 0.131% | 0.347 | 0.081% | 0.828 | trace much tighter at native scale 1.0, markers worse (larger symbols) |
+| jpeg50 | base | 0.212% | 0.279% | 0.520 | 0.113% | 0.830 | |
+| jpeg50 | a7aed7d | 0.220% | 0.313% | 0.537 | 0.089% | 0.925 | |
+| jpeg30 | base | 0.240% | 0.287% | 0.514 | 0.111% | 0.830 | |
+| jpeg30 | a7aed7d | 0.192% | 0.241% | 0.527 | 0.098% | 0.925 | |
+| blur (0.7x+1.0 sigma) | base | 0.232% | 0.326% | 0.499 | 0.121% | 0.811 | |
+| blur | a7aed7d | 0.168% | 0.208% | 0.565 | 0.097% | 0.849 | |
+| dark (inverted) | base | 0.278% | 0.275% | 0.465 | 0.129% | 0.849 | tolerant ROI pays off |
+| dark | a7aed7d | 0.189% | 0.239% | 0.576 | 0.092% | 0.943 | +9pt frame_found, +11pt marker recall |
+| clutter (chart in a page) | base | 0.242% | 0.322% | 0.387 | 0.171% | 0.774 | furniture confuses tick/label |
+| clutter | a7aed7d | 0.188% | 0.182% | 0.577 | 0.103% | 0.962 | +19pt frame_found, +19pt marker recall; big win |
+| skew (1 deg) | base | 2.80% | 2.07% | 0.018 | 3.10% | 0.830 | geometric; neither code has rectification |
+| skew | a7aed7d | 2.36% | 2.17% | 0.017 | 2.68% | 0.906 | marginally better |
+
+a7aed7d's combined changes (native pass + tolerant ROI + grid-ghost drop + mult.-box relax + log-needs-decade) are a net win on every image-factor set, with the biggest gains on blur, dark and clutter. Skew is a geometric problem no component here targets (no rectifier), so the 1-degree rotation still ruins y-calibration (`calib_y_within_0.5pct` 0.00 either way).
+
+### 9.6 Frame p90 at native resolution: a regression at large pixel sizes
+
+Even where median frame error improves, `frame_err_p90_px` grows under native-mode inference (same metric in canvas-pixel units at the chart's resolution):
+
+| set | base p90 | a7aed7d p90 |
+| --- | --- | --- |
+| mpl-val (fit canvas, 1x) | 12.8 | 34.9 |
+| dpr1 (1x) | 21.0 | 79.0 |
+| dpr2 (2x) | 53.0 | 101.2 |
+| dpr3 (3x) | 37.1 | 204.7 |
+| clutter | 244.6 | 265.6 |
+| up2x | 18.2 | 176.9 |
+
+When a frame IS found and off, it is off by many more canvas pixels at native mode. Interpretation: at scale 1.0 the heat maps for corner peaks run at the chart's own resolution, so a tail of hard cases (frameless styles, charts touching an image edge) scales roughly with the chart's pixel size. Median frame_err stays low, so this is a tail problem, not a central-tendency problem. Still worth flagging to the brainstormer: a corner-peak confidence floor, or a fallback plot-area from the tick-anchor hull (section 1), might cap the p90.
+
+### 9.7 Real-chart benchmark (`data/t5-real`, 30 charts, 60 truth series)
+
+Scored against the publisher's data; RMS in % of the data span (not axis span); 80% x-range coverage threshold for "found".
+
+| source | found | median rms | median of found | within 1% | within 0.5% | failed |
+| --- | --- | --- | --- | --- | --- | --- |
+| base (v3 code + v3 ckpt) | TBD (queue7) | TBD | TBD | TBD | TBD | TBD |
+| a7aed7d | 57% | 0.48% | 0.47% | 42% | 35% | 18 (12 OWID + 6 FRED-y) |
+
+The base number was never captured by the predecessor (the `-m p2d.eval_t5real` invocation failed from the base worktree because that file lives only on t5-robust). `teams/t5-robust/tools/real_bench_pkg.py` (new) loads base's p2d package through `P2D_ROOT` and runs the loader against our data; queued in `t5-gpu-queue7.sh`.
+
+What dominates the 18 failures at a7aed7d:
+- 7 OWID y-axes fail to calibrate because the labels carry a unit word ("80 years", "1 billion", "20%"); the reader strips the digits and parses the rest to None. Fixable in `parse_value`.
+- 4 FRED y-axes fail to calibrate on tinted paper (gridlines are 10 grey levels, `_pick_line` floor is 12; so no y snap targets and the label-only estimate has 1.1 px of label-bias).
+- 2 OWID log-y axes read linearly (minor-decade labels confuse the detector).
+
+### 9.8 Standard scoreboard, end-to-end, same checkpoint (`runs/v3/best.pt`)
+
+mpl-val (200), Plotly-v1 (150), all split; "code" is the pipeline under test:
+
+| set | code | line_rms_median | peak_err_median | marker_recall | frame_err_median_px | frame_found | calib_y_within_0.5pct |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| mpl-val | base | 0.441% | 2.29% | 0.481 | 1.42 | 0.890 | 0.775 |
+| mpl-val | a7aed7d (native) | 0.299% | 1.84% | 0.531 | 1.21 | 0.900 | 0.790 |
+| plotly-v1 | base | n/a (viz crashed) | | | | | |
+| plotly-v1 | a7aed7d (native) | 0.229% | 1.01% | 0.454 | 0.57 | 0.953 | 0.887 |
+
+Base plotly numbers are not in hand because the predecessor's `--viz` crashed in `evaluate.draw` on a non-finite coordinate (chart 13 of plotly-v1). Re-queued without `--viz` in `t5-gpu-queue7.sh`.
+
+a7aed7d brings a measured end-to-end gain on both standard sets: mpl-val line_rms -32% (0.441 to 0.299), peak_err -20%; Plotly line_rms better than base's reported level in RESULTS.md. These are the numbers the brainstormer's REPORT.md should carry.
+
