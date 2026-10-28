@@ -236,3 +236,17 @@ clusters of ink along the axis before re-filtering, so a lone decimal point does
 re-filter, re-run the main glyph detection on the uncoloured ink too and take the UNION (not replacement) of the
 two bands. The 7 regressions here plus the 3 class-11 superscripts bound the price of 244ce7b's rewrite at 10
 charts on mpl-val, against 34 fixed (22 y + 12 x); the colour-aware path is a net +24 before any of these fixes.
+
+On the probe set the same mechanism costs 22 x charts (all "cropped" first-cause, concentrated in `t1-crowded_y`
+`t1-tiny` `t1-mult_sci` `t1-neg_small` `t1-rot45` `t1-sci_e` `t1-dates`) and 4 y charts (11000203, 11000228,
+11000494, 11000575) against gains of 25 x + 29 y.
+
+On the real screenshots (`v244-real.txt`) the mechanism breaks the year labels of `01-panel1.png` and
+`01-panel3.png`: the pipeline reads x as `['02', '02', '202', '202', '02', '02', '02', '021', '02', '021']` and
+fits the axis as log with 145 and 487 pixel error; v3 base read these as `['2024','2023','2020','2021','2022']`
+and fit as linear with 1 pixel error. Overlay in `out/t1/crops/01-panel1-x-v244.png`: the computed boxes are
+~13 pixels wide centred on each year label, so the reader sees two middle digits only. The pipeline also hands
+refine_labels a tick list with the SAME (pos, anchor_y) duplicated several times (upstream of refine, in
+`extract.group_labels` on the sem components), so each year is boxed and read twice. On the win side the same
+commit **fixes** `03-women-men-percent.png`: v3 fit x as log (CASES class 9, 145px error); v244's
+arithmetic-progression tiebreak takes linear with 2.11px error.
