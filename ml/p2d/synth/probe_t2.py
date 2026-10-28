@@ -17,6 +17,8 @@ the extractor can be measured against one failure at a time:
     step       step series crossing each other
     clipped    series leaving the plot area through the y limits and coming back
     multi      six series of mixed styles, the hardest charts of the validation set
+    markers    lines under large markers, the ridge interrupted by the marker blobs
+    wide       figures 1400 to 1800 px wide, scaled to 0.43 to 0.55 on the canvas, with ordinary 1 to 2 px lines
 
 Seeds encode the case: seed = 12_000_000 + 10_000 * case_index + i. The output
 format is the one `p2d.synth.build` writes (PNG, sem.png, inst.png, json), so the
@@ -59,7 +61,7 @@ from .mpl_render import (AXIS, BG, DATA, GRID, LEGEND_SYMBOL, TEXT, TICK_LABEL, 
 SEED_BASE = 12_000_000
 CASE_STRIDE = 10_000
 CASES = ["cross", "steep", "parallel", "samecolour", "dotted", "thin", "small", "dense", "legend", "area", "step",
-         "clipped", "multi"]
+         "clipped", "multi", "markers", "wide"]
 
 COLOURS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
            "#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
@@ -336,9 +338,47 @@ def case_multi(rng: np.random.Generator, spec: dict) -> dict:
     return spec
 
 
+def case_markers(rng: np.random.Generator, spec: dict) -> dict:
+    """Lines drawn with large markers: the ridge is interrupted by a blob at every data point."""
+    n = int(rng.integers(10, 45))
+    k = int(rng.choice([1, 2, 3]))
+    x = unit_x(rng, n)
+    t = np.linspace(0, 1, n)
+    cols = rng.permutation(10)[:k]
+    for j in range(k):
+        _, y = S.shape(rng, t, kind=str(rng.choice(["sines", "trend_noise", "walk", "poly"])))
+        y = y * float(rng.uniform(0.5, 1.0)) + float(rng.uniform(-0.3, 0.3))
+        spec["series"].append(line(x, y, COLOURS[cols[j]], lw=float(rng.uniform(1.0, 2.5)), label=f"Series {j + 1}",
+                                   marker=str(rng.choice(["o", "s", "^", "D", "v"])), ms=float(rng.uniform(7, 12))))
+    return spec
+
+
+def case_wide(rng: np.random.Generator, spec: dict) -> dict:
+    """Large figures that the canvas scales down by half: ordinary lines become sub-pixel."""
+    spec["wpx"] = float(rng.uniform(1400, 1800))
+    spec["hpx"] = spec["wpx"] * float(rng.uniform(0.45, 0.7))
+    if spec["wpx"] * spec["hpx"] > 1.8e6:
+        f = math.sqrt(1.8e6 / (spec["wpx"] * spec["hpx"]))
+        spec["wpx"], spec["hpx"] = spec["wpx"] * f, spec["hpx"] * f
+    spec["dpi"] = float(rng.choice([96, 100, 110, 120]))
+    spec["fontsize"] = float(rng.uniform(9, 14))
+    n = int(rng.integers(60, 500))
+    k = int(rng.choice([2, 3, 3]))
+    x = unit_x(rng, n)
+    t = np.linspace(0, 1, n)
+    cols = rng.permutation(10)[:k]
+    for j in range(k):
+        _, y = S.shape(rng, t)
+        y = y * float(rng.uniform(0.5, 1.0)) + float(rng.uniform(-0.3, 0.3))
+        lw_pt = float(rng.uniform(1.0, 2.0)) * 72 / spec["dpi"]  # 1 to 2 source px
+        spec["series"].append(line(x, y, COLOURS[cols[j]], lw=lw_pt, label=f"Series {j + 1}"))
+    return spec
+
+
 BUILDERS = {"cross": case_cross, "steep": case_steep, "parallel": case_parallel, "samecolour": case_samecolour,
             "dotted": case_dotted, "thin": case_thin, "small": case_small, "dense": case_dense, "legend": case_legend,
-            "area": case_area, "step": case_step, "clipped": case_clipped, "multi": case_multi}
+            "area": case_area, "step": case_step, "clipped": case_clipped, "multi": case_multi, "markers": case_markers,
+            "wide": case_wide}
 
 
 # ----------------------------------------------------------------------------- rendering

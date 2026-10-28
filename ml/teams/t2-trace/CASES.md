@@ -47,6 +47,10 @@ Lost rate by structure (`out/t2c/analyze-val.txt`):
 | legend box inside the plot | 141 | 32% | 50% |
 | same colour as another series | 13 | 38% | 23% |
 
+The line-width effect is a canvas-scale effect: by width on the 768 x 512 canvas (source width times the placement scale), under 0.7 px 48% lost (n = 48), 0.7-1.0 px 30% (60), 1.0-1.5 px 18%, 1.5-2.5 px 17%, over 2.5 px 24%.
+Both extremes of scale hurt: charts scaled below 0.5 (wide figures) lose 28%, charts upscaled (scale >= 1, small figures) lose 32%, the middle 17-20%.
+The ridge heat is present on these thin lines all the same (section 3), so they are lost in the decoding, not in the network.
+
 Plotly (`analyze-plotly.txt`): lost 3% with no crossing, 24% with 10+ crossings, 53% when within 3 px of another series on 10-30% of columns; dashed (`dash`) 28% lost; 4-5 series charts 22-29% lost; plot height < 250 px 26% lost.
 
 ## 3. Where the pipeline loses them (staged inspection)
@@ -63,6 +67,18 @@ Everything is lost in the decoding, in this order of frequency (counts to be fil
 4. **Dense and steep curves are represented one value per column**: for a run longer than 5 px `column_runs` takes the heat centroid of the run, which for a zigzag of 20-40 px per column is 10-20 px from the truth at the column centre; these are "found" with good coverage 0.1-0.5 (9000031, 9000068, 9000184, 9000079).
 5. **Spurious pieces**: the ghost traces beside thick lines and the fragments of crossings return 2-5x as many lines as there are series (9000031: 13 lines for 2 series; 9000144: 17 for 3), which drags the Hungarian matching and the marker-row filter.
 
+### How much a decoder can win
+
+"Dense/steep" below means more than 1 data point per pixel column, or a steepness p90 of 8 px per column or more: there one value per column is the limit (C4), not separation.
+The rest is separation territory (C1, C2, C3, C5).
+
+| set | series | of which separation territory | share of the good-coverage deficit in separation | ceiling if separation were perfect (found / good cov) |
+| --- | --- | --- | --- | --- |
+| mpl-val all | 461 | 312 (77 lost, 125 partial) | 60% | 0.924 / 0.835 (0.803 at the 0.953 good cov of single-series charts) |
+| mpl-val simple | 149 | 119 (13 lost, 37 partial) | 69% | 0.973 / 0.926 |
+| plotly all | 309 | 192 (20 lost, 62 partial) | 42% | 0.926 / 0.841 |
+| plotly simple | 107 | 91 (3 lost, 17 partial) | 74% | 1.000 / 0.973 |
+
 ## 4. Probe sets
 
 All at seeds 12,000,000 and above, 100 charts each, built with `python -m p2d.synth.probe_t2 --case <name> --count 100 --out data/t2-<name>`.
@@ -71,6 +87,9 @@ Baseline: `python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/t2-<name> -
 | case | what it provokes | series | found | cov | good cov | rms median | rms p90 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | cross | 2-4 smooth sines of distinct colours, 3-25 shallow crossings each | 300 | 0.827 | 0.780 | 0.714 | 0.111% | 17.2% |
+| samecolour | two series in one colour (solid + dashed, or solid + thick), crossing, sometimes a third series | 240 | 0.900 | 0.812 | 0.743 | 0.379% | 6.6% |
+
+`samecolour`: the 202 members of a same-colour pair lose 11% and 24 of them come back with RMS above 5% (a hop onto the twin), 56% are partial; the 38 differently coloured third series in the same charts lose 5%, none hops (RMS over 5%: 0). Solid + dashed (11% lost) and solid + thick (10%) behave alike. The network does separate same-colour series most of the time (the overlay `viz-samecolour/12030000.png` shows a solid and a dash-dot of one colour kept apart through two crossings); the failure is at the crossings, as in `cross`, only more often.
 
 `cross`: 52 of 300 lost (4% in 2-series charts, 17% in 3, 25% in 4; 6% with 3-9 crossings, 24% with 10+); of the 248 found, 66 have RMS above 5% (hopped onto another curve for a stretch), and 1.59 lines are returned per true series (38 charts return more than 1.5x). Line width does not matter here (16-18% lost at every width).
 
