@@ -19,6 +19,8 @@ Families:
 - log: log y and log-log axes with steep slopes.
 - grid: many evenly spaced gridlines and dense ticks, minor grid.
 - frame: spines hidden in every combination, offset spines, tinted paper.
+- spikes: dense series (300 to 2,500 points) with one-sample spikes, so the
+  flanks are narrower than a column; round, mitred and bevelled joins.
 """
 
 from __future__ import annotations
@@ -49,7 +51,7 @@ from .mpl_render import (AXIS, DATA, GRID, LEGEND_SYMBOL, TEXT, TICK_LABEL, BG, 
 SEED_BASE = 13_000_000
 # Each family has its own seed range, so an id names one chart across all probe sets.
 FAMILY_BASE = {"peaks": 13_000_000, "scale": 13_100_000, "ticks": 13_200_000, "width": 13_300_000, "log": 13_400_000,
-               "grid": 13_500_000, "frame": 13_600_000}
+               "grid": 13_500_000, "frame": 13_600_000, "spikes": 13_700_000}
 
 
 def _grid(seed: int, family: str, *sizes: int) -> list[int]:
@@ -449,7 +451,43 @@ def frame(seed: int) -> Rendered:
         ctx.__exit__(None, None, None)
 
 
-FAMILIES = {"peaks": peaks, "scale": scale, "ticks": ticks, "width": width, "log": log, "grid": grid, "frame": frame}
+def spikes(seed: int) -> Rendered:
+    """Dense series (more points than columns) with one-sample spikes: flanks narrower than a pixel column."""
+    rng = np.random.default_rng(seed)
+    i_n, i_prom, i_sp, i_lw, i_join, i_size = _pick(seed, 4, 4, 4, 4, 3, 3)
+    n = [300, 800, 1500, 2500][i_n]
+    prom = [0.05, 0.12, 0.25, 0.5][i_prom]
+    spacing = [4, 8, 16, 32][i_sp]  # columns between spikes
+    lw_px = [1.0, 2.0, 3.0, 5.0][i_lw]
+    join = ["round", "miter", "bevel"][i_join]
+    wpx = [450, 900, 1800][i_size]
+    hpx = wpx * 0.62
+    dpi = 100.0
+    fig, ax, canvas, ctx = _figure(wpx, hpx, dpi, max(7.0, 10 * wpx / 900))
+    try:
+        n_cols_est = 0.78 * wpx
+        x = np.linspace(0, 1, n)
+        y = rng.uniform(0.2, 0.4) + 0.08 * _smooth(rng, n)
+        step = max(2, int(round(n * spacing / n_cols_est)))
+        idx = np.arange(step, n - step, step)
+        y[idx] += prom * rng.uniform(1.0, 1.4, len(idx))
+        ax.set_ylim(0, 1)
+        ax.set_xlim(0, 1)
+        ax.yaxis.set_major_locator(mticker.MultipleLocator(0.2))
+        ax.xaxis.set_major_locator(mticker.MultipleLocator(0.2))
+        if rng.random() < 0.5:
+            ax.grid(True, color="#dddddd", lw=0.8)
+        art = _plot(ax, x, y, lw_px, dpi, ["#0072B2", "#D55E00", "#009E73", "#222222"][int(rng.integers(4))], join=join)
+        fig.tight_layout(pad=0.6)
+        probe = dict(family="spikes", n=n, prom=prom, spacing=spacing, lw_px=lw_px, join=join, width=wpx,
+                     flank_cols=float(n_cols_est / n))
+        return finish(fig, ax, canvas, [dict(kind="line", label="Series 1", x=x, y=y, lw=lw_px * 72 / dpi, ls="-")], [art], seed, probe)
+    finally:
+        ctx.__exit__(None, None, None)
+
+
+FAMILIES = {"peaks": peaks, "scale": scale, "ticks": ticks, "width": width, "log": log, "grid": grid, "frame": frame,
+            "spikes": spikes}
 
 
 def generate(family: str, seed: int) -> Rendered:

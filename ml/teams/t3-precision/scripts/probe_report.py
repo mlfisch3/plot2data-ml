@@ -91,7 +91,7 @@ def main() -> None:
     pairs = {"peaks": [("shape", "half_cols"), ("join", "lw_px"), ("prom", "half_cols"), ("width", "lw_px")],
              "scale": [("mode", "width"), ("width", "lw_px")], "ticks": [("look", "marks"), ("marks", "grid")],
              "width": [("color", "lw_px"), ("grid", "lw_px")], "log": [("kind", "decades")], "grid": [("nbins", "minor")],
-             "frame": [("spines", "grid")]}
+             "frame": [("spines", "grid")], "spikes": [("n", "lw_px"), ("join", "lw_px"), ("spacing", "prom")]}
     for f1, f2 in pairs.get(fam, []):
         groups = defaultdict(list)
         for i, c in enumerate(charts):
