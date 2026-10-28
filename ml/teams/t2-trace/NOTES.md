@@ -130,3 +130,26 @@ Working on dedupe pass now:
 
 Next if dedupe-v2 is a modest win: ship and update report. If regression: revert to v3-only.
 Follow-up work on branch for next session: direction-head training (scaffolding in place, no consumer in extract.py yet) and the predecessor's whole-ridge-graph tracker (preserved at 9b97b78).
+
+## Wed 28 Oct 2026, 17:15 EDT curator
+
+Brainstormer committed overlap-merge-v3 as 4ab8ee0. Confirmed win on probe (cross +0.010, samecolour +0.013) and on plotly (found all +0.013, cov +0.011, good_cov +0.008; simple slightly down -0.009). 
+
+Dedupe iteration (dedupe-v1 with window=0 + tol=2.5, dedupe-v2 with window=1 + tol=2.5): found metric unchanged over v3, but pred counts exploded by +233 across 79 charts in v2 (+> similar in v1). Diagnosis in to-brainstormer: Path 2 (envelope-swallowed-real) is a RED HERRING - the real series was lost upstream (chain/cluster), not because dedupe hid it. Rolled back dedupe. Keeping extract.py minimal: only merge_fragments/_join_cost/_end_slope changed vs frozen.
+
+Full sweep t2c-measure-live.sh overlap-merge-v3 full running. Done so far: val-refine, plotly-refine, cross, samecolour. In progress: parallel. Pending: shallowx, legocclude, 12 other probes, val-e2e, plotly-e2e, corpus, real. GPU heavily contended (t3, t4, t5 all running); ETA 1-1.5 hours.
+
+Final v3 picture to date (mpl-val 200 geometry only):
+    line_found         0.7570 -> 0.7809  +0.024 all
+    line_found simple  0.8859 -> 0.8993  +0.013
+    line_cov_mean      0.6665 -> 0.6879  +0.021 all
+    line_good_cov_mean 0.5884 -> 0.6052  +0.017 all
+    line_rms_median    0.3111 -> 0.2852  -0.026 all
+Plotly 150 geometry only:
+    line_found         0.8608 -> 0.8738  +0.013 all; simple -0.009
+Cross 100 probe:
+    line_found         0.9167 -> 0.9267  +0.010
+Samecolour 100 probe:
+    line_found         0.9000 -> 0.9125  +0.013
+
+Mechanism: Hungarian assignment with no_join=5.0 over frozen gap rule (dx 1..60) + slope-aware extension for dx 60..90 + overlap-aware rule (med<=1.5, MAD<=1.2, drift<=2.5, ks-disjoint, q>=0.3, len>=50 on both sides). The pivot that made it work: KEEP the frozen gap rule exactly for the common case.
