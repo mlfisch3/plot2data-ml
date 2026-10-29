@@ -179,7 +179,7 @@ V2 generalises to high-DPR trace at least as well as V1 (dpr2 within +0.02 pp) a
 | up2x | peak_err_median_pct | 0.332 | 0.170 | **0.143** | -0.027 |
 | jpeg50 | line_rms_median_pct | 0.212 | 0.193 | 0.206 | +0.013 |
 | jpeg30 | line_rms_median_pct | 0.240 | 0.215 | 0.225 | +0.010 |
-| skew1 | line_rms_median_pct | 2.803 | 2.349 | TBD | TBD |
+| skew1 | line_rms_median_pct | 2.803 | 2.349 | 2.310 | -0.039 |
 
 Across the ten image-factor + DPR probes, V2 and V1 are essentially identical on average line_rms_median (V1 0.173%, V2 0.175%). V2 wins (dpr1, half, up2x, dark), loses (dpr2, dpr3, blur, jpeg50, jpeg30), and shows one notable regression on **clutter** (+35% rms, frame_err_median_px 18 to 28 px) worth probe_net inspection in a follow-up round. The Chart.js-side gain in section 3.4 (-16% to -65% depending on metric) and 3.5 (-19% on real-world rms) is why V2 is preferred; the matplotlib-side cost on probes is modest.
 

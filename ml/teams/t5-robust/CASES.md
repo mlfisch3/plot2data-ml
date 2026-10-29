@@ -185,6 +185,7 @@ Native-resolution pass is a win on trace quality at every DPR (line_rms_median a
 | skew (1 deg) | base | 2.80% | 2.07% | 0.018 | 3.10% | 0.830 | geometric; neither code has rectification |
 | skew | a7aed7d | 2.36% | 2.17% | 0.017 | 2.68% | 0.906 | marginally better |
 | skew | submission | 2.35% | 2.07% | 0.017 | TBD | 0.880 | essentially unchanged (no rectifier) |
+| skew | v2 | 2.31% | 2.13% | 0.015 | TBD | 0.880 | essentially unchanged (no rectifier) |
 
 a7aed7d's combined changes (native pass + tolerant ROI + grid-ghost drop + mult.-box relax + log-needs-decade) are a net win on every image-factor set, with the biggest gains on blur, dark and clutter. Skew is a geometric problem no component here targets (no rectifier), so the 1-degree rotation still ruins y-calibration (`calib_y_within_0.5pct` 0.00 either way).
 
@@ -325,7 +326,7 @@ Base = v3 ckpt + 6b313e9 code; V1 submission = t5-zoom ckpt + a7aed7d code + --t
 | up2x | peak_err_median_pct | 0.332 | 0.170 | 0.143 | -0.027 |
 | jpeg50 | line_rms_median_pct | 0.212 | 0.193 | 0.206 | +0.013 |
 | jpeg30 | line_rms_median_pct | 0.240 | 0.215 | 0.225 | +0.010 |
-| skew1 | line_rms_median_pct | 2.803 | 2.349 | TBD | TBD |
+| skew1 | line_rms_median_pct | 2.803 | 2.349 | 2.310 | -0.039 |
 
 Reading V2 vs V1 across the ten image-factor + DPR probes:
 
