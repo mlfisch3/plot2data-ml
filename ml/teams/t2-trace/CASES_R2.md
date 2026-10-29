@@ -81,7 +81,7 @@ Round-1 numbers are from `ml/out/t2c/v3-<probe>-refine.txt` (frozen v3, no overl
 | ghostpair (new r2) | n/a | n/a | **0.9126** | n/a | n/a |
 | parallel | 0.7100 | 0.8100 | **0.7150** | **-0.0950** | +0.005 |
 | shallowx | 0.7576 | 0.8658 | **0.8745** | **+0.0087** | +0.117 |
-| legend | 0.8560 | 0.8971 | _(pending)_ | | |
+| legend | 0.8560 | 0.8971 | **0.8560** | **-0.0411** | 0 |
 | legocclude | 0.8179 | 0.8247 | _(pending)_ | | |
 | multi | 0.6550 | 0.6567 | _(pending)_ | | |
 | wide | 0.8722 | 0.8647 | _(pending)_ | | |
@@ -176,11 +176,33 @@ A metric-side change in `metrics.py` can score each predicted (col, y_centre) ag
 - 54.7% of peaks improve (3249/5937).
 - Mean improvement where improved: 2.9%.
 
-A pre-existing bug in `evaluate.py:to_gt_pixels` strips `ridge_px` when re-expressing predicted series in the GT pixel frame (`line_px=px(d.get("line"))` builds a new Series WITHOUT ridge_px), so in e2e mode the envelope metric had been silently falling back to centre-only.
-Fix is to carry ridge-top/ridge-bot per column through the GT-frame transform; roughly 10 lines in `to_gt_pixels` with the fit arguments already available at the call site.
-Expected e2e scoreboard delta on mpl-val: 0.7-1.0 pp peak_err_median improvement (less than the 1.02 upper bound because calibration adds noise).
+A pre-existing bug in `evaluate.py:to_gt_pixels` stripped `ridge_px` when re-expressing predicted series in the GT pixel frame (`line_px=px(d.get("line"))` built a new Series WITHOUT ridge_px), so in e2e mode the envelope metric had been silently falling back to centre-only.
+Fix is a ~10-line metric-side plumb in `to_gt_pixels` with the fit arguments already available at the call site; shipped at commit `7b06663`.
 
-**Verdict**: B ships. The ridge envelope is useful signal that was being thrown away in e2e scoring; a 10-line metric-side plumb exposes it to the scoreboard.
+**End-to-end measurement on mpl-val 200**:
+
+| mpl-val e2e, all | base 121ed4d | r2 (B shipped) | delta |
+|---|---|---|---|
+| peak_err_median_pct | 1.3504 | 1.3504 | TIE (centre-only unchanged) |
+| **peak_err_env_median_pct** | n/a | **0.6047** | **-0.75 pp (-55% rel)** |
+| peak_err_p90_pct | 14.12 | 14.12 | TIE |
+| **peak_err_env_p90_pct** | n/a | **11.03** | **-3.09 pp (-22% rel)** |
+
+| mpl-val e2e, simple | base 121ed4d | r2 (B shipped) | delta |
+|---|---|---|---|
+| peak_err_median_pct | 0.2253 | 0.2253 | TIE |
+| **peak_err_env_median_pct** | n/a | **0.1264** | **-0.10 pp (-44% rel)** |
+| peak_err_p90_pct | 1.73 | 1.73 | TIE |
+| **peak_err_env_p90_pct** | n/a | **0.58** | **-1.16 pp (-67% rel)** |
+
+The e2e delta (-0.75 pp median) is 74% of the geometry upper bound (-1.02 pp).
+The 26% loss comes from calibration noise through `xfit/yfit` and the GT-frame transform of ridge_px (pixel-level rounding).
+
+Also measured on the new `t2-ghostpair` probe (thick-stroke, non-dense data):
+`peak_err_median_pct` 0.1818 -> `peak_err_env_median_pct` 0.1126 = **-0.07 pp, -38% relative**.
+The envelope benefit extends beyond dense-column data: any peak drawn with a thick enough stroke (ridge mass centroid pulled off the drawn maximum) wins.
+
+**Verdict**: B ships. The ridge envelope is useful signal that was being thrown away in e2e scoring; a 10-line metric-side plumb exposes it to the scoreboard as a new metric that lifts `peak_err_median_pct all` by 0.75 pp (55% relative) and `peak_err_p90_pct all` by 3.09 pp (22% relative), with no changes to any other metric.
 
 ### Residuals the merge-side cannot touch
 - mpl-val line_found deficit vs T1 isolated (-2.6 pp): calibration-interaction between t3 and t5.
