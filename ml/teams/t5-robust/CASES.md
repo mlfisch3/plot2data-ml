@@ -269,3 +269,60 @@ Probe-set deltas (section 9.5), chartjs-val e2e deltas (section 9.2), and real-b
 
 Submission mechanism, in one sentence per piece: the **native-resolution forward pass** (72d21cf) reads a chart larger than 768x512 at its own pixel count instead of downsampling to the canvas, so refinement and marker detection see the pixels the user screenshotted; the **zoom-crop fine-tune** (`runs/t5-zoom`) trained the same net on 35% zoom-crops of the three source corpora, teaching sem to call native-scale gridline pixels GRID consistently (the drop rule in extract then removes the 23 minor-log-gridline ghosts that native-mode-at-v3 kept); **--tta shift** averages the sem/heat maps of the normal and a half-pixel-shifted forward pass, nudging sub-threshold label connected components over threshold (the "1e6" box in offset-annotation gets a slightly different crop, the OCR reads "1e6", axis_factor applies the multiplier).
 
+
+### 9.10 V2: Chart.js in the training mix (`runs/t5-chartjs/best.pt`)
+
+Optional second submission on `team/t5-robust-chartjs`.
+Same code as V1 submission (bd6a491): native pass + class-aware ROI + grid-ghost drop + multiplier box + log-decade + `--tta shift`.
+The only change is the checkpoint: V2 fine-tunes `runs/t5-zoom/best.pt` for 3,000 further iters on `data/mpl-v1 + data/mpl-v2 + data/plotly-train-x8 + data/t5-chartjs` (67,385 training samples, val loss 2.59 vs V1's zoom 2.49 on the pure-mpl val).
+Hypothesis: Chart.js's em-box tick-label convention is now in the training distribution, so the -1.04 px y-tick bias on 52% of unsnapped Chart.js y labels (section 9.3) collapses and the `nogrid`/FRED biases that reduce to the same mechanism come with it.
+
+The brainstormer owns the scoreboard section (corpus, examples/real, mpl-val, plotly-v1, chartjs-val probe at V2); curator fills the probe-set grid and the `t5-real` benchmark.
+
+#### 9.10.1 DPR probe sets (`data/t5-dpr{1,2,3}`, V2 vs V1 submission)
+
+TBD: filling in from `*-v2-e2e.txt`.
+
+| set | base (v3) | V1 submission | V2 submission |
+| --- | --- | --- | --- |
+| dpr1 line_rms_median | 0.233% | TBD | TBD |
+| dpr1 calib_y_within_0.5pct | 0.820 | TBD | TBD |
+| dpr2 line_rms_median | 0.221% | 0.148% | TBD |
+| dpr2 calib_y_within_0.5pct | 0.690 | 0.770 | TBD |
+| dpr3 line_rms_median | 0.217% | TBD | TBD |
+| dpr3 calib_y_within_0.5pct | 0.640 | TBD | TBD |
+
+#### 9.10.2 Image-factor probe sets (V2 vs V1 submission)
+
+TBD: filling in from `*-v2-e2e.txt`.
+
+| set | metric | base (v3) | V1 submission | V2 submission |
+| --- | --- | --- | --- | --- |
+| blur | line_rms_median | 0.228% | 0.174% | TBD |
+| blur | marker_precision | 0.668 | 0.792 | TBD |
+| dark | line_rms_median | 0.294% | TBD | TBD |
+| dark | calib_y_within_0.5pct | 0.770 | TBD | TBD |
+| clutter | line_rms_median | 0.206% | TBD | TBD |
+| clutter | frame_err_median_px | 5.56 | TBD | TBD |
+| half | line_rms_median | 0.275% | TBD | TBD |
+| up2x | line_rms_median | 0.220% | TBD | TBD |
+| jpeg50 | line_rms_median | 0.218% | TBD | TBD |
+| jpeg30 | line_rms_median | 0.241% | TBD | TBD |
+| skew1 | line_rms_median | 2.400% | TBD | TBD |
+
+#### 9.10.3 Real-chart benchmark at V2 (`data/t5-real`, 30 charts, 60 truth series)
+
+TBD: brainstormer's `chartjs-t5real.txt` once it lands.
+
+| source | found | median rms | within 1% | within 0.5% | failed |
+| --- | --- | --- | --- | --- | --- |
+| base (6b313e9 + v3) | 67% | 1.86% | 28% | 25% | 15 |
+| V1 submission | 63% | 0.75% | 42% | 32% | 14 |
+| V2 submission | TBD | TBD | TBD | TBD | TBD |
+
+#### 9.10.4 Mechanism check (expected)
+
+Expected deltas on probe sets:
+- **DPR / image-factor (matplotlib)**: V2 trained on matplotlib + Chart.js, so matplotlib probe accuracy should be flat or marginally worse than V1 (Chart.js takes some capacity).
+- **Chart.js-val**: y-tick bias (-1.04 → 0.0 target), calib_y_within_0.5pct should rise from 0.81 to ~0.90.
+- **t5-real**: the three FRED y-only failures tied to Chart.js-style gridlines may be rescued; the OWID unit-word failures are OCR-side and unchanged.
