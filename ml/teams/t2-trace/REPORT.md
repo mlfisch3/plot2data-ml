@@ -47,8 +47,9 @@ The end-to-end "all" delta is smaller than geometry-only because tick-reader err
 | t2-shallowx | 0.7576 | **0.8658** | **+0.108** | **+0.109** |
 | t2-legocclude | 0.8179 | 0.8247 | +0.007 | +0.013 |
 | t2-dotted | 0.8714 | 0.8905 | +0.019 | +0.019 |
+| t2-steep | 0.8872 | 0.8910 | +0.004 | +0.004 |
 
-(Twelve further probes - thin, small, dense, legend, area, step, clipped, multi, markers, wide, steep - are running on the shared GPU lock as of submission; the delta table on landing will go into `out/t2c/live-overlap-merge-v3/`.)
+(Eleven further probes - thin, small, dense, legend, area, step, clipped, multi, markers, wide - are running on the shared GPU lock as of submission; the delta table on landing will go into `out/t2c/live-overlap-merge-v3/`.)
 
 Parallel and shallowx are the pivot of the submission: they hold exactly the pattern the fix was designed for (two chains spanning the same column range because a cluster boundary split one ridge), and both move by about ten points on both the "all" and "simple" subsets.
 Cross and samecolour show the fix did not take ground back from crossings or shared-colour pairs; those keep moving the right way too.
