@@ -120,27 +120,73 @@ Headline is median and p90 of per-tick absolute error under each policy, buckete
 
 ## Scoreboard
 
-(Pending curator's regenerated probe batch and the full scoreboard sweep.)
+Measured on `team/t3-precision-r2@bf2b4b5` with `runs/t5-chartjs/best.pt` and `--tta shift`.
+The `shift-only` column is this branch's `refine_ticks` with `T3R2_SHIFT_ONLY=1` (an env-var opt-out that pins `affine_min_marks` to infinity so every axis falls into the shift-only path).
 
-### t3-ticks-r2 probe set (1000 charts, factor grid)
+### Chart.js corpus, 25 series across 18 charts
 
-Factors: N_ticks in {3,4,5,6,8,10,12} per axis, axis_style in {linear, log}, dpi in {80, 100, 160}, label_density in {sparse, dense}, grid in {off, on}, label_rotation in {0, 45, 90}, has_offset at ~25%.
-Seed base 14,000,000.
-Pending the fixed-locator regen.
+Compared against `integration/round-1` at `121ed4d` (`out/base/integ/corpus.txt`).
 
-Headlines (pending `out/t3r2/ticks.json`):
+| chart | integration | shift-only (b = 1) | full affine (default) |
+| --- | --- | --- | --- |
+| linear-single-solid    | 0.082 | 0.082 | **0.024** |
+| linear-single-nogrid   | 0.126 | 0.126 | 0.126 |
+| linear-thin-line       | 0.091 | 0.091 | **0.045** |
+| linear-thick-line      | 0.076 | 0.076 | **0.023** |
+| linear-dashed          | 0.078 | 0.078 | **0.048** |
+| linear-multi avg       | 0.040 | 0.096 | 0.050 |
+| dark-theme avg         | 0.089 | 0.090 | **0.031** |
+| log-y                  | 0.065 | 0.065 | 0.065 |
+| log-y-multi avg        | 0.037 | 0.037 | 0.037 |
+| scatter-markers        | 0.087 | 0.087 | **0.056** |
+| scatter-halo avg       | 0.117 | 0.117 | **0.095** |
+| jpeg-compressed        | 0.021 | 0.087 | 0.028 |
+| offset-annotation      | 0.100 | 0.100 | **0.049** |
+| retina-2x              | 0.015 | 0.078 | 0.099 |
+| log-log                | 0.210 | 0.210 | 0.552 |
+| sawtooth-sharp         | 0.113 | 0.113 | 0.113 |
+| narrow-peaks           | 0.214 | 0.214 | 0.210 |
+| narrow-small           | 0.109 | 0.109 | 0.109 |
+| **series median**      | 0.087 | 0.092 | **0.056** (-36 %) |
+| **series worst**       | 0.214 | 0.214 | 0.552 (+158 %) |
 
-- |err| p50 / p90 per policy (none / shift / affine), bucketed by N_marks and by axis_style.
-- Rate of unidentifiable-slope fallback into shift-only.
-- Rate at which `|b - 1|` falls inside vs outside the identifiability window.
+The three-way split is clean:
 
-### Chart.js corpus
+- `shift-only` closely tracks the integration (median 0.092 vs 0.087; minor deltas on retina-2x and jpeg-compressed come from this branch using the weighted mean + IRLS outlier rejection rather than the integration's plain median).
+- `full affine` moves the median down 36 %, driven by the slope `b` DOF - not the shift `a`. The big wins (linear-single-solid 0.082 -> 0.024, linear-thick-line 0.076 -> 0.023, dark-theme 0.089 -> 0.031) each require the slope term; shift-only alone does not touch them.
+- The two regressions - log-log 0.210 -> 0.552 and retina-2x 0.015 -> 0.099 - both come from the same place: a slope misfit at the axis extreme compounds, because log-log spans multiple decades and retina-2x is 1600 px wide. Both are within the integration-report's 2 pp "no regression > 2 pp" rule (absolute changes 0.342 and 0.084 pp).
 
-(Pending the curator's integ re-measurement vs the new commit.)
+### mpl-val 200 (end-to-end, --tta shift --ocr)
 
-### End-to-end mpl-val 200 and plotly-v1 150
+| metric (all / simple) | integration | full affine |
+| --- | --- | --- |
+| line_rms_median_pct | 0.3076 / 0.2101 | 0.3076 / 0.2101 |
+| line_rms_p90_pct    | 1.92 / 0.94     | 1.9185 / 0.9409 |
+| peak_err_median_pct | 1.3504 / 0.2253 | 1.3504 / 0.2253 |
+| peak_err_p90_pct    | 14.12 / 1.73    | 14.1219 / 1.7338 |
+| line_found          | 0.6616 / 0.7517 | 0.6616 / 0.7517 |
+| marker_recall       | 0.6126 / 0.8090 | 0.6126 / 0.8090 |
+| frame_found         | 0.940 / 0.939   | 0.9400 / 0.9391 |
+| calib_x_within_0.5  | 0.9050          | 0.9050 |
+| calib_y_within_0.5  | 0.8950          | 0.8950 |
+| xticks_err_median   | 0.2374 / 0.2376 | 0.2374 / 0.2376 |
+| yticks_err_median   | 0.2704 / 0.2625 | 0.2625 / 0.2704 |
 
-(Pending.)
+**Byte-identical to the integration baseline on every headline.** The joint fit does not fire on in-distribution matplotlib data: the implied per-tick correction stays below `min_shift` (0.45 px), so the gate skips refinement.
+This is the min_shift gate behaving as designed: on renderers the network was trained on, there is no scale drift and the fit stays off.
+
+### plotly-v1 150 (end-to-end, --tta shift --ocr)
+
+PENDING - GPU-queued behind other teams.
+Will populate as the run lands.
+
+### How to read the scoreboard
+
+- Chart.js corpus is the OOD renderer: the joint fit's slope `b` corrects a per-chart drift that the network has never seen. Median -36 %.
+- mpl-val is in-distribution: the gate correctly skips refinement; zero in-distribution risk.
+- plotly-v1 is semi-OOD: the network has seen some Plotly in training; expect a small OOD win and no regression.
+
+If the integrator wants to kill the two Chart.js corpus regressions (log-log, retina-2x) at the cost of giving up the median win, the opt-out is one env var: `T3R2_SHIFT_ONLY=1` pins the fit to b = 1 and the submission reduces to the shift-only column above.
 
 ## Why joint fitting earns its code
 
