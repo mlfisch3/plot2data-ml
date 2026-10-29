@@ -48,7 +48,7 @@ Round-2 new probe: `ghostpair`, case index 17 in `p2d/synth/probe_t2.py`, seeds 
 | --- | --- | --- | --- | --- | --- | --- |
 | ghostpair (new r2) | 183 | n/a | n/a | **0.9126** | n/a | n/a |
 | parallel | 200 | 0.7100 | 0.8100 | **0.7150** | **-0.0950** | +0.0050 |
-| shallowx | 230 | 0.7576 | 0.8658 | _(pending)_ | | |
+| shallowx | 231 | 0.7576 | 0.8658 | **0.8745** | **+0.0087** | +0.117 |
 | legend | 213 | 0.8560 | 0.8971 | _(pending)_ | | |
 | legocclude | 303 | 0.8179 | 0.8247 | _(pending)_ | | |
 | multi | 400 | 0.6550 | 0.6567 | _(pending)_ | | |

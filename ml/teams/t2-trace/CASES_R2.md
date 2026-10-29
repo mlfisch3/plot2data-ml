@@ -80,7 +80,7 @@ Round-1 numbers are from `ml/out/t2c/v3-<probe>-refine.txt` (frozen v3, no overl
 | --- | --- | --- | --- | --- | --- |
 | ghostpair (new r2) | n/a | n/a | **0.9126** | n/a | n/a |
 | parallel | 0.7100 | 0.8100 | **0.7150** | **-0.0950** | +0.005 |
-| shallowx | 0.7576 | 0.8658 | _(pending)_ | | |
+| shallowx | 0.7576 | 0.8658 | **0.8745** | **+0.0087** | +0.117 |
 | legend | 0.8560 | 0.8971 | _(pending)_ | | |
 | legocclude | 0.8179 | 0.8247 | _(pending)_ | | |
 | multi | 0.6550 | 0.6567 | _(pending)_ | | |
@@ -97,16 +97,23 @@ Round-1 numbers are from `ml/out/t2c/v3-<probe>-refine.txt` (frozen v3, no overl
 | clipped | 0.8016 | 0.8054 | _(pending)_ | | |
 | markers | 0.9167 | 0.9167 | _(pending)_ | | |
 
-### Key finding so far
+### Key findings
 
-**parallel is a leading indicator**: integrated 121ed4d gives 0.7150 (essentially frozen v3's 0.7100), NOT r1 overlap's 0.8100.
-The r1 overlap-merge gain of +0.100 on parallel measured against frozen v3 did NOT carry through to the integrated model.
-Mechanism: the t5-chartjs native-resolution reader with TTA shift reshapes the embedding sufficiently that the "cluster boundary splits a ridge" pattern happens differently, so the long-overlap merge rule (built on frozen v3's embedding) finds fewer same-ridge pairs to join.
-Implication for round 2: the whole long-overlap branch has reduced leverage under t5, so the r2 fix (which tightens that branch) is operating on a lever that has already lost most of its force.
+**Parallel vs shallowx: r1 wins did NOT transfer uniformly**
+- parallel: integ 121ed4d 0.7150 ~ frozen v3 0.7100, r1 overlap 0.8100. **r1 win of +0.100 LOST** under t5-chartjs.
+- shallowx: integ 121ed4d 0.8745 > r1 overlap 0.8658 > frozen v3 0.7576. **r1 win of +0.108 held and gained +0.009**.
 
-**ghostpair baseline 0.9126** is in the borderline zone (above 0.90, below 0.95).
-The ghost+ghost pattern does form on the integrated model (~16/183 series lost).
-Ship decision for A rides on whether the fix at `b5f1a32` improves ghostpair by at least 0.03.
+Mechanism difference: parallel is near-touching sines where t5-chartjs's native-resolution heat may already cluster them as one; the long-overlap merge rule finds nothing to join. Shallowx is shallow-angle crossings where cluster boundaries still cut through ridges and the rule still fires. The merge-side has pattern-specific leverage under t5 - some r1 cases transfer, others don't.
+
+**ghostpair fix delta: zero**
+- baseline (integ 121ed4d) line_found 0.9126
+- fix (b5f1a32) line_found 0.9126 (IDENTICAL)
+- line_cov_mean -0.0003 (noise), peak_err_median TIE
+- **peak_err_env_median_pct 0.1818 -> 0.1126** (-0.07 pp from B's envelope-aware metric, works on probe too)
+
+The ghost+ghost guard contributes zero on the probe built specifically to provoke it. Either the pattern isn't firing on t5-chartjs's heat (likely - matches the parallel finding) or when it fires the guard rejects pairs that would have been correctly joined anyway. Combined with mpl-val simple -0.0067 and plotly all -0.003, **A is a net negative with zero probe-level upside**. Revert `b5f1a32`.
+
+**B's envelope metric is confirmed on probe data**: the ridge envelope improvement extends to ghostpair's thick-stroke peaks where ridge-centre-of-mass gets pulled below the drawn maximum. Upper-bound evidence of a general-purpose metric lever beyond just dense-column mpl-val charts.
 
 Comparison helper: `teams/t2-trace/tools/compare_r1_r2.py`.
 
