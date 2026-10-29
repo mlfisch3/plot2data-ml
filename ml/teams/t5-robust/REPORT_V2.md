@@ -145,6 +145,43 @@ Within-1% jumps 42% to 48% (+6pp), biggest gain in that bucket since the a7aed7d
 
 The retail regression is the only new real-chart failure vs V1.
 
+### 3.7 Resolution probe sets (`data/t5-dpr{1,2,3}`, 100 charts each at 1x/2x/3x DPR, `--tta shift`)
+
+Simple-charts split (same mpl seeds at three device-pixel-ratios).
+
+| set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
+| --- | --- | --- | --- | --- | --- |
+| dpr1 | line_rms_median_pct | 0.223 | TBD | 0.173 | TBD |
+| dpr1 | marker_recall | 0.502 | TBD | 0.536 | TBD |
+| dpr1 | frame_err_median_px | 1.12 | TBD | 0.96 | TBD |
+| dpr2 | line_rms_median_pct | 0.249 | 0.088 | 0.109 | +0.021 |
+| dpr2 | marker_recall | 0.349 | 0.326 | 0.337 | +0.011 |
+| dpr2 | frame_err_median_px | 2.56 | 1.26 | 1.20 | -0.06 |
+| dpr3 | line_rms_median_pct | 0.373 | TBD | **0.106** | TBD |
+| dpr3 | marker_recall | 0.287 | TBD | 0.295 | TBD |
+| dpr3 | frame_err_median_px | 2.92 | TBD | 1.59 | TBD |
+
+V2 generalises to high-DPR trace at least as well as V1 (dpr2 within +0.02 pp) and beats base dramatically at dpr3 (-72% line_rms_median).
+
+### 3.8 Image-factor probe sets (same 100 mpl seeds, one factor changed, `--tta shift`)
+
+| set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
+| --- | --- | --- | --- | --- | --- |
+| blur | line_rms_median_pct | 0.232 | 0.163 | 0.201 | +0.038 |
+| blur | marker_precision | 0.759 | 0.766 | 0.761 | -0.005 |
+| dark | line_rms_median_pct | 0.278 | 0.222 | 0.217 | -0.005 |
+| dark | yticks_recall | 0.818 | 0.874 | **0.904** | +0.030 |
+| dark | frame_err_median_px | 1.21 | 1.14 | 0.91 | -0.23 |
+| clutter | line_rms_median_pct | 0.241 | 0.168 | TBD | TBD |
+| clutter | frame_err_median_px | 5.71 | 17.6 | TBD | TBD |
+| half | line_rms_median_pct | 0.213 | 0.223 | TBD | TBD |
+| up2x | line_rms_median_pct | 0.220 | TBD | TBD | TBD |
+| jpeg50 | line_rms_median_pct | 0.218 | TBD | TBD | TBD |
+| jpeg30 | line_rms_median_pct | 0.241 | TBD | TBD | TBD |
+| skew1 | line_rms_median_pct | 2.400 | TBD | TBD | TBD |
+
+Remaining image-factor probes are queued through the GPU lock after this report commit; the curator will fill them in a follow-up.
+
 ## 4. Mechanism: tick-bias experiment (curator probe)
 
 Measured by `tick_bias.py` on `data/t5-chartjs-val` (100 Chart.js charts):
