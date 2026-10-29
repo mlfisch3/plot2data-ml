@@ -89,7 +89,7 @@ def fit_reads(reads: list[TickRead], dates: bool, hint: str | None = None) -> Ax
 
 
 _MULT = re.compile(r"^(?:x|\(x)?(?:1e([-+]?\d+)|10\^([-+]?\d+))\)?$")
-_OFFSET = re.compile(r"^([-+])(\d*\.?\d+(?:e[-+]?\d+)?)$")
+_OFFSET = re.compile(r"^([-+])(\d*\.\d+(?:e[-+]?\d+)?|\d+e[-+]?\d+)$")
 
 
 def _parse_factor(text: str) -> tuple[float, float] | None:
