@@ -641,16 +641,9 @@ def _join_cost(A: dict, B: dict, emb_tol: float = 3.0, max_dx: int = 90) -> floa
         # Long overlap: evidence that these are two halves of one ridge.
         if not set(A.get("ks", [])).isdisjoint(B.get("ks", [])):
             return None  # same-cluster overlap means two different series kept apart on purpose
-        if A.get("q", 0.0) < 0.4 or B.get("q", 0.0) < 0.4:
+        if A.get("q", 0.0) < 0.3 or B.get("q", 0.0) < 0.3:
             return None
         if A.get("n", len(A["cols"])) < 50 or B.get("n", len(B["cols"])) < 50:
-            return None
-        # Round-2 guard against ghost+ghost: a real split-ridge pair has one
-        # ridge, so the overlap should cover the bulk of the shorter chain.
-        # Two co-sliding ghosts of different series happen to overlap in short
-        # pieces of their lengths; require nov to be at least half the smaller
-        # chain so those pairs cannot pass.
-        if nov < 0.5 * min(A.get("n", len(A["cols"])), B.get("n", len(B["cols"]))):
             return None
         med = float(np.median(diff))
         mad = float(np.median(np.abs(diff - med)))
