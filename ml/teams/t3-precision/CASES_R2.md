@@ -195,11 +195,11 @@ Why the probe set (section 3.5) looked null while the corpus shows this win: the
 
 Full-affine's cost: log-log 0.210 - > 0.552 (+0.34 pp) and retina-2x 0.015 - > 0.099 (+0.08 pp). Both inside the integration-report's 2 pp regression tolerance.
 
-**mpl-val 200 (full-affine)**: byte-identical to the integration baseline on every metric. The joint fit's implied per-tick correction stays below `min_shift = 0.45 px` on in-distribution matplotlib and the gate declines to move anything. So no in-distribution harm, and no in-distribution gain either.
+**mpl-val 200 and plotly-v1 150 (full-affine)**: both **byte-identical to the integration baseline** on every metric. The joint fit's implied per-tick correction stays below `min_shift = 0.45 px` on both in-distribution renderers and the gate declines to move anything. So no in-distribution harm, and no in-distribution gain. Both standard sets are a strict null.
 
-Recommendation to the integrator (updated from earlier draft, which suggested shift-only): ship the **full-affine** variant. The -36 % Chart.js corpus median is the only non-trivial scoreboard movement; the two regressions are within tolerance; the in-distribution matplotlib set is byte-identical. The joint fit does what it was built for: it fires only on out-of-distribution renderers where the network has a per-axis scale drift it cannot detect alone.
+Recommendation to the integrator (updated from earlier draft, which suggested shift-only): ship the **full-affine** variant. The -36 % Chart.js corpus median is the only non-trivial scoreboard movement; the two regressions are within the integration-report's 2 pp tolerance; both in-distribution renderers are byte-identical. The joint fit does what it was built for: it fires only on out-of-distribution renderers where the network has a per-axis scale drift it cannot detect alone.
 
-PENDING: plotly-v1 150 full-affine run is still in the GPU queue. If plotly shows the same byte-identical signature as mpl-val, the submission's in-distribution null + out-of-distribution-win story is clean. If plotly shows a small OOD-style win, better.
+Escape hatch for the integrator: `T3R2_SHIFT_ONLY=1` env var (brainstormer's commit `bf2b4b5`) pins the fit to shift-only (b = 1) without any code change. Useful if a later renderer suffers from the slope term on a case the current corpus does not catch.
 
 ## 4. The round-2 probe set: `data/t3-ticks-r2`
 
