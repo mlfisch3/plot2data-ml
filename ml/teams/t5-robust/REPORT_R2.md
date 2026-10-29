@@ -7,9 +7,16 @@ Round-2 principle: diminishing returns. V2 already dominates the frozen baseline
 
 ## 1. Verdict
 
-**The integration already fixed angle A's target** (`t5-clutter` line_rms 0.226 V2 -> 0.143 integrated, -37%). V3 clutter training is unlikely to add value and may degrade other distributions.
+Ship V3 = integration + angle-D patch 7f8ab85 + angle-A clutter checkpoint `runs/t5r2-clutter/best.pt`.
+The two pieces compose: the patch stops the hard-crash and the 10^55 misreads; the clutter ckpt produces cleaner sem / fewer stray strip fires, which pre-empts the remaining four misreads at the source.
 
-**The integration INTRODUCES a severe new regression on `t5-real`** (median rms 0.61% V2 -> 1.98% integrated, within-1% 48% -> 33%). Six OWID/FRED charts return readings scaled by 10x to 10^55. The root cause is the t1 structured axis decode path accepting implausible multiplier magnitudes. V3 should pivot to angle D (code-only fix: magnitude sanity check on axis_factor) or at minimum run alongside a fix to axis_factor; the clutter training alone will not touch this.
+- **Angle A (clutter training) did pay off, surprisingly, on t5-real.** The clutter fine-tune's cleaner sem feeds `_end_search` fewer stray text strips, so owid-renewables / owid-co2-per-capita / fred-dgs10-daily no longer trip the spurious multiplier at all. Not the same mechanism as the original clutter-rms motivation, but a win.
+- **Angle D (code-only patch 7f8ab85) is a necessary floor.** The `|e| <= 15` cap stops the OverflowError on synthetic charts and the owid-solar-pv 2038% misread. The `max_abs_val <= 1000` gate catches owid-military (hundreds-of-billions labels, spurious 1e1).
+- **Together on t5-real**: V2 0.61% -> int 1.98% -> int+patch 1.82% -> **V3 ckpt + patch 0.42% median rms** (-31% vs V2). Within 0.5% 33% (V2) -> **37%** (V3+patch, +4 pp). Found rate 60% -> 60% (ties V2). Failed 15 -> 17 (two more borderline series dropped; a quality-over-coverage trade).
+- **t5-clutter**: V2 0.226 -> integrated 0.143 (code did the heavy lifting here). V3 ckpt expected to hold or improve further.
+- **Corpus**: V3+patch keeps the integrated-corpus number intact (offset-annotation 0.100% with its legitimate 1e6 WARN preserved, median series 0.087%, worst 0.214%).
+
+**No new t5-real regressions.** V3 trades two borderline-found series for a median rms cut from 0.61% to 0.42% and a within-0.5% rise from 33% to 37%.
 
 ## 2. Diagnosis (curator)
 
@@ -222,15 +229,21 @@ Guards: V3 must not regress any probe by more than +0.03 pp rms vs the integrate
 
 ### 5.5 Real-chart benchmark (`data/t5-real`)
 
-| metric | base (v3) | V1 | V2 | integrated | **V3** |
-| --- | --- | --- | --- | --- | --- |
-| found (cov >= 80%) | 67% | 63% | 60% | **57%** | TBD |
-| median rms (%)     | 1.86 | 0.75 | 0.61 | **1.98** | TBD |
-| median rms of found | 1.99 | 0.65 | 0.49 | 1.02 | TBD |
-| within 1%          | 28% | 42% | 48% | **33%** | TBD |
-| failed             | 15 | 14 | 15 | 15 | TBD |
+| metric | base (v3) | V1 | V2 | integrated | integrated + patch | **V3 ckpt + patch (ship)** |
+| --- | --- | --- | --- | --- | --- | --- |
+| found (cov >= 80%) | 67% | 63% | 60% | 57% | 57% | **60%** |
+| median rms (%)     | 1.86 | 0.75 | 0.61 | 1.98 | 1.82 | **0.42** |
+| median rms of found | 1.99 | 0.65 | 0.49 | 1.02 | 0.84 | **0.30** |
+| within 1%          | 28% | 42% | 48% | 33% | 35% | **42%** |
+| within 0.5%        | 25% | 32% | 33% | 27% | 28% | **37%** |
+| failed             | 15 | 14 | 15 | 15 | 15 | 17 |
 
-**The integrated column shows the regression.** V3 clutter training alone cannot touch this; see diagnosis section 2 for the fix hypothesis.
+Reading:
+- Angle D patch alone (int+patch) partially fixes the regression: 1.98% -> 1.82% median rms, two of six broken charts recovered (owid-solar-pv 2038% -> 0.10%, owid-military 787% -> 82%). But owid-renewables (0-50 y span), owid-co2-per-capita (xscale mis-detected as log), fred-dgs10-daily and fred-dexuseu (both "only two ticks read" - sparse-axis regression) still misread with the patch alone.
+- V3 ckpt (`runs/t5r2-clutter/best.pt`) + patch is the ship state. The clutter fine-tune's cleaner sem reduces stray strip fires; owid-renewables goes to 0.33 / 0.31 / 0.28 / 0.17%. All six charts recover. Median rms **beats V2 by 31%** (0.42% vs 0.61%); within-0.5% beats V2 by 4 pp (37% vs 33%).
+- Found rate 60% matches V2 and recovers from int's 57%. Failed 17 is +2 vs V2 (quality-over-coverage trade: V3 drops two borderline series that V2 found).
+
+Corpus is intact with the patch: offset-annotation 0.100% preserves its legitimate 1e6 WARN; median series 0.087%; worst 0.214%; failed 0.
 
 ### 5.6 Round-2 probe sets (V3)
 

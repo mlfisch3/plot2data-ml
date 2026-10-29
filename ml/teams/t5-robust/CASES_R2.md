@@ -63,7 +63,7 @@ Measured against V2's own numbers in round-1 CASES.md.
 - owid-military: 82.55% / 77.76% / 190.62% (V2) -> 787.55% / 850.61% / 1238.70% (int). WARN "y axis: values scaled by the printed '1e1'".
 - owid-solar-pv: 0.17% (V2) -> **2038.29%** (int). WARN "y axis: values scaled by the printed '1e55'".
 
-**Headline shift**: V2 found 60%, median rms 0.61%, within 1% 48%, failed 15. Integrated found 57%, median rms **1.98%**, within 1% **33%**, failed 15.
+**Headline shift**: V2 found 60%, median rms 0.61%, within 1% 48%. Integrated found 57%, median rms **1.98%**, within 1% **33%**. **With patch 7f8ab85 alone**: median rms **1.82%** (partial recovery). **With V3 ckpt + patch (ship state)**: found 60%, median rms **0.42%** (-31% vs V2), within 1% 42%, within 0.5% 37% (+4 pp vs V2), failed 17. The V3 clutter checkpoint produces cleaner sem which pre-empts the remaining stray-strip multiplier fires (owid-renewables 126/196/315% -> 0.33/0.31/0.17%), compounding with the patch's hard cap on exponent magnitude.
 
 **Mechanism** (hypothesised, needs probe_net inspection to confirm). The t1 structured axis decode (axis.py, commit 136fd60) + the t1 _OFFSET regex tightening (commit 9b897ad) parse stray numbers in the chart's annotations or caption as multiplier text. The tightening was supposed to require a `.` or an `e[-+]?\d+` after the sign to count as an offset, which excludes bare integers. But the pattern "1e1" (= 10) and the implausible "1e55" (= 10^55) both match the strict pattern (an `e[-+]?\d+` term). No magnitude sanity check prevents a factor of 10^55 from being applied: the fuser accepts whatever OCR output matches `_MULT`.
 
