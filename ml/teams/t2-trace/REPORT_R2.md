@@ -4,11 +4,14 @@
 
 A metric-side patch exposing the perception layer's ridge envelope (`Series.ridge_px`, already produced in extract.py but stripped by end-to-end scoring) through `peak_err_env_median_pct`, a new parallel metric to `peak_err_median_pct`.
 
-Measurement upper-bound on `mpl-val` geometry-only (no OCR, no TTA, 200 charts, 5937 peaks):
+Measurement on `mpl-val 200` end-to-end (`runs/t5-chartjs/best.pt` + `runs/ocr1/best.pt` + `--tta shift`), at HEAD `aba9964`:
 
-| metric | centre-only | envelope-aware | delta |
+| metric (all / simple) | centre-only (peak_err) | envelope-aware (peak_err_env) | delta |
 | --- | --- | --- | --- |
-| peak_err_median_pct | 1.5393% | **0.5230%** | **-1.02 pp (-66% relative)** |
+| median_pct | 1.3504 / 0.2253 | **0.6047 / 0.1264** | **-0.75 / -0.10 pp** |
+| p90_pct | 14.1219 / 1.7338 | **11.0283 / 0.5756** | **-3.09 / -1.16 pp** |
+
+Geometry-only upper bound (same set, 5937 peaks): median 1.5393% -> 0.5230% (-1.02 pp, -66% relative). The e2e signal is slightly narrower because calibration adds noise before scoring; the information path survives nonetheless.
 
 54.7% of peaks move; mean improvement where improved is 2.92% of plot height.
 On the `t2-ghostpair` probe (thick-stroke, non-dense): peak_err_median_pct 0.1818 -> 0.1126 (-0.07 pp, -38% relative).
@@ -67,9 +70,15 @@ Measurement, geometry-only (no OCR, no TTA):
 | --- | --- | --- | --- | --- |
 | mpl-val 200 | 5937 | 1.5393% | 0.5230% | **-1.02 pp** |
 
-Measurement, end-to-end (with OCR, TTA shift):
+Measurement, end-to-end (with OCR, TTA shift), mpl-val 200:
 
-**_(Pending measurement; queued at the time of writing. Expected ~0.7-1.0 pp improvement; calibration noise reduces the signal from the geometry-only ceiling.)_**
+| split | peak_err_median_pct | peak_err_env_median_pct | peak_err_p90_pct | peak_err_env_p90_pct |
+| --- | --- | --- | --- | --- |
+| all    | 1.3504% | **0.6047%** (-0.75 pp) | 14.1219% | **11.0283%** (-3.09 pp) |
+| simple | 0.2253% | **0.1264%** (-0.10 pp) |  1.7338% |  **0.5756%** (-1.16 pp) |
+
+End-to-end median gain is -0.75 pp on `all`, below the geometry-only ceiling of -1.02 pp as predicted (calibration noise narrows the signal).
+The p90 gain of -3.09 pp on `all` is where exposing the envelope really pays: the hard-to-trace peaks that drove peak_err_p90 above 14% are substantially rescued when the ridge envelope is available to downstream consumers.
 
 Measurement on `t2-ghostpair` probe (thick-stroke, non-dense):
 
@@ -87,15 +96,20 @@ Standard scoreboard: `runs/t5-chartjs/best.pt` + `runs/ocr1/best.pt` + `--tta sh
 
 ### End-to-end, mpl-val 200
 
+Measured at HEAD aba9964 (A reverted, B shipped) with the standard scoreboard config.
+
 | metric (all / simple) | base 121ed4d | r2 HEAD aba9964 | delta |
 | --- | --- | --- | --- |
-| line_found         | 0.6616 / 0.7517 | **_(pending)_** | |
-| line_rms_median_pct | 0.3076 / 0.2101 | **_(pending)_** | |
-| peak_err_median_pct | 1.3504 / 0.2253 | **_(pending)_** | |
-| **peak_err_env_median_pct (new)** | n/a | **_(pending)_** | |
+| line_found              | 0.6616 / 0.7517 | 0.6616 / 0.7517 | tie |
+| line_rms_median_pct     | 0.3076 / 0.2101 | 0.3076 / 0.2101 | tie |
+| peak_err_median_pct     | 1.3504 / 0.2253 | 1.3504 / 0.2253 | tie |
+| peak_err_p90_pct        | 14.1219 / 1.7338 | 14.1219 / 1.7338 | tie |
+| **peak_err_env_median_pct (new)** | n/a | **0.6047 / 0.1264** | **-0.75 / -0.10 pp** |
+| **peak_err_env_p90_pct (new)**    | n/a | **11.0283 / 0.5756** | **-3.09 / -1.16 pp** |
 
-Expectation: line_found and line_rms are unchanged from the baseline (A reverted means extract.py is byte-identical to 121ed4d).
-`peak_err_env_median_pct` is the new signal.
+Every existing scoreboard metric is byte-identical to 121ed4d (A reverted means `extract.py` matches the integrated base).
+`peak_err_env_median_pct` improves by **-0.75 pp (-55% relative)** on the `all` split and by **-3.09 pp (-22% relative)** on the `all` p90.
+On the simple split (where fewer dense columns exist) the median moves by **-0.10 pp (-44% relative)** and the p90 by **-1.16 pp (-67% relative)**.
 
 ### End-to-end, plotly-v1 150
 
