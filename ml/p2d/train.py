@@ -52,6 +52,8 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--init", default=None, help="weights to start from")
     ap.add_argument("--eval-every", type=int, default=1000)
+    ap.add_argument("--zoom", type=float, default=0.0,
+                    help="share of samples placed at the native-resolution inference scale and cropped to the canvas")
     a = ap.parse_args()
 
     os.makedirs(a.run, exist_ok=True)
@@ -59,7 +61,7 @@ def main() -> None:
     device = torch.device("cuda")
     torch.backends.cudnn.benchmark = True
 
-    train_ds = PlotDataset(a.data, train=True)
+    train_ds = PlotDataset(a.data, train=True, zoom=a.zoom)
     val_ds = PlotDataset(a.val, train=False)
     print(f"train {len(train_ds)}  val {len(val_ds)}", flush=True)
     tl = DataLoader(train_ds, batch_size=a.batch, shuffle=True, num_workers=a.workers, pin_memory=True,
