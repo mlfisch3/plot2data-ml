@@ -158,6 +158,9 @@ def main() -> None:
             from .tta import run_net_tta
 
             out, M = run_net_tta(net, img, native=native, tta=a.tta)
+            ex = extract(out, M, img)
+            if a.refine:
+                ex = refine_markers(img, refine_lines(img, ex))
         else:
             out, M = run_net(net, img, native=native)
             ex = extract(out, M, img)
