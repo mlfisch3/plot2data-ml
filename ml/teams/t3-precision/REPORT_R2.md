@@ -9,9 +9,20 @@ The axis side was left with the frozen baseline's shift-only `refine_ticks`: at 
 For round 2 the shift-only correction is upgraded to a joint affine `mark = a + b * pos_net` fit over every drawn mark on an axis, with the slope locked to 1 for sparse axes (3-4 marks) and freed within an identifiability window scaled as `1/sqrt(N)` for dense axes (5+ marks).
 The pre-existing shift path is kept where the affine fit's slope cannot be trusted.
 
+**Measured outcome at `team/t3-precision-r2@c439e89`**:
+
+- Chart.js corpus (OOD renderer, 25 series): series median `0.087 % -> 0.056 % (-36 %)`.
+  Two charts regress by less than 0.35 pp (log-log 0.210 -> 0.552, retina-2x 0.015 -> 0.099), within the integration-report's 2 pp "no regression" rule.
+- mpl-val 200 (in-distribution matplotlib): **byte-identical to the integration baseline on every headline**.
+  The joint fit's min_shift gate (0.45 px) correctly skips refinement when the network's predictions already match the drawn marks.
+- plotly-v1 150 (in-distribution Plotly): **byte-identical to the integration baseline on every headline**.
+  Same gate behaviour.
+
 Why: a single pixel-snapped mark is good to about half a pixel.
 A median shift over N marks is good to `0.5 / sqrt(N)` px when the per-mark errors are independent; the full affine corrects a per-axis scale drift that no shift can see.
 Tick positions enter every downstream calibration-dependent metric: `calib_x_within_0.5`, `calib_y_within_0.5`, and (via `fit_axis`) every value-space `line_rms` and `peak_err` number.
+
+Zero in-distribution risk + a measurable OOD win is the design the slope DOF was built for; the gates ensure the fit stays off when there is nothing to fit.
 
 ## Where the integration left tick precision
 
@@ -177,8 +188,21 @@ This is the min_shift gate behaving as designed: on renderers the network was tr
 
 ### plotly-v1 150 (end-to-end, --tta shift --ocr)
 
-PENDING - GPU-queued behind other teams.
-Will populate as the run lands.
+| metric (all / simple) | integration | full affine |
+| --- | --- | --- |
+| line_rms_median_pct | 0.2057 / 0.1452 | 0.2057 / 0.1452 |
+| line_rms_p90_pct    | 1.57 / 0.53     | 1.5697 / 0.5325 |
+| peak_err_median_pct | 1.0092 / 0.2651 | 1.0092 / 0.2651 |
+| peak_err_p90_pct    | 7.99 / 1.51     | 7.9855 / 1.5127 |
+| line_found          | 0.8252 / 0.9252 | 0.8252 / 0.9252 |
+| marker_recall       | 0.4028 / 0.8240 | 0.4028 / 0.8240 |
+| frame_found         | 0.9467 / 0.9241 | 0.9467 / 0.9241 |
+| calib_x_within_0.5  | 0.9933          | 0.9933 |
+| calib_y_within_0.5  | 0.8867          | 0.8867 |
+| xticks_err_median   | 0.1069 / 0.1003 | 0.1069 / 0.1003 |
+| yticks_err_median   | 0.1555 / 0.1468 | 0.1555 / 0.1468 |
+
+**Byte-identical to the integration baseline on every headline.** Same story as mpl-val: the min_shift gate (0.45 px) skips refinement because the network's predictions are already close to the drawn marks. The joint fit never fires on in-distribution (plotly-v1 has partial Plotly training coverage).
 
 ### How to read the scoreboard
 
@@ -218,6 +242,14 @@ If the integrator wants to kill the two Chart.js corpus regressions (log-log, re
 
 ## Next steps
 
-(Pending measurements.)
+- **Investigate log-log and retina-2x regressions**: both come from a slope misfit at the axis extreme compounding over a wide span.
+  A per-chart gate that detects "unusually large span" (log axis spans > 2 decades or canvas > 1200 px) could force shift-only on those cases, keeping the median win without the two regressions.
+  Not pursued in round 2 because the regressions sit inside the integration-report tolerance.
+- **Tighten the shift-only path to match the integration median exactly**: this branch's `_shift_only` uses a weighted mean + IRLS outlier rejection; the integration baseline uses a plain median.
+  The two cases where shift-only slightly regresses from integ (retina-2x 0.015 -> 0.078, jpeg-compressed 0.021 -> 0.087) would come back to integ-level with a `np.median`-based `_shift_only`.
+  Not critical for the full-affine submission (whose shift path is dominated by the slope term) but worth cleaning up if the shift-only escape hatch is ever activated.
+- **Target A (narrow-small) revisit**: at integration narrow-small is 0.109 vs 0.066 base.
+  The joint fit does not help (0.109 holds across all three variants).
+  A measure.py-side investigation is the actual path; deferred.
 
 Thu 29 Oct 2026, 02:08 EDT
