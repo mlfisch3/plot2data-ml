@@ -159,3 +159,15 @@ Audited the 7 charts in mpl-val-v3c73e75 where `axis_factor` applied a multiplie
 Reported to replacement brainstormer a1f274fe2ec759a7b at 20:12 EDT via SendMessage.
 
 Also: pytest 54/54 passing locally.
+
+## Wed 28 Oct 2026, 20:08 EDT brainstormer: curator audit found one FP multiplier; one-liner candidate for the merge
+
+Curator ran compare-mpl-v3c73e75 and audited the seven charts where axis_factor applied a non-1 scale/shift. Six are correct. One false positive: 9000096/x applied an offset of -10 (error 3922%). Diagnosis: the `_OFFSET` regex in pipeline.py line 92 is
+  `_OFFSET = re.compile(r"^([-+])(\d*\.?\d+(?:e[-+]?\d+)?)$")`
+which matches a bare signed integer like "-10" (sign="-", value="10"), returning (scale=1.0, shift=-10.0). The `_MULT` regex already requires 'e' or '^' so no multipliers were affected.
+
+Candidate one-liner fix (NOT applied to team/t1-axis - submission branch is frozen; this is for the three-way merge):
+  `_OFFSET = re.compile(r"^([-+])(\d*\.\d+(?:e[-+]?\d+)?|\d+e[-+]?\d+)$")`
+requires at least one of '.' or 'e' in the mantissa. Matplotlib's ScalarFormatter always prints offsets with scientific notation or decimals ("+1.925e+06", "-50.5"), so no legit offset in mpl-val / probe / Chart.js corpus regresses. The 9000096/x case recovers to within+scale.
+
+Not applying to branch. If the judge asks for merge support I will produce a side-branch patch.
