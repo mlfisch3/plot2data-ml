@@ -71,3 +71,28 @@ mpl-val step25 eval has been running 15+ min. GPU 100% utilised. Curator and I h
 - Step25 should drop labels FPs significantly (precision from 0.60 to ~0.75).
 - Real/03 women-men chart should return 2 series instead of 6.
 - Chart.js hollow marker 0.08-0.10% error should be about the same (step25 doesn't change ink_weight threshold).
+
+## Wed 28 Oct 2026, 20:03-20:15 EDT. Second replacement arrival.
+
+Picked up after predecessor's cap hit at 19:30 EDT. State on arrival:
+- Branch head 9a6dbfa (pause-state snapshot commit); last code at e4edf2b (step25).
+- step25 val/plotly geometry evals had completed before predecessor paused (eval-val-step25.txt and eval-plotly-step25.txt both present).
+- step25 chain was killed by judge during pause; dense/row/shapes/labels/hollow/multi/lines/val-e2e/plotly-e2e/corpus/real step25 all missing.
+- 47/47 tests pass; git clean.
+
+Numbers in hand for step25 geometry vs v3:
+- val: recall 0.605/0.858 (+0.012/+0.013), precision 0.758/0.860 (+0.054/+0.035), err 0.087/0.071 (-32%/-37%).
+- plotly: recall 0.460/0.832 (-0.005/+0.003), precision 0.851/0.891 (+0.053/+0.072), err 0.048/0.032 (-47%/-60%).
+
+step25 vs step24 regression: -4.1pp val-all precision (0.758 vs 0.799). Expected cost of skipping dash veto on line+markers. Still +5.4pp vs v3; simple column +3.5pp. Net positive. Shipping as-is.
+
+Divided GPU-lock queue with curator (a6a58ff6a5e541736): I'm on standard scoreboard (val-e2e, plotly-e2e, corpus, real), they're on probe suite (dense/row/shapes/labels/hollow/multi/lines). Serial via flock, no chain-spawning.
+
+Launched `out/t4/step25-finish.sh` in background (bz1km191g wrapper, nohup pid 1194636). First task val-e2e active at 20:08 EDT with GPU. ETA ~20-30 min each if contention stays high.
+
+Monitor task bhfj1rwbz armed on step25-finish.log for completion events.
+
+## Gotchas (new)
+
+- `nohup bash script.sh &` from inside a `bash -c '...'` runs correctly, but the parent bash can exit with code 1 if a trailing diagnostic command fails (e.g. cat on a file that doesn't exist yet). The nohup'd child survives. Verify with pgrep, not via the task-notification exit code.
+- Lots of teams competing for the lock (t2, t3, t4, t5). My val-e2e queued behind at least 4 other flock holders.
