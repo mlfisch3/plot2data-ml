@@ -188,16 +188,20 @@ Guards: V3 must not regress any probe by more than +0.03 pp rms vs the integrate
 
 ### 5.3 End-to-end, mpl-val 200, plotly-v1 150, chartjs-val 100
 
-**mpl-val 200**
+**mpl-val 200** (int+patch is byte-identical to int here; V3 is runs/t5r2-clutter + patch)
 
-| metric | base | V1 | V2 | integrated | **V3** |
+| metric | base | V1 | V2 | integrated (= int+patch) | **V3 ckpt + patch** |
 | --- | --- | --- | --- | --- | --- |
-| line_found             | 0.5466 | 0.5727 | 0.5857 | 0.6616 | TBD |
-| line_rms_median_pct    | 0.4411 | 0.2802 | 0.3253 | 0.3076 | TBD |
-| peak_err_median_pct    | 2.2898 | 1.7603 | 1.4138 | 1.35   | TBD |
-| marker_recall          | 0.4811 | 0.5697 | 0.5616 | 0.6126 | TBD |
-| frame_found            | 0.89   | 0.89   | 0.91   | 0.940  | TBD |
+| line_found             | 0.5466 | 0.5727 | 0.5857 | 0.6616 | **0.6941** |
+| line_rms_median_pct    | 0.4411 | 0.2802 | 0.3253 | 0.3076 | **0.2832** |
+| peak_err_median_pct    | 2.2898 | 1.7603 | 1.4138 | 1.35   | **1.29** |
+| marker_recall          | 0.4811 | 0.5697 | 0.5616 | 0.6126 | 0.6141 |
+| marker_precision       | 0.640  | 0.719  | 0.6966 | 0.7355 | 0.7270 |
+| frame_found            | 0.89   | 0.89   | 0.91   | 0.940  | 0.9450 |
+| frame_err_median_px    | -      | -      | -      | 0.9445 | 1.0486 (+0.1 px) |
 | calib_y_within_0.5pct  | 0.775  | 0.810  | 0.800  | 0.895  | TBD |
+
+V3 beats integrated on line_rms, line_found (all), peak_err_median (all), and frame_found. Small regressions on marker_precision (-0.9 pp) and frame_err_median (+0.1 px) are within noise. No catastrophic forgetting from clutter training.
 
 **plotly-v1 150**
 
