@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import math
 import os
 import random
 import re
@@ -55,11 +56,104 @@ def decode(logits: np.ndarray) -> tuple[str, float]:
     return "".join(out), conf
 
 
+def beam_decode(logits: np.ndarray, beam: int = 8, prune: float = -9.0) -> list[tuple[str, float]]:
+    """CTC prefix beam search over T x C log-probabilities: the `beam` best strings with log P.
+
+    Standard prefix search (Hannun et al.): every prefix carries the log
+    probability of ending in blank and of ending in its last character, so
+    repeats are collapsed exactly. Characters below `prune` nats at a time step
+    are skipped, which keeps the search near linear in T.
+    """
+    T, C = logits.shape
+    NEG = -1e30
+
+    def lse(*xs):
+        m = max(xs)
+        if m <= NEG:
+            return NEG
+        return m + math.log(sum(math.exp(x - m) for x in xs))
+
+    beams: dict[tuple[int, ...], tuple[float, float]] = {(): (0.0, NEG)}  # prefix -> (p_blank, p_nonblank)
+    for t in range(T):
+        lp = logits[t]
+        chars = np.nonzero(lp > prune)[0]
+        if lp[BLANK] <= prune:
+            chars = np.concatenate([[BLANK], chars])
+        nxt: dict[tuple[int, ...], tuple[float, float]] = {}
+
+        def add(pref, pb, pnb):
+            ob, onb = nxt.get(pref, (NEG, NEG))
+            nxt[pref] = (lse(ob, pb), lse(onb, pnb))
+
+        for pref, (pb, pnb) in beams.items():
+            tot = lse(pb, pnb)
+            for c in chars:
+                c = int(c)
+                p = float(lp[c])
+                if c == BLANK:
+                    add(pref, tot + p, NEG)
+                    continue
+                last = pref[-1] if pref else None
+                if c == last:
+                    add(pref, NEG, pnb + p)  # a repeat without a blank between: same string
+                    add(pref + (c,), NEG, pb + p)
+                else:
+                    add(pref + (c,), NEG, tot + p)
+        beams = dict(sorted(nxt.items(), key=lambda kv: -lse(*kv[1]))[:beam])
+    out = [("".join(CHARS[c - 1] for c in pref), lse(*v)) for pref, v in beams.items()]
+    out.sort(key=lambda s: -s[1])
+    return out
+
+
+def ctc_score(logits: np.ndarray, text: str) -> float:
+    """log P(text | logits) under CTC: the forward algorithm over the blank-interleaved label."""
+    lab = encode(text)
+    if lab is None:
+        return -1e30
+    ext = [BLANK]
+    for c in lab:
+        ext += [c, BLANK]
+    S = len(ext)
+    T = logits.shape[0]
+    if S > 2 * T + 1:
+        return -1e30
+    NEG = -1e30
+    alpha = np.full(S, NEG)
+    alpha[0] = logits[0, BLANK]
+    if S > 1:
+        alpha[1] = logits[0, ext[1]]
+    for t in range(1, T):
+        lp = logits[t]
+        prev = alpha
+        alpha = np.full(S, NEG)
+        for s in range(S):
+            cands = [prev[s]]
+            if s >= 1:
+                cands.append(prev[s - 1])
+            if s >= 2 and ext[s] != BLANK and ext[s] != ext[s - 2]:
+                cands.append(prev[s - 2])
+            m = max(cands)
+            if m > NEG:
+                alpha[s] = m + math.log(sum(math.exp(c - m) for c in cands)) + lp[ext[s]]
+    fin = [alpha[S - 1]] + ([alpha[S - 2]] if S > 1 else [])
+    m = max(fin)
+    return float(m + math.log(sum(math.exp(c - m) for c in fin))) if m > NEG else NEG
+
+
 def normalise_crop(gray: np.ndarray) -> np.ndarray:
-    """Dark text on light paper, scaled to H, padded to W, values in [-1, 1]."""
+    """Dark text on light paper, scaled to H, padded to W, values in [-1, 1].
+
+    A crop much taller than wide is a 90-degree rotated label (matplotlib rotates
+    counter-clockwise, so text reads bottom-to-top in the crop); rotating the crop
+    90 degrees clockwise brings the text back to its normal reading order before
+    the reader, which was trained on horizontal text, sees it.
+    """
     g = gray.astype(np.float32)
     if g.size == 0:
         return np.zeros((H, W), np.float32)
+    h, w = g.shape
+    if h > 1.5 * w and h > 10:
+        g = np.rot90(g, k=-1)  # 90 degrees clockwise
     border = np.concatenate([g[0], g[-1], g[:, 0], g[:, -1]])
     if np.median(border) < g.mean():  # light text on dark: invert
         g = 255 - g
@@ -195,13 +289,20 @@ def load_reader(path: str, device: str = "cuda") -> TickReader:
     return m
 
 
-def read_crops(model: TickReader, crops: list[np.ndarray], device: str = "cuda") -> list[tuple[str, float]]:
+def read_logits(model: TickReader, crops: list[np.ndarray], device: str | None = None) -> list[np.ndarray]:
+    """The reader's T x C log-probabilities for each crop."""
     if not crops:
         return []
+    if device is None:
+        device = next(model.parameters()).device
     x = torch.from_numpy(np.stack([normalise_crop(c) for c in crops]))[:, None].to(device)
     with torch.no_grad():
         lp = model(x).float().cpu().numpy()
-    return [decode(l) for l in lp]
+    return list(lp)
+
+
+def read_crops(model: TickReader, crops: list[np.ndarray], device: str | None = None) -> list[tuple[str, float]]:
+    return [decode(l) for l in read_logits(model, crops, device)]
 
 
 _NUM = re.compile(r"^\(?([-+]?)\$?([0-9][0-9,]*\.?[0-9]*|\.[0-9]+)(?:[eE]([-+]?[0-9]+))?(k|K|M|B|bn|G|T)?%?\)?$")
@@ -222,8 +323,11 @@ def parse_value(s: str) -> float | None:
     m = _POW.match(t)
     if m:
         mant = m.group(1)
-        mv = 1.0 if mant in ("", "+") else (-1.0 if mant == "-" else float(mant))
-        return mv * 10.0 ** int(m.group(2))
+        try:
+            mv = 1.0 if mant in ("", "+") else (-1.0 if mant == "-" else float(mant))
+            return mv * 10.0 ** int(m.group(2))
+        except (ValueError, OverflowError):
+            return None
     m = _NUM.match(t)
     if not m:
         return None
@@ -233,12 +337,14 @@ def parse_value(s: str) -> float | None:
         return None
     try:
         v = float(digits.replace(",", ""))
-    except ValueError:
+        if exp:
+            v *= 10.0 ** int(exp)
+    except (ValueError, OverflowError):
         return None
-    if exp:
-        v *= 10.0 ** int(exp)
     if suf:
         v *= SUFFIX[suf]
+    if not math.isfinite(v):
+        return None
     if sign == "-" or neg:
         v = -v
     return v

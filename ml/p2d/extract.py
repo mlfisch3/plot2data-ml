@@ -945,6 +945,313 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift
     return ex
 
 
+def _runs(idx: np.ndarray, gap: int) -> list[tuple[int, int]]:
+    """Maximal runs of sorted indices, joined across gaps of at most `gap`."""
+    out = []
+    s = prev = int(idx[0])
+    for c in idx[1:]:
+        if c - prev - 1 > gap:
+            out.append((s, prev))
+            s = int(c)
+        prev = int(c)
+    out.append((s, prev))
+    return out
+
+
+def _nearest_run(runs: list[tuple[int, int]], rel: float) -> tuple[int, int]:
+    return min(runs, key=lambda ge: 0 if ge[0] <= rel <= ge[1] else min(abs(ge[0] - rel), abs(ge[1] - rel)))
+
+
+def _mask_tick_marks(ink: np.ndarray, max_h: int = 15, max_w: int = 6, isolate: int = 12) -> np.ndarray:
+    """Remove narrow vertical streaks starting near the axis side (tick marks).
+
+    An x-axis tick mark is one or two columns wide, extends a handful of rows outward
+    from the axis, and does not reach the label text. If two tick marks appear at
+    different `along` positions in the window, the per-row width used by `_row_shapes`
+    sees them as one wide band (ink from leftmost to rightmost in the row) and the
+    band finder takes it for the label. The band finder breaks that way on log axes
+    where the tick marks sit between the axis and the text.
+
+    Line rows (plot borders, grid, offset spines) are blanked first so tick marks that
+    touch them become components of their own; a line is still a line in the per-row
+    logic that _label_band uses. A narrow component is masked only when there is no
+    ink in the same row range within `isolate` columns on either side, so narrow
+    glyphs on either end of a label (the "1" of "1000", a trailing digit) are kept.
+    """
+    n, m = ink.shape
+    # Rows made entirely of ink across the window are the plot border or a drawn line.
+    # Zero them before the component walk so tick marks hanging off the border become
+    # components of their own; the per-row logic still sees the lines later.
+    row_count = ink.sum(1)
+    cleaned = ink.copy()
+    cleaned[row_count >= max(4, int(0.8 * m))] = False
+    nlab, labels = cv2.connectedComponents(cleaned.astype(np.uint8))
+    out = ink.copy()
+    for i in range(1, nlab):
+        where = labels == i
+        rows, cols = np.where(where)
+        if rows.size == 0:
+            continue
+        r0, r1 = int(rows.min()), int(rows.max())
+        c0, c1 = int(cols.min()), int(cols.max())
+        if r0 > 4 or (r1 - r0 + 1) > max_h or (c1 - c0 + 1) > max_w:
+            continue
+        # Does the component stand alone? A tick mark has empty space on both sides
+        # at its own rows; a text glyph has its neighbours in the same row range.
+        rs, re = r0, r1 + 1
+        left_lo, left_hi = max(0, c0 - isolate), c0
+        right_lo, right_hi = c1 + 1, min(m, c1 + 1 + isolate)
+        if left_hi > left_lo and ink[rs:re, left_lo:left_hi].any():
+            continue
+        if right_hi > right_lo and ink[rs:re, right_lo:right_hi].any():
+            continue
+        out[where] = False
+    return out
+
+
+def _row_shapes(ink: np.ndarray, lo: int, hi: int) -> tuple[np.ndarray, np.ndarray]:
+    """Per row of an [across, along] ink window: is it a drawn line (one continuous run of ink over at least
+    80% of the along-extent [lo, hi], the plot's), and is it narrow (ink within 4 px, a tick mark's width)."""
+    n, m = ink.shape
+    line = np.zeros(n, bool)
+    narrow = np.zeros(n, bool)
+    span_ref = max(4, hi - lo + 1)
+    for k in range(n):
+        idx = np.nonzero(ink[k])[0]
+        if len(idx) == 0:
+            continue
+        narrow[k] = idx[-1] - idx[0] + 1 <= 4
+        if len(idx) >= 0.8 * span_ref:
+            sub = idx[(idx >= lo) & (idx <= hi)]
+            if len(sub) >= 2:
+                # Lengths of the continuous runs of ink: the longest decides.
+                breaks = np.nonzero(np.diff(sub) > 1)[0]
+                longest = int(np.diff(np.concatenate([[-1], breaks, [len(sub) - 1]])).max())
+                line[k] = longest >= 0.8 * span_ref
+    return line, narrow
+
+
+def _label_band(ink: np.ndarray, line: np.ndarray, narrow: np.ndarray, horizontal: bool, max_h: int) -> tuple[int, int] | None:
+    """The across-extent [r0, r1] of the label band in an ink window indexed [across, along]."""
+    count = ink.sum(1)
+    n = len(count)
+    k = 0
+    # The plot edge can round to a row other than the spine's: an initial gap of up to 2 rows is still the axis.
+    while k < min(n, 3) and count[k] == 0:
+        k += 1
+    # Attached to the axis: tick marks (narrow rows) and a spine. They end where the ink widens past a tick
+    # mark's width, so a label touching its tick mark (a superscript rising into it) is not consumed.
+    if k <= 2:
+        while k < n and count[k] > 0 and (narrow[k] or line[k]):
+            k += 1
+    # The first run of ink after the gap starts the band; a drawn line there is an offset spine: past it and its ticks.
+    while True:
+        while k < n and count[k] == 0:
+            k += 1
+        if k >= n:
+            return None
+        if line[k]:
+            while k < n and count[k] > 0 and (narrow[k] or line[k]):
+                k += 1
+            continue
+        break
+    r0 = r1 = k
+    while r1 + 1 < n and count[r1 + 1] > 0 and not line[r1 + 1]:
+        r1 += 1
+
+    def along_extent(lo: int, hi: int) -> int:
+        cols = np.nonzero(ink[lo:hi + 1].any(0))[0]
+        return int(np.ptp(cols)) + 1 if len(cols) else 0
+
+    # Widen the band across small gaps: between the glyphs of a y label or of a rotated x label (the text
+    # height is the along-extent seen so far), or the dot of a "%" and the like in a horizontal x label.
+    while r1 + 1 < n:
+        w = along_extent(r0, r1)
+        if horizontal and w > 1.3 * (r1 - r0 + 1):
+            h_est = r1 - r0 + 1
+            gap_max = max(1, int(0.3 * h_est))
+        else:
+            h_est = max(4, w)
+            gap_max = max(2, int(round(0.6 * h_est)))
+        nxt = r1 + 1
+        while nxt < n and count[nxt] == 0 and nxt - r1 - 1 < gap_max:
+            nxt += 1
+        if nxt >= n or count[nxt] == 0 or line[nxt]:
+            break
+        e = nxt
+        while e + 1 < n and count[e + 1] > 0 and not line[e + 1]:
+            e += 1
+        if not horizontal:
+            # A run much taller along the axis than the text, or filling the window along the axis, is a
+            # rotated axis title, not a glyph of the label.
+            rows_along = np.nonzero(ink[nxt:e + 1].any(0))[0]
+            if len(rows_along) and (np.ptp(rows_along) + 1 > 2.5 * h_est or
+                                    (rows_along[0] == 0 and rows_along[-1] == ink.shape[1] - 1)):
+                break
+        r1 = e
+        if r1 - r0 + 1 > max_h:
+            break
+    return r0, r1
+
+
+def label_from_source(img: np.ndarray, pos: float, axis_at: float, outward: int, horizontal: bool, half: float,
+                      depth: int | None = None, max_h: int | None = None,
+                      extent: tuple[float, float] | None = None) -> list[float] | None:
+    """The box of the label of one tick, measured on the source image at full resolution.
+
+    The network says where the tick is; the label is the first row of ink
+    outside the axis near it, after the pad that separates it from the tick
+    mark. Walking outward from the axis line, rows (columns, for a y axis)
+    attached to the axis line or to any drawn line are the tick marks and the
+    spine, and are skipped; the first run of ink after a gap is the label's
+    band. Along the axis the label is the group of glyphs nearest the tick,
+    glyphs being joined while the gaps between them are small against the text
+    height. The labels of an axis share one ink colour, so once the first glyph
+    is found only ink on the paper-to-that-colour blend counts: a series name
+    printed in its colour beside the axis, or a data line running past, does
+    not join the label. `img` is float32 RGB. Returns [x0, y0, x1, y1] in
+    source pixels, or None.
+    """
+    if img.ndim == 2:
+        img = np.repeat(img[..., None], 3, axis=-1)
+    H, W = img.shape[:2]
+    if depth is None:
+        depth = 250 if horizontal else 220  # a rotated x label is tall; a y label can be "1,000,000,000"
+    if max_h is None:
+        max_h = 250 if horizontal else 200
+    a0 = int(np.floor(pos - half))
+    a1 = int(np.ceil(pos + half))
+    c0 = int(round(axis_at)) + (1 if outward > 0 else -1)
+    c1 = c0 + outward * depth
+    if horizontal:
+        a0, a1 = max(0, a0), min(W - 1, a1)
+        c0, c1 = (max(0, min(c0, c1)), min(H - 1, max(c0, c1)))
+        win = img[c0:c1 + 1, a0:a1 + 1]
+    else:
+        a0, a1 = max(0, a0), min(H - 1, a1)
+        c0, c1 = (max(0, min(c0, c1)), min(W - 1, max(c0, c1)))
+        win = img[a0:a1 + 1, c0:c1 + 1].transpose(1, 0, 2)
+    if outward < 0:
+        win = win[::-1]
+    # win[k, j]: k steps outward from the axis, j along the axis.
+    if win.shape[0] < 4 or win.shape[1] < 3:
+        return None
+    paper = np.median(win.reshape(-1, 3), axis=0)
+    rel = win - paper
+    contrast = np.abs(rel).max(-1)
+    peak = float(contrast.max())
+    if peak < 30:
+        return None
+    ink = contrast > max(20.0, 0.25 * peak)
+    ink = _mask_tick_marks(ink)
+
+    # A line is judged over the plot's own extent along the axis: an offset spine ends with the plot, and
+    # the window of an end tick reaches past it.
+    lo, hi = 0, win.shape[1] - 1
+    if extent is not None:
+        lo = max(0, int(np.floor(extent[0] - 2)) - a0)
+        hi = min(win.shape[1] - 1, int(np.ceil(extent[1] + 2)) - a0)
+        if hi - lo < 4:
+            lo, hi = 0, win.shape[1] - 1
+
+    band = _label_band(ink, *_row_shapes(ink, lo, hi), horizontal, max_h)
+    if band is None:
+        return None
+    r0, r1 = band
+    # The ink colour of the label, from the darkest pixels of its first glyph run; then only that
+    # ink counts. The colour filter decides which ROWS to keep for the band; the along-axis extent
+    # still uses the raw ink, so anti-aliased glyph edges on a small label do not get stripped
+    # from the leading or trailing digit.
+    raw_ink = ink
+    first = ink[r0:r1 + 1] & (contrast[r0:r1 + 1] >= 0.7 * contrast[r0:r1 + 1].max())
+    if first.sum() >= 2:
+        colour = np.median(win[r0:r1 + 1][first], axis=0)
+        d = colour - paper
+        dd = float(d @ d)
+        if dd > 400:
+            t = (rel @ d) / dd
+            off = np.linalg.norm(rel - t[..., None] * d, axis=-1) / math.sqrt(dd)
+            ink2 = ink & (off < 0.35) & (t > 0.2)
+            band = _label_band(ink2, *_row_shapes(ink2, lo, hi), horizontal, max_h)
+            if band is not None:
+                ink, (r0, r1) = ink2, band
+    band_ink = raw_ink[r0:r1 + 1]
+    along = np.nonzero(band_ink.any(0))[0]
+    if len(along) == 0:
+        return None
+    rel_pos = pos - a0
+    if horizontal:
+        # Groups of glyphs along the axis; the one nearest the tick is its label, and a label is centred on
+        # its tick (or ends at it, when rotated), so it must reach the tick's position.
+        hgt = r1 - r0 + 1
+        s, e = _nearest_run(_runs(along, max(3, int(round(0.8 * hgt)))), rel_pos)
+        if e - s + 1 < 2 or hgt < 3 or not (s - max(3, 0.3 * hgt) <= rel_pos <= e + max(3, 0.3 * hgt)):
+            return None
+        y0, y1 = (c0 + r0, c0 + r1) if outward > 0 else (c1 - r1, c1 - r0)
+        return [float(a0 + s), float(y0), float(a0 + e), float(y1)]
+    # A y label: its rows are the ink rows of the band nearest the tick, and it is centred on the tick.
+    s, e = _nearest_run(_runs(along, 2), rel_pos)
+    if e - s + 1 < 3 or r1 - r0 + 1 < 2 or not (s - 3 <= rel_pos <= e + 3):
+        return None
+    x0, x1 = (c0 + r0, c0 + r1) if outward > 0 else (c1 - r1, c1 - r0)
+    return [float(x0), float(a0 + s), float(x1), float(a0 + e)]
+
+
+def refine_labels(img: np.ndarray, ex: Extraction) -> Extraction:
+    """Re-measure every tick's label box on the source pixels.
+
+    The canvas the network sees is at most 768 x 512, and a label of a large
+    screenshot is a 4-pixel blob on it: its class map misses it or cuts a
+    digit off. The tick position itself is exact, so the label is found from
+    it on the source image. A box measured there replaces the network's; where
+    nothing is found, the network's box stands.
+
+    The x axis goes first: its label band (the rows the x labels occupy) is
+    masked out while the y labels are measured, so the y label at the corner
+    does not run into the x label below it.
+    """
+    imf = img.astype(np.float32)
+    H, W = imf.shape[:2]
+    pa = ex.plot_area
+    masked = imf
+    for key in ("xticks", "yticks"):
+        ticks = getattr(ex, key)
+        if not ticks:
+            continue
+        horizontal = key == "xticks"
+        # Duplicate ticks (two heat peaks on one tick, two sem components for one tick) collapse
+        # the median spacing to zero and shrink the along-axis window below one glyph. Measure the
+        # spacing from unique positions, rounded to the pixel, before computing the window.
+        uniq = np.unique(np.round([t["pos"] for t in ticks]).astype(int))
+        d = np.diff(np.sort(uniq)) if len(uniq) > 1 else np.array([60.0])
+        d = d[d > 0]
+        spacing = float(np.median(d)) if len(d) else 60.0
+        half = max(6.0, 0.48 * spacing)
+        bands: list[tuple[int, int]] = []
+        for t in ticks:
+            ax_, ay = t["anchor"]
+            if horizontal:
+                mid = (pa[1] + pa[3]) / 2 if pa else H / 2
+                outward = 1 if ay >= mid else -1
+                box = label_from_source(imf, t["pos"], ay, outward, True, half, extent=(pa[0], pa[2]) if pa else None)
+            else:
+                mid = (pa[0] + pa[2]) / 2 if pa else W / 2
+                outward = -1 if ax_ <= mid else 1
+                box = label_from_source(masked, t["pos"], ax_, outward, False, half, extent=(pa[1], pa[3]) if pa else None)
+            if box is not None:
+                if t["label_box"] is not None:
+                    t["label_box_net"] = t["label_box"]
+                t["label_box"] = box
+                if horizontal:
+                    bands.append((int(np.floor(box[1])), int(np.ceil(box[3]))))
+        if horizontal and bands:
+            masked = imf.copy()
+            paper = np.median(imf[0], axis=0)
+            for lo, hi in bands:
+                masked[max(0, lo - 1):min(H, hi + 2)] = paper
+    return ex
+
+
 def _pick_line(prof: np.ndarray, lo: int, p: float, search: float, best):
     """The centre of the strongest thin line in a 1-D contrast profile, if it is clear and near `p`."""
     if len(prof) < 3:

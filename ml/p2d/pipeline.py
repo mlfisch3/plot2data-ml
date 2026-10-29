@@ -7,16 +7,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
 
+from .axis import TickRead, candidates, decode_axis
 from .calibrate import AxisFit, fit_axis
 from .dates import resolve
-from .extract import Extraction, extract, refine_lines, refine_markers, refine_ticks, run_net
-from .ocr import crop, parse_value, read_crops
+from .extract import Extraction, extract, refine_labels, refine_lines, refine_markers, refine_ticks, run_net
+from .ocr import crop, decode, parse_value, read_crops, read_logits
 from .sampling import auto_step, resample
 
 
@@ -29,40 +31,148 @@ class Result:
     series: list[dict] = field(default_factory=list)  # data units
     warnings: list[str] = field(default_factory=list)
     date_axes: dict = field(default_factory=dict)  # axis -> True when its values are days since 1970
+    reads: dict = field(default_factory=dict)  # axis -> [TickRead], with how each label was read
 
 
-def read_ticks(reader, img: np.ndarray, ticks: list[dict]) -> list[tuple[float, str, float, float | None]]:
+def read_ticks(reader, img: np.ndarray, ticks: list[dict]) -> list[TickRead]:
+    """Read every tick's label: the greedy text, and the top-k readings for the joint decode."""
     boxes = [(t["pos"], t["label_box"]) for t in ticks if t["label_box"] is not None]
     if reader is None or not boxes:
         return []
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     crops = [crop(gray, b) for _, b in boxes]
-    reads = read_crops(reader, crops)
     out = []
-    for (pos, _), (text, conf) in zip(boxes, reads):
-        out.append((pos, text, conf, parse_value(text)))
+    for (pos, _), lp in zip(boxes, read_logits(reader, crops)):
+        text, conf = decode(lp)
+        out.append(TickRead(pos, text, conf, parse_value(text), lp, candidates(lp)))
     return out
 
 
-def as_dates(reads, axis: str):
+def as_dates(reads: list[TickRead], axis: str) -> bool:
     """If an axis's labels are mostly not numbers but are dates, re-read them as days since 1970."""
-    numeric = sum(r[3] is not None for r in reads)
+    numeric = sum(r.value is not None for r in reads)
     if len(reads) < 2 or numeric >= len(reads) / 2:
-        return reads, False
+        return False
     # Dates run left to right on x and bottom to top on y.
-    order = sorted(range(len(reads)), key=lambda i: reads[i][0] if axis == "x" else -reads[i][0])
-    vals = resolve([reads[i][1] for i in order])
+    order = sorted(range(len(reads)), key=lambda i: reads[i].pos if axis == "x" else -reads[i].pos)
+    vals = resolve([reads[i].text for i in order])
     if sum(v is not None for v in vals) < 2:
-        return reads, False
-    out = list(reads)
+        return False
     for i, v in zip(order, vals):
-        p, t, c, _ = reads[i]
-        out[i] = (p, t, c, v)
-    return out, True
+        reads[i].value = v
+    return True
+
+
+def fit_reads(reads: list[TickRead], dates: bool, hint: str | None = None) -> AxisFit | None:
+    """Calibrate one axis from its readings: jointly when the reader's log-probs are there, else plainly.
+
+    Duplicate ticks (two heat peaks at the same position, two sem components) make the pair
+    search in the joint decoder skip every pair of them (distance < 3) and leave the axis unfit;
+    collapse ticks within 1.5 px of each other so the decoder sees one reading per position.
+    """
+    if not reads:
+        return None
+    deduped: list[TickRead] = []
+    for r in sorted(reads, key=lambda r: r.pos):
+        if deduped and abs(deduped[-1].pos - r.pos) < 1.5:
+            # Keep the reading with the higher confidence (or the one that parses).
+            if (r.value is not None) and (deduped[-1].value is None):
+                deduped[-1] = r
+            elif r.conf > deduped[-1].conf:
+                deduped[-1] = r
+            continue
+        deduped.append(r)
+    if dates or all(r.logits is None for r in deduped):
+        return fit_axis([r.pos for r in deduped], [np.nan if r.value is None else r.value for r in deduped],
+                        [r.text for r in deduped], hint=hint)
+    return decode_axis(deduped, hint=hint)
 
 
 _MULT = re.compile(r"^(?:x|\(x)?(?:1e([-+]?\d+)|10\^([-+]?\d+))\)?$")
 _OFFSET = re.compile(r"^([-+])(\d*\.?\d+(?:e[-+]?\d+)?)$")
+
+
+def _parse_factor(text: str) -> tuple[float, float] | None:
+    """Return (scale, shift) if `text` is a printed multiplier or offset."""
+    t = text.replace(" ", "")
+    m = _MULT.match(t)
+    if m:
+        return 10.0 ** int(m.group(1) or m.group(2)), 0.0
+    m = _OFFSET.match(t)
+    if m:
+        v = float(m.group(2))
+        return 1.0, (v if m.group(1) == "+" else -v)
+    return None
+
+
+def _end_search(img: np.ndarray, ex: Extraction, axis: str) -> list[list[int]]:
+    """Candidate text boxes at the axis end, measured on source pixels.
+
+    When the printed multiplier (`1e6`) has no sem component of its own (small
+    text, big canvas, or an edge-of-plot location), `loose_labels` is empty and
+    `axis_factor` cannot find it. This fallback scans a strip just outside the
+    plot at the axis end, finds dark-ink components, and returns the component
+    boxes most likely to be the multiplier text.
+    """
+    if ex.plot_area is None:
+        return []
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = ex.plot_area
+    if axis == "y":
+        # The multiplier for a y axis sits above the plot area. Either side can host the axis;
+        # scan a strip across both ends.
+        strip_y = (max(0, int(y0) - 60), max(1, int(y0) - 2))
+        strips = []
+        wq = max(60, int(0.35 * (x1 - x0)))
+        for cx in (int(x0), int(x1)):
+            lo, hi = max(0, cx - wq), min(W, cx + wq)
+            if hi > lo:
+                strips.append((strip_y, (lo, hi)))
+    else:
+        # x axis: the multiplier sits to the right of the plot area, below the x axis.
+        strips = [((max(1, int(y1) + 2), min(H, int(y1) + 60)), (int(x1) - 10, min(W, int(x1) + 100)))]
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    paper = int(np.median(gray))
+    cands: list[list[int]] = []
+    for (ry0, ry1), (rx0, rx1) in strips:
+        if ry1 <= ry0 or rx1 <= rx0:
+            continue
+        strip = gray[ry0:ry1, rx0:rx1]
+        ink = (paper - strip.astype(int)) > 30
+        if ink.sum() < 4:
+            continue
+        n, lab = cv2.connectedComponents(ink.astype(np.uint8))
+        for i in range(1, n):
+            rows, cols = np.where(lab == i)
+            if rows.size < 4:
+                continue
+            r0, r1 = int(rows.min()), int(rows.max())
+            c0, c1 = int(cols.min()), int(cols.max())
+            # Keep text-shaped components. The hyphen of "1e-5" is 1-2 rows tall and 2-4 cols
+            # wide; it joins its neighbours later. A long horizontal line (an axis spine or
+            # under-line) is excluded by the aspect check.
+            w, h = c1 - c0 + 1, r1 - r0 + 1
+            if h < 1 or h > 40 or w < 1 or w > 300:
+                continue
+            if w > 12 * h and h <= 2:
+                continue  # a bar/underline, not a hyphen
+            if h > 12 * w:
+                continue  # a vertical line
+            cands.append([rx0 + c0, ry0 + r0, rx0 + c1 + 1, ry0 + r1 + 1])
+    # Join components close along the horizontal axis into one box (digits + 'e' + exponent).
+    # Gap grows with the height of the two pieces: `1e` + `-` + `5` has larger gaps than a single
+    # word, and a sign or caret between digits sits in the gap but is often lost to the ink test.
+    cands.sort(key=lambda b: b[0])
+    merged: list[list[int]] = []
+    for b in cands:
+        if merged:
+            m = merged[-1]
+            hb = max(m[3] - m[1], b[3] - b[1])
+            if b[0] - m[2] <= max(10, 1.2 * hb) and abs((b[1] + b[3]) - (m[1] + m[3])) < max(12, 0.8 * hb):
+                merged[-1] = [m[0], min(m[1], b[1]), b[2], max(m[3], b[3])]
+                continue
+        merged.append(list(b))
+    return merged
 
 
 def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[float, float, str | None]:
@@ -72,11 +182,11 @@ def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[flo
     axis, outside the plot area. It is surfaced as a warning, never applied
     silently.
     """
-    if reader is None or ex.plot_area is None or not ex.loose_labels:
+    if reader is None or ex.plot_area is None:
         return 1.0, 0.0, None
     x0, y0, x1, y1 = ex.plot_area
     w, h = x1 - x0, y1 - y0
-    cands = []
+    cands: list[tuple[float, list[int]]] = []
     for b in ex.loose_labels:
         cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
         # The text's centre is outside the plot; its box may touch or overlap the edge by a few px
@@ -85,27 +195,44 @@ def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[flo
             cands.append((abs(cx - x0) + (y0 - cy), b))
         if axis == "x" and cy > y1 and cy - y1 < 0.2 * h + 40 and cx > x1 - 0.3 * w:
             cands.append((abs(cx - x1) + (cy - y1), b))
-    if not cands:
-        return 1.0, 0.0, None
-    cands.sort(key=lambda c: c[0])
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    text, conf = read_crops(reader, [crop(gray, cands[0][1])])[0]
-    t = text.replace(" ", "")
-    m = _MULT.match(t)
-    if m:
-        e = int(m.group(1) or m.group(2))
-        return 10.0 ** e, 0.0, t
-    m = _OFFSET.match(t)
-    if m:
-        v = float(m.group(2))
-        return 1.0, (v if m.group(1) == "+" else -v), t
+    # Loose labels first: they are what the net surfaced as separate text pieces.
+    for _, b in sorted(cands, key=lambda c: c[0]):
+        text, _ = read_crops(reader, [crop(gray, b)])[0]
+        got = _parse_factor(text)
+        if got is not None:
+            return got[0], got[1], text.replace(" ", "")
+    # Explicit source-pixel search at the axis end: catches multipliers whose sem component is
+    # missing or absorbed into another label. Each candidate is grown by a few pixels before the
+    # reader sees it so leading/trailing glyphs are not cut.
+    H, W = img.shape[:2]
+    for b in _end_search(img, ex, axis):
+        pad_x, pad_y = 3, 2
+        pb = [max(0, b[0] - pad_x), max(0, b[1] - pad_y),
+              min(W, b[2] + pad_x), min(H, b[3] + pad_y)]
+        text, _ = read_crops(reader, [crop(gray, pb)])[0]
+        got = _parse_factor(text)
+        if got is not None:
+            return got[0], got[1], text.replace(" ", "")
     return 1.0, 0.0, None
 
 
-def calibrate(ex: Extraction, reads_x, reads_y):
-    xfit = fit_axis([r[0] for r in reads_x], [np.nan if r[3] is None else r[3] for r in reads_x], [r[1] for r in reads_x])
-    yfit = fit_axis([r[0] for r in reads_y], [np.nan if r[3] is None else r[3] for r in reads_y], [r[1] for r in reads_y])
-    return xfit, yfit
+def apply_factor(fit: AxisFit | None, reads: list[TickRead], scale: float, shift: float) -> AxisFit | None:
+    """A printed multiplier or offset: the labels are in units of it, the values are not."""
+    for r in reads:
+        if r.value is not None:
+            r.value = r.value * scale + shift
+    if fit is None:
+        return fit
+    if fit.scale == "log":
+        if scale > 0:
+            fit.a += math.log10(scale)
+        if shift:
+            fit.warnings.append("an offset is printed on a log axis and was not applied")
+        return fit
+    fit.a = fit.a * scale + shift
+    fit.b = fit.b * scale
+    return fit
 
 
 def to_data(ex: Extraction, xfit: AxisFit | None, yfit: AxisFit | None, step_px: float | None = None,
@@ -154,20 +281,27 @@ def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: 
         ex = refine_lines(img, ex)
         ex = refine_ticks(img, ex)
         ex = refine_markers(img, ex)
+    if reader is not None and oracle_ticks is None:
+        ex = refine_labels(img, ex)
     if oracle_ticks is not None:
-        rx = [(p, "", 1.0, v) for p, v in oracle_ticks["x"]]
-        ry = [(p, "", 1.0, v) for p, v in oracle_ticks["y"]]
+        rx = [TickRead(p, "", 1.0, v) for p, v in oracle_ticks["x"]]
+        ry = [TickRead(p, "", 1.0, v) for p, v in oracle_ticks["y"]]
+        xfit, yfit = fit_reads(rx, False), fit_reads(ry, False)
     else:
-        rx, xdate = as_dates(read_ticks(reader, img, ex.xticks), "x")
-        ry, ydate = as_dates(read_ticks(reader, img, ex.yticks), "y")
+        rx, ry = read_ticks(reader, img, ex.xticks), read_ticks(reader, img, ex.yticks)
+        xdate, ydate = as_dates(rx, "x"), as_dates(ry, "y")
+        xfit, yfit = fit_reads(rx, xdate), fit_reads(ry, ydate)
         factors = {}
         for name, reads in (("x", rx), ("y", ry)):
             scale, shift, text = axis_factor(reader, img, ex, name)
             if text is not None:
                 factors[name] = text
-                reads[:] = [(p, t, c, None if v is None else v * scale + shift) for p, t, c, v in reads]
-    xfit, yfit = calibrate(ex, rx, ry)
-    res = Result(ex=ex, xfit=xfit, yfit=yfit, tick_reads={"x": rx, "y": ry})
+                if name == "x":
+                    xfit = apply_factor(xfit, reads, scale, shift)
+                else:
+                    yfit = apply_factor(yfit, reads, scale, shift)
+    res = Result(ex=ex, xfit=xfit, yfit=yfit, tick_reads={"x": [r.as_tuple() for r in rx], "y": [r.as_tuple() for r in ry]},
+                 reads={"x": rx, "y": ry})
     if oracle_ticks is None:
         res.date_axes = {"x": xdate, "y": ydate}
         for name, text in factors.items():
