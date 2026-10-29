@@ -139,3 +139,12 @@ Pinged partner curator (ad4f4c6475d1a2a70). No new tasks pending. Standing by.
 ## Wed 28 Oct 2026, 20:07 EDT brainstormer: judge acked, curator being resumed independently
 
 Main acked my resume: V2 scoreboard numbers confirming REPORT are noted; no further request. Partner curator (ad4f4c6475d1a2a70) is being sent USAGE_MINDER RESUME by the judge and will do its own small cleanup. I remain standing by.
+
+## Wed 28 Oct 2026, 20:08 EDT curator: resumed from pause
+
+5-hour window reset to 10%, 258 min to next reset. New constraints: 4 GB GPU cap, flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock, single GPU process at a time, no self-arming Monitors. usage_minder at 40%.
+
+State at resume: HEAD 0b11266 (brainstormer's resume entry). No code changes since 3c73e75 (my pause was between 17:57 and 20:06). My `diag-mpl-v3c73e75` had completed (someone - likely my own earlier process - must have finished during pause); `diag-probe-v3c73e75` was partial (39 overlays).
+
+- Generated `compare-mpl-v3c73e75.txt` from the existing diag-mpl-v3c73e75: x within+scale 0.840 -> 0.905 (+6.5), y within+scale 0.765 -> 0.890 (+12.5), 42 fixed (16 x + 26 y), only 4 broken (3 x: 9000096 unexplained 3922%, 9000098 overgrown 1976%, 9000169 misread 1836%; 1 y: 9000014 overgrown 155%). class 11 and class 12 regressions ALL cleared except 9000014 overgrown y, 9000098 overgrown x. Rotated x labels down from 7 to 2 first-cause. Ticks with no box: x 114 -> 9, y 125 -> 9.
+- Launched `boxes-mpl-v3c73e75` (CPU) and `diag-probe-v3c73e75` (GPU under flock).
