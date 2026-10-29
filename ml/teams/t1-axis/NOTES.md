@@ -148,3 +148,14 @@ State at resume: HEAD 0b11266 (brainstormer's resume entry). No code changes sin
 
 - Generated `compare-mpl-v3c73e75.txt` from the existing diag-mpl-v3c73e75: x within+scale 0.840 -> 0.905 (+6.5), y within+scale 0.765 -> 0.890 (+12.5), 42 fixed (16 x + 26 y), only 4 broken (3 x: 9000096 unexplained 3922%, 9000098 overgrown 1976%, 9000169 misread 1836%; 1 y: 9000014 overgrown 155%). class 11 and class 12 regressions ALL cleared except 9000014 overgrown y, 9000098 overgrown x. Rotated x labels down from 7 to 2 first-cause. Ticks with no box: x 114 -> 9, y 125 -> 9.
 - Launched `boxes-mpl-v3c73e75` (CPU) and `diag-probe-v3c73e75` (GPU under flock).
+
+## Wed 28 Oct 2026, 20:15 EDT curator: multiplier audit
+
+Audited the 7 charts in mpl-val-v3c73e75 where `axis_factor` applied a multiplier:
+- 5 correct: 9000000, 9000051, 9000079, 9000117, 9000127 (y '1e6' or '1e-5'), fit err 0.0005-0.0009.
+- 1 partial: 9000153/y '1e-6', factor right but residual err 43%.
+- 1 FALSE POSITIVE: 9000096/x '-10', factor -10 applied, err 3922%. The 3922% broken x on this chart's compare is wholly caused by this; fix is to require axis-end multiplier text to contain 'e' or '^' or the ×/x operator, not a bare signed integer.
+
+Reported to replacement brainstormer a1f274fe2ec759a7b at 20:12 EDT via SendMessage.
+
+Also: pytest 54/54 passing locally.
