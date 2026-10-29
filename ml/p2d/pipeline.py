@@ -90,6 +90,7 @@ def fit_reads(reads: list[TickRead], dates: bool, hint: str | None = None) -> Ax
 
 _MULT = re.compile(r"^(?:x|\(x)?(?:1e([-+]?\d+)|10\^([-+]?\d+))\)?$")
 _OFFSET = re.compile(r"^([-+])(\d*\.\d+(?:e[-+]?\d+)?|\d+e[-+]?\d+)$")
+_MAX_MULT_EXP = 15  # mpl axis multipliers run from atto to peta; "1e55" is OCR noise.
 
 
 def _parse_factor(text: str) -> tuple[float, float] | None:
@@ -97,7 +98,10 @@ def _parse_factor(text: str) -> tuple[float, float] | None:
     t = text.replace(" ", "")
     m = _MULT.match(t)
     if m:
-        return 10.0 ** int(m.group(1) or m.group(2)), 0.0
+        e = int(m.group(1) or m.group(2))
+        if abs(e) > _MAX_MULT_EXP:
+            return None
+        return 10.0 ** e, 0.0
     m = _OFFSET.match(t)
     if m:
         v = float(m.group(2))
@@ -294,12 +298,22 @@ def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: 
         factors = {}
         for name, reads in (("x", rx), ("y", ry)):
             scale, shift, text = axis_factor(reader, img, ex, name)
-            if text is not None:
-                factors[name] = text
-                if name == "x":
-                    xfit = apply_factor(xfit, reads, scale, shift)
-                else:
-                    yfit = apply_factor(yfit, reads, scale, shift)
+            if text is None:
+                continue
+            # mpl prints a multiplier when labels are small units (|v| < 1000, e.g. "0, 2, 4" with
+            # "1e9" above). A chart whose own tick labels already parse to large magnitudes is not
+            # a multiplier chart; the strip search caught title or year text and the OCR noise
+            # matched the multiplier regex (owid-military: "1e1"; owid-solar-pv: "1e55"). Keep the
+            # offset-annotation win by letting the factor through when labels are small.
+            if scale != 1.0 and reads:
+                max_abs_val = max((abs(r.value) for r in reads if r.value is not None), default=0.0)
+                if max_abs_val > 1000:
+                    continue
+            factors[name] = text
+            if name == "x":
+                xfit = apply_factor(xfit, reads, scale, shift)
+            else:
+                yfit = apply_factor(yfit, reads, scale, shift)
     res = Result(ex=ex, xfit=xfit, yfit=yfit, tick_reads={"x": [r.as_tuple() for r in rx], "y": [r.as_tuple() for r in ry]},
                  reads={"x": rx, "y": ry})
     if oracle_ticks is None:
