@@ -182,7 +182,15 @@ failing y axes are "multiplier_missed" (every t1-offset and most of t1-mult_sci)
 to be applied, and if the fitter does not get it, the error is 10^6. The multiplier/offset path is the biggest
 single lever on the probe set.
 
-### 11. Superscript taken as the whole label (added by the colour-aware boxes)
+### 11. Superscript taken as the whole label (added by the colour-aware boxes, FIXED in 8bcd112/ba4b822)
+
+**Status: fixed as of HEAD 3c73e75.** The brainstormer's `_mask_tick_marks` (8bcd112) plus the max_w widening to 6 cols
+for anti-aliased tick-mark bases (ba4b822) removes the thin tick-mark runs from the ink mask before `_label_band`
+runs, so the first glyph band is the real label rather than the tick mark. Verified on 9000016 (`10^-1/0/1`),
+9000021 (`1e2/3/4`), 9000024 (`10^3/4`) in `compare-mpl-v3c73e75.txt`: all three are no longer in the broken list;
+box test on mpl-val went 0.882 (frozen) -> 0.922 (244ce7b) -> 0.928 (3c73e75). The 10^k superscript regression is
+closed. Original (pre-fix) diagnosis follows for the record.
+
 
 Introduced by commit 244ce7b (brainstormer's `label_from_source` rewrite); not present in the frozen base.
 `out/t1/boxes-mpl-new.txt` shows the new boxes next to the true ink: on seeds 9000016 (`10^-1`, `10^0`, `10^1`),
@@ -205,7 +213,18 @@ read from the thin box, calibration still works; if the digit is cut, every `10^
 as linear. On mpl-val this hit 9000015, 9000027, 9000044, 9000106, 9000154 before the rewrite (class 1); the new
 rewrite would do the same by returning only the superscript. Probe: `t1-pow10_edge/x` 0.88 within is partly this.
 
-### 12. Colour-aware box crops the leading "0." / overgrows into a neighbour (added by 244ce7b)
+### 12. Colour-aware box crops the leading "0." / overgrows into a neighbour (added by 244ce7b, FIXED in 8bcd112/3c73e75)
+
+**Status: fixed as of HEAD 3c73e75.** Resolved by two edits in the brainstormer's `label_from_source`:
+(a) `band_ink = raw_ink[r0:r1 + 1]` uses the pre-colour-filter ink for the horizontal glyph grouping, so the colour
+filter decides which rows are the label but the along-axis extent comes from the clean ink and anti-aliased edge
+pixels do not strip the leading or trailing digit; (b) `_mask_tick_marks` max_w=6 removes the attached tick-mark
+run that was being taken as the first glyph. Verified on mpl-val: 7 of the 7 class-12 charts cleared except
+9000014 (`25/75 -> -51/151` overgrown still remains, 1.5% y error); 9000098 (`105.0 -> 00000`) also still
+overgrown-x in some runs. The real-screenshot 01-panel1/2/3 cases (year labels '2020..2024' cropped to '02'/'021')
+read correctly post-3c73e75 (brainstormer confirmed, 0.57-1.06 px error). Original (pre-fix) diagnosis follows
+for the record.
+
 
 Introduced by the same `label_from_source` rewrite. From `compare-mpl-v244.txt`, 15 charts broke; 7 of them are
 this class. Three charts (9000016/21/24) are the superscript (class 11); the rest split as follows (seed, axis,
