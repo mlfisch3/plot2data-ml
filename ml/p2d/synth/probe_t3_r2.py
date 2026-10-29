@@ -103,35 +103,78 @@ def _series(rng: np.random.Generator, xp: dict, yp: dict, n: int = 400) -> tuple
     return x, y
 
 
-def _apply_offset(ax, has_offset: bool, rng: np.random.Generator) -> dict | None:
-    """When requested, place the y data at a value range that forces matplotlib to print an offset label.
+def _apply_offset(ax, has_offset: bool, offset_value: float) -> dict | None:
+    """When requested, swap the y formatter to ScalarFormatter + useOffset + powerlimits.
 
-    `axes.formatter.useoffset = True` plus a y range whose midpoint is far from
-    its span triggers the offset. We shift y so the range is (base + eps_lo,
-    base + eps_hi) with base in {1e3, 1e4, 1e5}.
+    With a narrow y range far from zero, powerlimits=(-1, 1) and useOffset=True
+    push the offset into a separate axis label ("+1e3" or "+1e4" at the top of
+    the y axis) and leave each tick with a small relative number. This exercises
+    the `_OFFSET` branch of the pipeline's axis-label parser.
     """
     if not has_offset:
         return None
-    base = float(rng.choice([1e3, 1e4, 1e5]))
-    ax.ticklabel_format(axis="y", useOffset=True, style="plain")
-    return {"applied": True, "offset_value": base, "axis": "y"}
+    sf = mticker.ScalarFormatter(useOffset=True)
+    sf.set_useOffset(True)
+    sf.set_powerlimits((-1, 1))
+    ax.yaxis.set_major_formatter(sf)
+    return {"applied": True, "offset_value": offset_value, "axis": "y"}
 
 
-def _axis_locator(ax, which: str, p: dict) -> None:
-    """Install a locator and minor-tick behaviour for one axis."""
+def _axis_locator(ax, which: str, p: dict, lim: tuple[float, float] | None = None) -> None:
+    """Install a FIXED-N locator with LABELS on every position.
+
+    - Linear axes: FixedLocator at N evenly spaced positions, ScalarFormatter.
+    - Log axes: FixedLocator at N evenly spaced log-decade positions, with a
+      compact numeric formatter (so each tick gets a non-empty label and is
+      scored by the pipeline), not the default LaTeX log formatter.
+    """
     axis = ax.xaxis if which == "x" else ax.yaxis
+    n = int(p["n_ticks"])
     if p["axis_style"] == "log":
         if which == "x":
             ax.set_xscale("log")
         else:
             ax.set_yscale("log")
-        axis.set_major_locator(mticker.LogLocator(base=10.0, numticks=p["n_ticks"]))
+        if lim is None:
+            lim = (1.0, 10.0 ** (n - 1))
+        lo, hi = min(lim), max(lim)
+        positions = np.logspace(np.log10(lo), np.log10(hi), n)
+        axis.set_major_locator(mticker.FixedLocator(positions))
+        axis.set_major_formatter(mticker.FuncFormatter(_log_fmt))
         if p["label_density"] == "dense":
             axis.set_minor_locator(mticker.LogLocator(base=10.0, subs=(2, 3, 4, 5, 6, 7, 8, 9), numticks=100))
     else:
-        axis.set_major_locator(mticker.MaxNLocator(nbins=max(3, p["n_ticks"] - 1), steps=[1, 2, 2.5, 5, 10]))
+        if lim is None:
+            lim = (0.0, 100.0)
+        lo, hi = min(lim), max(lim)
+        positions = np.linspace(lo, hi, n)
+        axis.set_major_locator(mticker.FixedLocator(positions))
+        axis.set_major_formatter(mticker.FuncFormatter(_linear_fmt))
         if p["label_density"] == "dense":
             axis.set_minor_locator(mticker.AutoMinorLocator(5))
+
+
+def _log_fmt(v, _):
+    """Compact log-axis label: integer powers of 10 as the integer, others as .2g."""
+    if v <= 0:
+        return ""
+    import math
+    e = math.log10(v)
+    if abs(round(e) - e) < 1e-6:
+        return f"{int(round(v)):d}"
+    return f"{v:.2g}"
+
+
+def _linear_fmt(v, _):
+    """Compact linear-axis label without matplotlib's offset or scientific switch."""
+    if abs(v) < 1e-9:
+        return "0"
+    av = abs(v)
+    if av >= 1e4 or av < 1e-2:
+        return f"{v:.1e}"
+    if abs(v - round(v)) < 1e-6:
+        return f"{int(round(v)):d}"
+    return f"{v:.2g}"
 
 
 def _per_tick_records(ax, which: str) -> list[dict]:
@@ -204,13 +247,26 @@ def ticks(seed: int) -> Rendered:
             y_offset = float(rng.choice([1e3, 1e4, 1e5]))
             # Place y data on a narrow window above the offset base, so matplotlib prints "+1e4" above the axis.
             y = y_offset + 0.01 * y_offset * (y - y.min()) / max(1e-9, (y.max() - y.min())) + rng.uniform(0.5, 1.5) * y_offset * 0.001
+        else:
+            y_offset = 0.0
         # Scale set BEFORE locators (log scale resets the locator)
         if xp["axis_style"] == "log":
             ax.set_xscale("log")
         if yp["axis_style"] == "log" and not has_offset:
             ax.set_yscale("log")
-        _axis_locator(ax, "x", xp)
-        _axis_locator(ax, "y", yp)
+        # Set limits explicitly so FixedLocator positions land on labelled ticks within [lo, hi].
+        if xp["axis_style"] == "log":
+            ax.set_xlim(float(x.min()), float(x.max()))
+        else:
+            ax.set_xlim(0.0, 100.0)
+        if yp["axis_style"] == "log" and not has_offset:
+            ax.set_ylim(float(y.min()), float(y.max()))
+        elif has_offset:
+            ax.set_ylim(float(y.min()), float(y.max()))
+        else:
+            ax.set_ylim(float(y.min()) - 5.0, float(y.max()) + 5.0)
+        _axis_locator(ax, "x", xp, ax.get_xlim())
+        _axis_locator(ax, "y", yp, ax.get_ylim())
         # Label rotation
         for lbl in ax.get_xticklabels():
             lbl.set_rotation(xp["label_rotation"])
