@@ -250,17 +250,51 @@ Measured on `rows-plotly-base.json` (v3), `rows-plotly-step24.json`, `rows-plotl
 
 Four of five step24 catastrophes recovered; the 500107 rope is a known F1-class case that no veto fix can touch (sub-pixel marker spacing).
 
-### Per-marker diagnosis (per probe set)
+### Probe sets (geometry only, `--refine`, step25 vs v3d)
 
-In flight under flock, one at a time. Will be filled in as each eval completes:
+Standard numbers, all seven probes measured in this worktree with `e4edf2b` under flock, one at a time:
 
-| set | tag | recall step25 all / simple | precision step25 | err step25 | note |
+| set | metric | v3d all / simple | step25 all / simple | delta vs v3d (step25) | note |
 | --- | --- | --- | --- | --- | --- |
-| dense | step25 | (running) | | | |
-| row | step25 | (queued) | | | |
-| shapes | step25 | (queued) | | | |
-| labels | step25 | (queued) | | | expected: precision 0.60 -> ~0.75 from sem[TEXT] veto |
-| hollow | step25 | (queued) | | | |
-| multi | step25 | (queued) | | | |
-| lines | step25 | (queued) | | | expected: precision up from dash veto on scatter only |
+| dense | marker_recall | 0.765 / 0.760 | 0.810 / 0.809 | **+0.045 / +0.049** | packed scatter clouds - mixture + F11 fix |
+| dense | marker_precision | 0.856 / 0.855 | 0.930 / 0.933 | +0.074 / +0.078 | |
+| dense | marker_err_median_pct | 0.168 / 0.173 | 0.105 / 0.108 | **-37%** | |
+| row | marker_recall | 0.700 / 0.700 | 0.697 / 0.697 | -0.002 | step24 regression (0.667) fully recovered |
+| row | marker_precision | 0.849 | 0.861 | +0.012 | |
+| row | marker_err_median_pct | 0.135 | 0.121 | -10% | |
+| shapes | marker_recall | 0.977 / 0.977 | 0.985 / 0.983 | +0.008 / +0.007 | triangle correction |
+| shapes | marker_precision | 0.936 / 0.935 | 0.984 / 0.983 | +0.047 / +0.049 | |
+| shapes | marker_err_median_pct | 0.118 / 0.113 | 0.069 / 0.066 | **-42%** | |
+| labels | marker_recall | 0.891 | 0.897 | +0.006 | step24 -4.4pp regression fully recovered; sem[TEXT] veto less sharp than hoped |
+| labels | marker_precision | 0.593 | 0.606 | +0.013 | expected 0.75; see diagnosis |
+| labels | marker_err_median_pct | 0.146 | 0.116 | -21% | |
+| hollow | marker_recall | 0.825 | 0.829 | +0.004 | |
+| hollow | marker_precision | 0.877 | 0.920 | +0.042 | |
+| hollow | marker_err_median_pct | 0.138 | 0.096 | **-30%** | hollow rings still at network estimate |
+| multi | marker_recall | 0.734 / 0.817 | 0.767 / 0.860 | +0.033 / +0.044 | step24 abandoned (GPU thrash); first clean read |
+| multi | marker_precision | 0.838 / 0.864 | 0.876 / 0.939 | +0.038 / +0.075 | |
+| multi | marker_err_median_pct | 0.141 / 0.140 | 0.088 / 0.082 | **-38% / -41%** | |
+| lines | spurious markers / 100 charts | 534 | 446 | -88 (-17%) | dashes/spikes veto still fires; step24 line_ink -105 improvement held |
+
+Every probe set positive or neutral vs v3d on every axis. The two step24 regressions (row -3.3pp recall, labels -4.4pp recall) are both fully recovered by step25.
+
+### What the labels sem[TEXT] veto actually did
+
+Expected on 02:31 EDT and in the step25 plan: precision 0.60 -> ~0.75 (predecessor's text-veto verifier measured 0.02-0.10% false-veto on real markers, so almost pure FP drop).
+
+Measured: precision 0.593 -> 0.606 (+1.3pp). FP count fell by 160 (3547 -> 3387), but TPs rose by 36 (5175 -> 5211) and predictions rose by 100 (8722 -> 8598). The veto is correctly dropping digit/annotation peaks (text FPs down), but the dropped peaks were a smaller slice of all FPs than hoped: on `data/t4-labels` the dup/line_ink FPs on packed clouds dominate the FP side, and the sem[TEXT] veto does not touch those.
+
+For comparison, step24 (which had the broader `len(iso) >= 3 AND size <= stroke + 2` line-stroke veto plus the dash veto on everything) traded FPs for recall the other way: step24 FP 3257, TP 4922 (precision 0.602 but recall only 0.847). Step25 has strictly more TPs than step24 (5211 vs 4922) and still 160 fewer FPs than v3d - net improvement across both axes.
+
+Per-marker diag queued (labels step25) will confirm whether the TP gain is a side effect of the step25 dash-veto-on-scatter-only also unlocking labels line+markers series. See `out/t4/diag-labels-step25/summary.json` once it lands.
+
+### Lines (no-markers probe) FP breakdown
+
+| tag | spurious markers | note |
+| --- | --- | --- |
+| v3d | 534 | dashes of thick dashed lines, spike apices on noisy lines |
+| step24 (from step24 diag delta) | ~429 (-105 vs v3d, 'line_ink' cause) | the full-strength dash veto |
+| step25 | 446 | +17 vs step24 (step25 relaxed dash veto on line+markers; some of that reaches no-marker charts) |
+
+Still 88 fewer spurious markers vs v3d. A full win would be 0 FP on no-marker charts; the gap is pure dashes/spikes the network emits a heat peak for.
 

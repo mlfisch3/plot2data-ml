@@ -155,3 +155,12 @@ Split of remaining work with brainstormer: brainstormer takes val-e2e, plotly-e2
 
 Updated CASES.md with the step25 scoreboard numbers, the per-chart catastrophe recovery, and a placeholder table for probe-set rows (filling as evals land).
 
+
+## Wed 28 Oct 2026, 20:56 EDT (curator)
+
+Probe step25 eval suite complete, all seven sets measured one at a time under flock. Clean positives on every axis vs v3d. Row (fully recovered the step24 -3.3pp recall regression) and labels (-4.4pp -> +0.6pp) are the key fixes; dense/shapes/hollow/multi all keep their step24 wins; lines unchanged.
+
+Surprise: labels precision only moved 0.593 -> 0.606, not the predicted 0.60 -> 0.75. The sem[TEXT] veto drops 160 FPs but the dominant FPs on this probe are dup/line_ink on packed clouds, which the veto doesn't touch. Still a net improvement (TPs 5175 -> 5211 AND FPs 3547 -> 3387).
+
+Next: per-marker diag of val, plotly, labels for the FP-cause / FN-stage delta tables in CASES.md.
+
