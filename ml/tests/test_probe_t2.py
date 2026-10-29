@@ -36,7 +36,7 @@ def test_case_renders_with_truth_on_the_ink(case):
         hits += near.sum()
         total += len(d)
     # Dashed and dotted series have gaps on purpose; everything else lies on data ink.
-    assert hits / total >= (0.4 if case == "dotted" else 0.85 if case in ("samecolour", "multi") else 0.98)
+    assert hits / total >= (0.4 if case == "dotted" else 0.85 if case in ("samecolour", "multi", "ghostpair") else 0.98)
 
 
 def test_cases_provoke_what_they_say():

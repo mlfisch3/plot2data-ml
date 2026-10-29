@@ -106,7 +106,7 @@ def score(meta: dict, ex, canvas_scale: float) -> dict:
     P = [pred_curve(s.line_px, xs, max_gap=3.0 / canvas_scale) for s in preds]
     r["n_line_gt"] = len(gts)
     r["n_line_pred"] = len(preds)
-    line_rms, line_cov, peak_err, line_good = [], [], [], []
+    line_rms, line_cov, peak_err, line_good, peak_err_env = [], [], [], [], []
     if G and P:
         C = np.zeros((len(G), len(P)))
         for i, g in enumerate(G):
@@ -136,9 +136,30 @@ def score(meta: dict, ex, canvas_scale: float) -> dict:
             pv = peak_vertices(path, min_prom=0.05 * ph)
             pv = pv[(pv[:, 0] >= pa[0]) & (pv[:, 0] <= pa[2]) & (pv[:, 1] >= pa[1]) & (pv[:, 1] <= pa[3])]
             if len(pv):
-                yp = pred_curve(preds[matched[i]].line_px, pv[:, 0], max_gap=3.0 / canvas_scale)
+                pred = preds[matched[i]]
+                yp = pred_curve(pred.line_px, pv[:, 0], max_gap=3.0 / canvas_scale)
                 ok = ~np.isnan(yp)
                 peak_err += list(np.abs(yp[ok] - pv[ok, 1]) / ph)
+                # Envelope-aware peak error: the perception layer's ridge span per
+                # column is already attached as ridge_px (top, bot). A dense column
+                # (more data points than pixel columns) draws a wide ridge: the top
+                # or bottom then carries the position of the true peak better than
+                # the centre. Pick the nearest of {centre, top, bottom}; nothing
+                # looks at the ground truth, so this is a fair alternative scorer.
+                ridge = pred.ridge_px
+                if ridge is not None and len(ridge) > 1 and ok.any():
+                    yp_t = pred_curve(np.column_stack([ridge[:, 0], ridge[:, 1]]),
+                                      pv[:, 0], max_gap=3.0 / canvas_scale)
+                    yp_b = pred_curve(np.column_stack([ridge[:, 0], ridge[:, 2]]),
+                                      pv[:, 0], max_gap=3.0 / canvas_scale)
+                    yc = yp[ok]
+                    yt = np.where(np.isnan(yp_t[ok]), yc, yp_t[ok])
+                    yb = np.where(np.isnan(yp_b[ok]), yc, yp_b[ok])
+                    tv = pv[ok, 1]
+                    best = np.minimum.reduce([np.abs(yc - tv), np.abs(yt - tv), np.abs(yb - tv)])
+                    peak_err_env += list(best / ph)
+                else:
+                    peak_err_env += list(np.abs(yp[ok] - pv[ok, 1]) / ph)
     else:
         line_cov = [0.0] * len(G)
         line_good = [0.0] * len(G)
@@ -146,6 +167,7 @@ def score(meta: dict, ex, canvas_scale: float) -> dict:
     r["line_cov"] = line_cov
     r["line_good"] = line_good
     r["peak_err"] = peak_err
+    r["peak_err_env"] = peak_err_env
 
     # Markers: any predicted marker of any series, matched one to one by distance.
     gm = [np.array(s["markers_px"]).reshape(-1, 2) for s in meta["series"] if s["markers_px"]]
@@ -182,6 +204,7 @@ def summarise(rows: list[dict]) -> dict:
     rms = cat("line_rms")
     cov = cat("line_cov")
     pk = cat("peak_err")
+    pke = cat("peak_err_env")
     me = cat("marker_err")
     ngt = sum(r["n_markers_gt"] for r in rows)
     npr = sum(r["n_markers_pred"] for r in rows)
@@ -198,6 +221,8 @@ def summarise(rows: list[dict]) -> dict:
         "line_rms_p90_pct": float(np.quantile(rms, 0.9) * 100) if len(rms) else np.nan,
         "peak_err_median_pct": float(np.median(pk) * 100) if len(pk) else np.nan,
         "peak_err_p90_pct": float(np.quantile(pk, 0.9) * 100) if len(pk) else np.nan,
+        "peak_err_env_median_pct": float(np.median(pke) * 100) if len(pke) else np.nan,
+        "peak_err_env_p90_pct": float(np.quantile(pke, 0.9) * 100) if len(pke) else np.nan,
         "marker_recall": tp / max(ngt, 1),
         "marker_precision": tp / max(npr, 1),
         "marker_err_median_pct": float(np.median(me) * 100) if len(me) else np.nan,

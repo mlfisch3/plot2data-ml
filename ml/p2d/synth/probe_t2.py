@@ -21,6 +21,8 @@ the extractor can be measured against one failure at a time:
     wide       figures 1400 to 1800 px wide, scaled to 0.43 to 0.55 on the canvas, with ordinary 1 to 2 px lines
     shallowx   two near-horizontal sines that cross at angles under 15 degrees - isolates hop separately from near-parallel runs
     legocclude a legend box drawn ON TOP of the series body (not next to it): tests chain-gap recovery across a wide occlusion
+    ghostpair  Plotly-presentation style: 1-3 thick-stroked (3-5 px) lines on wide figures whose ridges spawn ghost traces either
+               side; reproduces round-1's plotly simple regression where the overlap-aware merge joined two ghost clusters.
 
 Seeds encode the case: seed = 12_000_000 + 10_000 * case_index + i. The output
 format is the one `p2d.synth.build` writes (PNG, sem.png, inst.png, json), so the
@@ -63,7 +65,7 @@ from .mpl_render import (AXIS, BG, DATA, GRID, LEGEND_SYMBOL, TEXT, TICK_LABEL, 
 SEED_BASE = 12_000_000
 CASE_STRIDE = 10_000
 CASES = ["cross", "steep", "parallel", "samecolour", "dotted", "thin", "small", "dense", "legend", "area", "step",
-         "clipped", "multi", "markers", "wide", "shallowx", "legocclude"]
+         "clipped", "multi", "markers", "wide", "shallowx", "legocclude", "ghostpair"]
 
 COLOURS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
            "#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
@@ -439,10 +441,56 @@ def case_legocclude(rng: np.random.Generator, spec: dict) -> dict:
     return spec
 
 
+def case_ghostpair(rng: np.random.Generator, spec: dict) -> dict:
+    """A thick-stroked, Plotly-presentation-style chart with 1 to 3 series whose
+    long ridges spawn ghost traces either side of each real line.
+
+    Reproduces the round-1 plotly simple regression (seeds 500106, 500111) where
+    two ghost clusters (q~0.3-0.4), both spanning the same column range as the
+    real series, were long-overlap-merged by the overlap-aware `merge_fragments`
+    into one longer ghost that survived `drop_duplicates`.
+
+    Trigger ingredients:
+      - thick strokes (3 to 5 px source) so a ghost ridge forms either side.
+      - wide, presentation-sized figures (hpx/wpx 0.4 to 0.6, dpi 100 to 120).
+      - 1-3 series, each spanning most of the x range (long overlap potential).
+      - mix of solid, dashed and dashdot (matches 500106/500111 flavour).
+      - smooth shapes (sine, trend_noise, poly) with no sharp features that would
+        split a chain and make the overlap short.
+    """
+    k = int(rng.choice([1, 1, 2, 2, 3]))
+    n = int(rng.integers(80, 260))
+    x = unit_x(rng, n)
+    t = np.linspace(0, 1, n)
+    # Plotly presentation palette-ish colours and thick strokes.
+    gp_cols = ["#4C78A8", "#F58518", "#E45756", "#000000", "#E69F00", "#56B4E9",
+               "#1f77b4", "#ff7f0e", "#2ca02c"]
+    cols = rng.permutation(len(gp_cols))[:k]
+    styles = ["-", "-", "--", "-."]
+    # Presentation shape of the figure: landscape, large dpi.
+    spec["dpi"] = float(rng.choice([100, 110, 120]))
+    spec["wpx"] = float(rng.uniform(900, 1400))
+    spec["hpx"] = spec["wpx"] * float(rng.uniform(0.4, 0.6))
+    spec["grid"] = bool(rng.random() < 0.3)
+    for j in range(k):
+        _, y = S.shape(rng, t, kind=str(rng.choice(["sines", "trend_noise", "poly", "logistic", "walk"])))
+        lw = float(rng.uniform(3.0, 5.0))
+        ls = str(rng.choice(styles))
+        spec["series"].append(line(x, y, gp_cols[cols[j]], lw=lw, ls=ls, label=f"Series {j + 1}"))
+    # Keep the series roughly centred so ghosts of two different series do not
+    # fall on top of each other (we want ghost-vs-real, not ghost-vs-ghost of a
+    # neighbour).
+    all_y = np.concatenate([s["y"] for s in spec["series"]])
+    pad = 0.3 * (all_y.max() - all_y.min() + 1e-6)
+    spec["ylim"] = (float(all_y.min() - pad), float(all_y.max() + pad))
+    return spec
+
+
 BUILDERS = {"cross": case_cross, "steep": case_steep, "parallel": case_parallel, "samecolour": case_samecolour,
             "dotted": case_dotted, "thin": case_thin, "small": case_small, "dense": case_dense, "legend": case_legend,
             "area": case_area, "step": case_step, "clipped": case_clipped, "multi": case_multi, "markers": case_markers,
-            "wide": case_wide, "shallowx": case_shallowx, "legocclude": case_legocclude}
+            "wide": case_wide, "shallowx": case_shallowx, "legocclude": case_legocclude,
+            "ghostpair": case_ghostpair}
 
 
 # ----------------------------------------------------------------------------- rendering

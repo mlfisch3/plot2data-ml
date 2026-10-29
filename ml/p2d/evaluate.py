@@ -93,7 +93,21 @@ def to_gt_pixels(meta: dict, res):
         return q[np.all(np.isfinite(q), axis=1)]  # e.g. a negative value on a log axis
 
     for s, d in zip(res.ex.series, res.series):
-        ex.series.append(Series(kind=s.kind, line_px=px(d.get("line")), markers_px=px(d.get("markers"))))
+        new_s = Series(kind=s.kind, line_px=px(d.get("line")), markers_px=px(d.get("markers")))
+        # Carry the ridge envelope through so envelope-aware metrics can see it in
+        # the gt frame: source px -> data units via xfit/yfit, then data -> gt px.
+        if s.ridge_px is not None and len(s.ridge_px) >= 2 and res.xfit and res.yfit:
+            rp = s.ridge_px
+            xd = res.xfit.to_value(rp[:, 0])
+            yd_t = res.yfit.to_value(rp[:, 1])
+            yd_b = res.yfit.to_value(rp[:, 2])
+            gx = gt_value_to_px(meta, "x", xd)
+            gt_t = gt_value_to_px(meta, "y", yd_t)
+            gt_b = gt_value_to_px(meta, "y", yd_b)
+            valid = np.isfinite(gx) & np.isfinite(gt_t) & np.isfinite(gt_b)
+            if valid.any():
+                new_s.ridge_px = np.column_stack([gx[valid], gt_t[valid], gt_b[valid]])
+        ex.series.append(new_s)
     return ex
 
 
