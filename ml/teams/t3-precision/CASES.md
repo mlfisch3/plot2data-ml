@@ -191,6 +191,8 @@ Overlay at `out/t3/cases/narrow-peaks-broken.png` (3 x 6 panels, pre-fix: truth,
 
 ## 7. Scoreboard, probes and corpus at the submission HEAD 9b82fba (replacement curator, 28 Oct 2026 20:30 EDT)
 
+Merge target per judge: 8053952 (pre-apex-both-sides). 9b82fba stands as the declared submission on team/t3-precision for history.
+
 Clean re-measure of the full scoreboard at HEAD 9b82fba (the submission commit), after the chain was killed at 17:28 EDT and the usage window reset. All GPU work serialised through `/home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock`.
 Sources: `out/t3/r4-score5.txt` (geometry), `out/t3/r4-peaks.txt` (probe peaks), `out/t3/r4-spikes.txt` (probe spikes), `out/t3/r4-corpus.txt` (corpus).
 The e2e `#1` and `#2` scoreboards against 9b82fba did not complete inside the first window and are not re-run here; the harness was reverted in 4c56536 so the e2e CLI is byte-identical to the baseline without `--refine`, and the baseline numbers hold on that path.
