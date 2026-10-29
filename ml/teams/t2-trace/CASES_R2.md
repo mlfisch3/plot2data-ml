@@ -1,13 +1,13 @@
 # t2-trace round 2 failure catalogue
 
 Curator's record of what survived, what regressed, and what still bleeds after integration into `121ed4d` (`runs/t5-chartjs/best.pt` + `runs/ocr1/best.pt` + `--tta shift`).
-Round-1 catalogue in `CASES.md`.
-Measurements under `ml/out/t2r2/`: integrated model with `--refine --tta shift` on each round-1 probe set.
-Round-2 probe generator at `p2d/synth/probe_t2.py` (new case `ghostpair`), seed base >= 12,170,000.
+Round-1 catalogue is `CASES.md`.
+Round-2 measurements under `ml/out/t2r2/` (shared tree, round-2 fix applied) and the baseline-only `scratchpad/t2-baseline/ml/out/t2r2-base/` (integrated 121ed4d code, no round-2 fix).
+Round-2 probe generator adds case `ghostpair` to `p2d/synth/probe_t2.py` at seed base 12,170,000.
 
 ## 1. Starting point: integrated 121ed4d
 
-Headline on `plotly-v1 150` end-to-end with the integrated pipeline (`--tta shift --ocr`):
+Headline on `plotly-v1 150` end-to-end with the integrated pipeline (`--tta shift --ocr`), reproduced on this worktree:
 
 | metric (all / simple) | base v3 | T5 V2 iso | integrated 121ed4d |
 | --- | --- | --- | --- |
@@ -16,78 +16,135 @@ Headline on `plotly-v1 150` end-to-end with the integrated pipeline (`--tta shif
 | peak_err_median_pct | 1.34 / 0.42 | 1.08 / 0.31 | **1.01 / 0.27** |
 | marker_recall | 0.418 / 0.762 | 0.414 / 0.824 | 0.403 / 0.824 |
 | marker_precision | 0.772 / 0.783 | 0.869 / 0.913 | 0.795 / 0.912 |
-| frame_found | 0.940 / 0.924 | 0.940 / 0.924 | 0.947 / 0.924 |
 | calib_x_within_0.5 | 0.947 | 0.960 | 0.993 |
 | calib_y_within_0.5 | 0.860 | 0.893 | 0.887 |
 
-Integration numbers reproduced on `team/t2-trace-r2` at 121ed4d: `plotly-v1 e2e` line_found 0.8252 / 0.9252 (matches integration-report to 4 decimals), confirming the baseline on this worktree is byte-identical to the integrator's.
+Fresh plotly-v1 e2e measurement on `team/t2-trace-r2` at 121ed4d: line_found 0.8252 / 0.9252 - byte-identical to the integration report.
 
-The round-1 submission's **-0.019 plotly simple e2e regression** vs frozen v3 is NOT present in the integrated model: the integrated plotly simple is 0.9252, vs frozen v3 0.776 and T5V2 0.897. The t5 base reshaped the ridge enough that the ghost+ghost merge pattern no longer costs on this set; the +0.030 win over T5V2 on plotly simple line_found suggests round-1's merge-fragments rewrite is NET POSITIVE on plotly simple in the integrated model (where it was NEGATIVE on top of frozen v3).
+**Key observation**: the round-1 submission's `-0.019` plotly simple e2e regression (vs frozen v3) is NO LONGER PRESENT in the integrated model.
+Plotly simple is now 0.9252 - above the T5 V2 isolated number (0.897), and 15 pp above frozen v3.
+The t5 base's native-resolution reader and TTA shift together reshape the ridge heat enough that the weak ghost clusters (q 0.3-0.4) that drove 500106 and 500111 under v3 no longer form.
+**Round-2 target A (ghost+ghost guard) therefore has no reproducible failure left to recover on the standard scoreboard.**
 
-## 2. Residual losses
+## 2. Residual losses the integration flagged
 
-Three residuals from the integration report (sorted by size):
+Three residuals from the integration report, ranked by size:
 
-- **mpl-val line_found behind T1 isolated by 2.6 pp** (0.6616 vs 0.6876). Mechanism: T1's gained calibration is partly lost when combined with t3's source-pixel measurement and t5's TTA shift (coverage threshold hits a calibration jitter). Any merge-side change we make shows at most 0.015 of this gap (round-1's mpl-val simple e2e +0.013 was from the merge fix alone).
-- **Plotly marker_recall `all` -1.6 pp vs base** (0.418 -> 0.403): 309-series set, well within noise. Not merge-fragments territory.
-- **Corpus median +0.02 pp (0.067 -> 0.087%)**: t3's source-pixel measurement adds a small bias on easy single-solid charts. Trade for 61.222 -> 0.214% worst case. Not merge-fragments territory.
+- **mpl-val line_found behind T1 isolated by 2.6 pp** (0.6616 vs 0.6876).
+  Calibration-interaction: T1's gained calibration is partially lost when combined with t3's source-pixel measurement and t5's TTA shift (slight calibration jitter pushes some lines below the match threshold).
+  Not merge-fragments territory; any `_join_cost` change moves this at most 0.015 (round-1's mpl-val simple e2e delta was +0.013 from the merge fix alone).
 
-The only residual the overlap-merge rewrite can plausibly reclaim is **the plotly simple geometry/e2e drop** that round-1 explicitly flagged. In integration it is already recovered (0.925 simple), but the two offending seeds (500106, 500111) may still fail; the brainstormer's `min_q 0.3 -> 0.4` plus `nov >= 0.5 * min(A.n, B.n)` guard is defensive protection against the ghost+ghost pattern.
+- **Plotly marker_recall `all` -1.6 pp vs base** (0.418 -> 0.403).
+  309-series set, single-chart noise. Not merge-fragments territory.
 
-## 3. Round-1 probe re-measurement on 121ed4d
+- **Corpus median +0.02 pp** (0.067 -> 0.087%).
+  t3's source-pixel bias on easy single-solid charts; worst case went from 61.222 to 0.214. Not merge-fragments territory.
 
-Measured with `--refine --tta shift` on `runs/t5-chartjs/best.pt`. Numbers written to `ml/out/t2r2/int-<probe>-refine.txt`.
-Deltas vs round-1 submission (`v3/best.pt --refine` on `v3-overlap-merge`, from `/home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/t2-trace/ml/out/t2c/live-overlap-merge-v3/`).
-Deltas vs frozen baseline (`v3/best.pt --refine`, from `/home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/t2-trace/ml/out/t2c/v3-*-refine.txt`).
+What a round-2 merge-side change can plausibly reach: the plotly-simple-regression ticket.
+Measurement (section 3) shows that ticket is already closed in the integrated model.
 
-| probe | frozen v3 | round-1 fix | integrated 121ed4d | d_int-vs-r1 | d_int-vs-frozen |
+## 3. Round-2 submission guards: measurement at `b5f1a32`
+
+The round-2 submission at `b5f1a32` tightens the long-overlap branch of `_join_cost`:
+
+- `min_q`: 0.3 -> 0.4 (reject weak ghost clusters).
+- Added `nov >= 0.5 * min(A.n, B.n)` (require the overlap to cover the bulk of the shorter chain).
+
+Measured on `plotly-v1 150` end-to-end with the fix:
+
+| metric | integ 121ed4d | integ + b5f1a32 fix | delta |
+| --- | --- | --- | --- |
+| line_found all | 0.8252 | 0.8220 | **-0.0032** |
+| line_found simple | 0.9252 | 0.9252 | TIE |
+| line_cov_mean all | 0.7760 | 0.7731 | -0.0029 |
+| line_rms_median_pct simple | 0.1452 | 0.1452 | 0 |
+
+Verdict so far: on the standard scoreboard, both guards are slightly over-restrictive on `all` (-0.003 line_found) and buy nothing on `simple`.
+The deciding question is whether the new `ghostpair` probe shows a behavioural improvement that justifies keeping the guard as a defensive measure.
+
+## 4. Round-1 probe set re-measurement on 121ed4d (baseline, no r2 fix)
+
+Measured in a separate `git worktree` at 121ed4d (`scratchpad/t2-baseline/`), symlinked to the shared data and runs so numbers are directly comparable to the fix-side runs under `ml/out/t2r2/`.
+`--refine --tta shift` on `runs/t5-chartjs/best.pt`.
+
+Round-1 numbers are from `ml/out/t2c/v3-<probe>-refine.txt` (frozen v3, no overlap-merge fix) and `ml/out/t2c/live-overlap-merge-v3/<probe>-refine.txt` (frozen v3 + round-1 overlap-merge fix).
+
+| probe (line_found all) | frozen v3 | r1 overlap | integ 121ed4d | d_integ-vs-r1 | d_integ-vs-frozen |
 | --- | --- | --- | --- | --- | --- |
-| cross | 0.9167 | 0.9267 | _(pending)_ | | |
-| samecolour | 0.9000 | 0.9125 | _(pending)_ | | |
+| ghostpair (new r2) | n/a | n/a | _(pending; baseline batch queued)_ | n/a | n/a |
 | parallel | 0.7100 | 0.8100 | _(pending)_ | | |
 | shallowx | 0.7576 | 0.8658 | _(pending)_ | | |
-| legocclude | 0.8179 | 0.8247 | _(pending)_ | | |
 | legend | 0.8560 | 0.8971 | _(pending)_ | | |
+| legocclude | 0.8179 | 0.8247 | _(pending)_ | | |
+| multi | 0.6550 | 0.6567 | _(pending)_ | | |
+| wide | 0.8722 | 0.8647 | _(pending)_ | | |
+| area | 0.5600 | 0.5550 | _(pending)_ | | |
+| cross | 0.9167 | 0.9267 | _(pending)_ | | |
+| samecolour | 0.9000 | 0.9125 | _(pending)_ | | |
 | dotted | 0.8714 | 0.8905 | _(pending)_ | | |
 | steep | 0.8872 | 0.8910 | _(pending)_ | | |
 | thin | 0.8533 | 0.8567 | _(pending)_ | | |
 | small | 0.7000 | 0.7067 | _(pending)_ | | |
 | dense | 0.9118 | 0.9191 | _(pending)_ | | |
-| area | 0.5600 | 0.5550 | _(pending)_ | | |
 | step | 0.8385 | 0.8490 | _(pending)_ | | |
 | clipped | 0.8016 | 0.8054 | _(pending)_ | | |
-| multi | 0.6550 | 0.6567 | _(pending)_ | | |
 | markers | 0.9167 | 0.9167 | _(pending)_ | | |
-| wide | 0.8722 | 0.8647 | _(pending)_ | | |
-| **ghostpair (new)** | n/a | n/a | _(pending)_ | | |
 
-## 4. Round-2 probe: `ghostpair`
+Comparison helper: `teams/t2-trace/tools/compare_r1_r2.py`.
+
+**Expected pattern (will be verified when the batch lands):**
+Round-1 wins came through t5-chartjs's embedding too (the ridge heat is the same mechanism); the integrated model should hold most of the +0.100 parallel / +0.108 shallowx / +0.041 legend wins and keep the overall mpl-val uplift.
+The r1 regressions (area -0.005, wide -0.008) may or may not persist depending on how t5-chartjs re-balances flank clusters.
+
+## 5. Round-2 probe: `ghostpair`
 
 Target: provoke the long-overlap ghost+ghost pattern that drove round-1's plotly simple -0.019 e2e regression (seeds 500106, 500111 in plotly-v1), on seeds >= 12,170,000 under the shared probe harness.
 
-Mechanism: when a line is drawn thick (3-5 px source stroke) on a presentation-sized canvas, matplotlib's anti-aliased renderer draws paired "flank" ridges either side of the stroke centreline that are picked up by the network as weak clusters (q 0.3 to 0.5). Both flank clusters span the same column range as the real line, with a near-constant y gap of 2-5 px. The round-1 overlap-aware `merge_fragments` sees `|median| < 6`, `MAD < 1.2`, `drift < 2.5` across the overlap and joins the two flank clusters into one longer chain that passes `drop_duplicates`.
+Mechanism: when a line is drawn thick (3-5 pt source stroke, 4-8 canvas pixels at dpi 100-120) on a presentation-sized canvas, the matplotlib anti-aliased renderer paints paired "flank" ridges either side of the stroke centreline that the network picks up as weak clusters (q 0.3-0.5).
+Both flank clusters span the same column range as the real line, with a near-constant y gap of 2-5 px.
+The round-1 overlap-aware `merge_fragments` sees `|median| < 6`, `MAD < 1.2`, `drift < 2.5` across the overlap of two flank clusters and joins them into one longer chain that passes `drop_duplicates`.
 
-Spec (committed to `p2d/synth/probe_t2.py`, case index 17, seed base 12,170,000):
+Spec (`p2d/synth/probe_t2.py`, case index 17, seed base 12,170,000, committed at `431843a`):
 
 - 1-3 series per chart, each spanning most of x range (n = 80..260).
-- Thick strokes: `lw` 3-5 (matplotlib points) at dpi 100-120, so canvas-pixel stroke 4-8 px.
+- Thick strokes: `lw` 3-5 pt at dpi 100-120, so canvas-pixel stroke 4-8 px.
 - Wide figures: `wpx` 900..1400, aspect 0.4..0.6 (presentation-shape).
 - Smooth shapes (sines, trend_noise, poly, logistic, walk).
-- Mix of solid, dashed, dashdot (matches 500106/500111 line styles).
+- Mix of solid, dashed, dashdot (matches 500106 / 500111 line styles).
 - Plotly-presentation palette shifted into the probe colour pool so some charts have same-family colours (blue vs cyan, orange vs red) to raise the chance a ghost cluster of series A overlaps the real of series B.
 - `ylim` padded 30% so each series fills the middle of the plot (ghost flanks sit inside the plot area, not clipped).
 
 Verification: 100 charts generated at seeds 12,170,000..12,170,099 in `data/t2-ghostpair/`.
-Composite overlays and per-chart stage attribution to follow.
+Sample mosaic in `ml/out/t2r2/ghostpair-samples.png`.
 
-## 5. What the integrated model does with each round-1 failure case
+### Expected measurement outcomes and decision gates
 
-(Will be filled after the probe batch finishes. Expected pattern given the plotly-v1 e2e result:)
+- **Baseline ghostpair line_found >= 0.95**: ghostpair cannot repro the pattern on the integrated model -> defer A entirely, revert `b5f1a32`.
+- **Baseline ghostpair in 0.70-0.90, fix line_found +0.03 or more**: probe demonstrates a well-defined behavioural improvement -> ship A as a defensive guard with the probe as justification.
+- **Baseline ghostpair < 0.70 OR fix no better than baseline**: either the probe over-provokes (needs a tamer version) or the fix undershoots; both cases say defer A and move to a different submission.
 
-- **C1 (series cut into long non-overlapping pieces)**: likely still improved; the t5 base trained on more styles so clusters may already span further, but the overlap-aware merge compounds the gain.
-- **C2 (hopping at a crossing)**: unchanged by the merge fix; marginal win if any.
-- **C3 (steep interruption)**: the long-gap slope-aware branch still applies. T5's TTA shift averages ridge y which may stabilise the slope estimate.
-- **C4 (dense/steep one-value-per-column)**: representation-side; nothing in r2 addresses it.
-- **C5 (spurious lines, ghosts, fragments)**: the ghostpair angle targets this. If `min_q 0.4` + nov guard holds, worst-case fragment counts should drop on `multi`, `wide`, `clipped`.
+## 6. Framing for round-2 angles
 
-Thu 29 Oct 2026, 01:40 EDT (skeleton; pending-marked rows fill as the probe batch completes).
+### A - ghost+ghost guard (brainstormer, submission `b5f1a32`)
+
+Current signal:
+- Plotly simple on the standard scoreboard: no gain (TIE).
+- Plotly all: small cost (-0.003).
+- Ghostpair probe: _(decides whether this ships as defensive guard)_.
+
+### B - envelope-aware peak_err metric (brainstormer, in prototyping)
+
+The idea: ridge pixels per column already carry (top_y, bot_y) in `extract.py`.
+A metric-side change in `metrics.py` can score each predicted (col, y_center) against the closest of the three (y_center, y_top, y_bot) when the ground truth has multiple values per column (density > 1), without any inference change.
+Upper-bound measurement before any code is the right first step: compute the ceiling on `mpl-val all` and `plotly-v1 all` using the existing `ridge_px` field.
+If the ceiling closes more than 1 pt of peak_err_median gap, pursue the submission; else defer.
+
+### Residuals the merge-side cannot touch
+- mpl-val line_found deficit vs T1 isolated (-2.6 pp): calibration-interaction between t3 and t5.
+- Plotly marker_recall `all` -1.6 pp vs base: noise, 309-series set.
+- Corpus median +0.02 pp: t3 source-pixel bias on easy charts.
+
+Round-2 diminishing-returns verdict: the integrated 121ed4d is already strong enough on t2-territory metrics that merge-side gains are hard-capped at a few tenths of a pp.
+Realistic ship criterion: a probe-level demonstration (ghostpair >= +0.03) if the scoreboard delta is zero.
+
+Thu 29 Oct 2026, 02:15 EDT (section 3 fix numbers from brainstormer's measurement; probe table pending; final decision after ghostpair baseline lands).
