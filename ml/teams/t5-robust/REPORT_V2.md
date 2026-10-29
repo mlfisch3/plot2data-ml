@@ -131,8 +131,8 @@ Simple-charts split (same mpl seeds at three device-pixel-ratios).
 | dpr1 | line_rms_median_pct | 0.233 | TBD | TBD | TBD |
 | dpr1 | marker_recall | 0.451 | TBD | TBD | TBD |
 | dpr1 | calib_y_within_0.5pct | 0.820 | TBD | TBD | TBD |
-| dpr2 | line_rms_median_pct | 0.221 | 0.148 | TBD | TBD |
-| dpr2 | marker_recall | 0.309 | 0.324 | TBD | TBD |
+| dpr2 | line_rms_median_pct | 0.249 | 0.088 | TBD | TBD |
+| dpr2 | marker_recall | 0.349 | 0.326 | TBD | TBD |
 | dpr2 | calib_y_within_0.5pct | 0.690 | 0.770 | TBD | TBD |
 | dpr3 | line_rms_median_pct | 0.217 | TBD | TBD | TBD |
 | dpr3 | marker_recall | 0.274 | TBD | TBD | TBD |
@@ -142,12 +142,12 @@ Simple-charts split (same mpl seeds at three device-pixel-ratios).
 
 | set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
 | --- | --- | --- | --- | --- | --- |
-| blur | line_rms_median_pct | 0.228 | 0.174 | TBD | TBD |
-| blur | marker_precision | 0.668 | 0.792 | TBD | TBD |
-| dark | line_rms_median_pct | 0.294 | TBD | TBD | TBD |
-| dark | calib_y_within_0.5pct | 0.770 | TBD | TBD | TBD |
-| clutter | line_rms_median_pct | 0.206 | TBD | TBD | TBD |
-| clutter | frame_err_median_px | 5.56 | TBD | TBD | TBD |
+| blur | line_rms_median_pct | 0.232 | 0.163 | TBD | TBD |
+| blur | marker_precision | 0.759 | 0.766 | TBD | TBD |
+| dark | line_rms_median_pct | 0.278 | 0.222 | TBD | TBD |
+| dark | calib_y_within_0.5pct | 0.770 | 0.850 | TBD | TBD |
+| clutter | line_rms_median_pct | 0.241 | 0.168 | TBD | TBD |
+| clutter | frame_err_median_px | 5.71 | 17.6 | TBD | TBD |
 | half | line_rms_median_pct | 0.275 | TBD | TBD | TBD |
 | up2x | line_rms_median_pct | 0.220 | TBD | TBD | TBD |
 | jpeg50 | line_rms_median_pct | 0.218 | TBD | TBD | TBD |

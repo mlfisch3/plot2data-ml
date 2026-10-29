@@ -147,10 +147,13 @@ Simple-charts split, mpl-val style metrics:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | dpr1 | base | 0.642 | 0.223% | 0.312% | 0.502 | 0.830 | 0.820 |
 | dpr1 | a7aed7d | 0.716 | 0.166% | 0.198% | 0.535 | 0.943 | 0.890 |
+| dpr1 | submission | TBD | TBD | TBD | TBD | TBD | TBD |
 | dpr2 | base | 0.616 | 0.249% | 0.473% | 0.349 | 0.828 | 0.690 |
 | dpr2 | a7aed7d | 0.589 | 0.125% | 0.165% | 0.339 | 0.897 | 0.770 |
+| dpr2 | submission | 0.589 | 0.088% | 0.203% | 0.326 | 0.860 | 0.770 |
 | dpr3 | base | 0.482 | 0.373% | 1.512% | 0.287 | 0.859 | 0.640 |
 | dpr3 | a7aed7d | 0.519 | 0.132% | 1.026% | 0.289 | 0.797 | 0.690 |
+| dpr3 | submission | TBD | TBD | TBD | TBD | TBD | TBD |
 
 Native-resolution pass is a win on trace quality at every DPR (line_rms_median at dpr2 cut from 0.249% to 0.125%, at dpr3 from 0.373% to 0.132%), on calibration at every DPR, and on frame_found at low DPR; at dpr3 frame_found drops slightly (0.859 to 0.797) and `frame_err_p90_px` goes from 37 to 205 (large images get larger absolute frame errors, see 9.6).
 
@@ -168,10 +171,13 @@ Native-resolution pass is a win on trace quality at every DPR (line_rms_median a
 | jpeg30 | a7aed7d | 0.192% | 0.241% | 0.527 | 0.098% | 0.925 | |
 | blur (0.7x+1.0 sigma) | base | 0.232% | 0.326% | 0.499 | 0.121% | 0.811 | |
 | blur | a7aed7d | 0.168% | 0.208% | 0.565 | 0.097% | 0.849 | |
+| blur | submission | 0.163% | 0.206% | 0.572 | 0.104% | 0.906 | +4pt frame_found |
 | dark (inverted) | base | 0.278% | 0.275% | 0.465 | 0.129% | 0.849 | tolerant ROI pays off |
 | dark | a7aed7d | 0.189% | 0.239% | 0.576 | 0.092% | 0.943 | +9pt frame_found, +11pt marker recall |
+| dark | submission | 0.222% | 0.240% | 0.582 | 0.093% | 0.887 | marker_prec +7pt vs a7aed7d; a touch worse on line_rms (TTA averaging) |
 | clutter (chart in a page) | base | 0.242% | 0.322% | 0.387 | 0.171% | 0.774 | furniture confuses tick/label |
 | clutter | a7aed7d | 0.188% | 0.182% | 0.577 | 0.103% | 0.962 | +19pt frame_found, +19pt marker recall; big win |
+| clutter | submission | 0.168% | 0.206% | 0.469 | 0.115% | 0.849 | TTA shift tames a7aed7d's frame p90 (265 to 173 px); frame_err_median_px 17.6 vs a7aed7d 51.0 |
 | skew (1 deg) | base | 2.80% | 2.07% | 0.018 | 3.10% | 0.830 | geometric; neither code has rectification |
 | skew | a7aed7d | 2.36% | 2.17% | 0.017 | 2.68% | 0.906 | marginally better |
 
@@ -300,10 +306,10 @@ TBD: filling in from `*-v2-e2e.txt`.
 | --- | --- | --- | --- | --- |
 | blur | line_rms_median | 0.228% | 0.174% | TBD |
 | blur | marker_precision | 0.668 | 0.792 | TBD |
-| dark | line_rms_median | 0.294% | TBD | TBD |
-| dark | calib_y_within_0.5pct | 0.770 | TBD | TBD |
-| clutter | line_rms_median | 0.206% | TBD | TBD |
-| clutter | frame_err_median_px | 5.56 | TBD | TBD |
+| dark | line_rms_median | 0.294% | 0.234% | TBD |
+| dark | calib_y_within_0.5pct | 0.770 | 0.850 | TBD |
+| clutter | line_rms_median | 0.206% | 0.199% | TBD |
+| clutter | frame_err_median_px | 5.56 | 8.82 | TBD |
 | half | line_rms_median | 0.275% | TBD | TBD |
 | up2x | line_rms_median | 0.220% | TBD | TBD |
 | jpeg50 | line_rms_median | 0.218% | TBD | TBD |
