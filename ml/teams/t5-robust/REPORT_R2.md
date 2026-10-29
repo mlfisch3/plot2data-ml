@@ -213,14 +213,19 @@ V3 beats integrated on line_rms, line_found (all), peak_err_median (all), and fr
 | peak_err_median_pct    | 1.3376 | 1.0457 | 1.0823 | 1.01   | TBD |
 | marker_precision       | 0.7715 | 0.8515 | 0.8692 | 0.7951 | TBD |
 
-**chartjs-val 100**
+**chartjs-val 100** (V3 = runs/t5r2-clutter + patch)
 
-| metric | base | V1 | V2 | **V3** |
-| --- | --- | --- | --- | --- |
-| line_rms_median_pct (all / simple) | 0.343 / 0.285 | 0.299 / 0.260 | 0.250 / 0.200 | TBD |
-| peak_err_median_pct (all / simple) | 0.636 / 0.408 | 0.494 / 0.271 | 0.427 / 0.229 | TBD |
-| yticks_err_median_px               | 0.751 | 0.690 | 0.428 | TBD |
-| frame_err_p90_px                   | 26.8  | 16.7  | 5.77  | TBD |
+| metric | base | V1 | V2 | **V3 ckpt + patch** | V3 vs V2 |
+| --- | --- | --- | --- | --- | --- |
+| line_found                         | 0.773 | 0.784 | 0.778 | **0.843 / 0.888** | +6.5 pp |
+| line_rms_median_pct (all / simple) | 0.343 / 0.285 | 0.299 / 0.260 | 0.250 / 0.200 | 0.259 / 0.207 | +0.009 / +0.007 |
+| peak_err_median_pct (all / simple) | 0.636 / 0.408 | 0.494 / 0.271 | 0.427 / 0.229 | 0.423 / 0.208 | tie / -0.021 |
+| marker_precision                   | 0.813 | 0.873 | 0.906 | 0.865 | -0.041 |
+| yticks_err_median_px               | 0.751 | 0.690 | 0.428 | **0.409** | -0.019 |
+| frame_err_p90_px                   | 26.8  | 16.7  | 5.77  | **3.10** | -2.67 (-46%) |
+| calib_y_within_0.5pct              | 0.84  | 0.81  | 0.90  | **0.93** | +3 pp |
+
+V3 beats V2 on line_found, peak_err, frame_err_p90, calib_y_within, and yticks_err. Small regression on line_rms_median (+0.007 pp simple, +3.5%) and marker_precision (-4 pp). The marker_precision shift mirrors the -0.9 pp drop on mpl-val; the clutter training moved the marker threshold slightly across the board.
 
 ### 5.4 Chart.js corpus
 
