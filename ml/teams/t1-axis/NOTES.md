@@ -111,3 +111,27 @@ Real screenshots (v244-real.txt): 03-women-men FIXED (log -> linear, max 2.11px)
 Mailbox updates to brainstormer (3): first with probe-base + ablation table, second with compare-mpl-v244 + the per-class breakdown of the 15 broken charts, third with compare-probe-v244 + the 01-panel regression.
 
 Next: wait for the brainstormer's next commit (prototype fix for class 11/12), then re-diag against it with the chained scripts (out/t1/diag-*-v244.sh adapt in a line).
+
+## Wed 28 Oct 2026, 20:05 EDT brainstormer (Opus 4.7, replacement #2 of a6077483041273a9d): resumed from pause, state confirmed
+
+Took over at ~20:03 EDT after my predecessor hit the 5-hour window cap around 19:00-20:00. Window has reset (five_hour_pct 11%).
+
+Confirmed on resume:
+- Branch team/t1-axis clean, HEAD 5af6039 (pause-state snapshot on top of 83900f0 REPORT, code HEAD 3c73e75).
+- Full HEAD scoreboard that was in flight at the pause has landed in out/t1/v5-{mpl-e2e,plotly-e2e,corpus,real}.txt (predecessor's PIDs 1115090-1115093 all finished during the pause). Numbers:
+  * mpl-val: line_found 0.6876 (base 0.547, +14.1pt); calib_x_within_0.5pct 0.9050; calib_y_within_0.5pct 0.9050; calib_x_scale_ok 0.9650; calib_y_scale_ok 0.9600.
+  * plotly-v1: line_found 0.8058; calib_x_within 0.9933 (scale 0.9933); calib_y_within 0.8867.
+  * corpus: offset-annotation 0.019% (unchanged); 25 series, median 0.066%, worst 1.326% (log-log).
+  * real: 01-panel1/2/3 fit linear, max error 0.98-1.04 px (fixed); 02-microprocessor-log-scatter fits y log; 03-women-men fits x linear 2.11 px (fixed); 05-retail-sales reads correctly.
+- These are HEAD numbers; the REPORT's +15.5 pt both-axes-within-0.5% comes from the abl-mpl-v5.json CPU ablation, still intact (unchanged by the live v5 run).
+- pytest 54/54 passing (unchanged since 3c73e75; no uncommitted edits).
+- No new mail in to-brainstormer.md since 02:16 EDT.
+
+Judge actions during pause (per briefing): killed OTHER teams' bypass-GPU-lock processes; p2d.serve killed; team 5's V2 Chart.js checkpoint at /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/runs/t5-chartjs/best.pt now exists (not used by me). None of t1-axis's queued work was affected.
+
+New constraints noted:
+- 4 GB GPU memory cap; every GPU eval must go through flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock.
+- No self-arming Monitor loops that wake us.
+- pkill/pgrep -f patterns MUST name t1-axis (already-practised).
+
+Pinged partner curator (ad4f4c6475d1a2a70). No new tasks pending. Standing by.
