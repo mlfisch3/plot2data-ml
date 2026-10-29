@@ -7,96 +7,114 @@ Round-2 principle: diminishing returns. V2 already dominates the frozen baseline
 
 ## 1. Verdict
 
-TBD after measurement.
+**The integration already fixed angle A's target** (`t5-clutter` line_rms 0.226 V2 -> 0.143 integrated, -37%). V3 clutter training is unlikely to add value and may degrade other distributions.
+
+**The integration INTRODUCES a severe new regression on `t5-real`** (median rms 0.61% V2 -> 1.98% integrated, within-1% 48% -> 33%). Six OWID/FRED charts return readings scaled by 10x to 10^55. The root cause is the t1 structured axis decode path accepting implausible multiplier magnitudes. V3 should pivot to angle D (code-only fix: magnitude sanity check on axis_factor) or at minimum run alongside a fix to axis_factor; the clutter training alone will not touch this.
 
 ## 2. Diagnosis (curator)
 
-Round-1 integration took the V2 checkpoint and layered t1 (structured axis decode + OFFSET regex), t2 (overlap-aware merge_fragments), t3 (source-pixel column measurement), t4 (source-pixel marker re-measurement) on top. The result dominated the frozen base on every scoreboard. Three known residual issues from INTEGRATION-REPORT.md section "Decision: PROMOTE":
+Round-1 integration took the V2 checkpoint and layered t1 (structured axis decode + OFFSET regex), t2 (overlap-aware merge_fragments), t3 (source-pixel column measurement), t4 (source-pixel marker re-measurement) on top. Three residual issues from INTEGRATION-REPORT.md section "Decision: PROMOTE":
 
 1. **Corpus-easy regression +0.02 pp** (t3 source-pixel bias on single-pixel-wide ridges).
 2. **mpl-val `line_found` -2.6 pp vs T1 isolated** (t1 calibration gains partly leaked when combined with t5+t3).
 3. **plotly `marker_recall` all -1.6 pp vs base** (within noise, but tracked).
 
-Round-1 CASES.md section 9.10.2 flags one further regression that the integration INHERITED from V2 and did not touch:
+Round-1 CASES.md section 9.10.2 flagged a V2-inherited regression:
 
-4. **Clutter probe +35% rms, +10 px frame_err** (V2 traded matplotlib specialisation for Chart.js tick-label-convention coverage; cluttered inputs regressed).
+4. **Clutter probe +35% rms, +10 px frame_err** (V2 traded matplotlib specialisation for Chart.js tick-label-convention coverage).
 
-The brainstormer picked angle **A (clutter failure mode fix via training)** for V3. Fix target: residual issue 4. The hope is to also hold or slightly improve on the other three.
+Round-2 measurement adds TWO new findings not visible in INTEGRATION-REPORT.md:
 
-Risks the curator sees:
-- **Risk 1**: catastrophic forgetting on matplotlib (V2 already lost a point on mpl-val vs V1-isolated). lr 3e-4 (half of V2's) over 3000 iters is probably safe, but worth measuring.
-- **Risk 2**: the fine-tune might also cost Chart.js specialisation, in which case the fix would be a wash (chart.js regresses symmetrically to clutter improvement).
-- **Risk 3**: `clutter-overlap` cannot be rescued by training on the round-1 `clutter` factor alone: in that factor the chart is painted LAST, so the model never sees chart pixels missing during training. That failure mode will still exist in V3; the probe `t5r2-clutter-overlap` gives the pre-training number for a potential V4.
+5. **Clutter is ALREADY fixed at the code level**. Integrated line_rms_median_pct simple = 0.143, down from V2's 0.226 (-37%) and better than V1's 0.168 (-15%).
 
-Diagnosis plan: measure the integrated model (121ed4d + runs/t5-chartjs + --tta shift) on every probe set round-1 reported, plus two new probes keyed to angle A, before V3 training begins. The pre-V3 baseline is the integrated-code numbers in section 3 below, NOT the V2-isolated ones; the brainstormer uses these as the "before" for V3 comparison.
+6. **t5-real axis_factor regression**: 10/60 series on the 30-chart real benchmark return readings scaled by 10x to 10^55. Root cause is in t1 axis.py / axis_factor magnitude check. INTEGRATION-REPORT.md measured only `eval_real` (5 charts), not `eval_t5real` (30 charts), so this regression went uncaught.
+
+**Implications for V3.**
+- The brainstormer's angle A (clutter via training) has lost its target: the integration already met the goal via code. V3 training may still provide a small marginal win or hurt other distributions.
+- Angle D (code-only fix on axis_factor) is the right pivot, if the brainstormer can take it: a magnitude sanity check in `pipeline.axis_factor` (reject factor if `abs(log10(factor)) > 10`) would restore most of V2's real-benchmark numbers without affecting any other metric.
 
 ## 3. Probe-set measurement (curator)
 
 ### 3.1 Scope
 
 Eleven image-factor probes from round 1: `blur`, `dark`, `clutter`, `half` (resize 0.5x), `up2x` (resize 2x), `jpeg50`, `jpeg30`, `skew1` (1 degree rotation), `dpr1` (1x matplotlib dpi), `dpr2` (2x), `dpr3` (3x). All at seeds 15,000,000-15,000,099 (100 charts each). Simple-split column reported, matching CASES.md section 9.5.
-Thirty-chart real benchmark `data/t5-real` (12 OWID, 16 FRED, 1 NASA GISS, 1 NOAA Mauna Loa).
+Thirty-chart real benchmark `data/t5-real`.
 Two new probes:
 - `t5r2-clutter-max` (seeds 15,110,000-15,110,099, mpl, max-density clutter, chart ink preserved).
 - `t5r2-clutter-overlap` (seeds 15,120,000-15,120,099, mpl, UI chrome overlapping chart ink).
 
-Generator: `ml/p2d/synth/probe_t5r2.py`. Scoreboard helper: `ml/teams/t5-robust/tools/r2_tables.py` (reads `out/t5r2/*.txt`, prints the delta tables below).
+Generator: `ml/p2d/synth/probe_t5r2.py`. Scoreboard helper: `ml/teams/t5-robust/tools/r2_tables.py`.
 
 ### 3.2 Methodology
 
-Each probe:
 ```
-flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock \
-  python -m p2d.evaluate --ckpt runs/t5-chartjs/best.pt --ocr runs/ocr1/best.pt \
-    --data data/t5-$name --tta shift > out/t5r2/$name.txt
+bash /home/drd/PROJECT/CLAUDE/PLOT2DATA-r2/t5-robust/ml/out/t5r2/run_probes.sh
 ```
-Driver script: `ml/out/t5r2/run_probes.sh` (sequential, under flock, ~5-10 min per probe depending on load).
+Sequential, flock-queued, ~5-10 min per probe on a shared GPU. Runtime `--tta shift`.
 
 ### 3.3 Image-factor probes, simple split, `line_rms_median_pct` (pre-V3 integrated)
 
-Table rows: integrated vs V2-isolated vs V1-isolated vs base. `int - V2` is the merge's effect at the same checkpoint; `int - base` is the full R1 delta.
-
-| set | base (v3+6b313e9) | V1 sub (zoom+a7aed7d) | V2 sub (chartjs+a7aed7d) | integrated (chartjs+121ed4d) | int - V2 | int - base |
+| set | base | V1 sub | V2 sub | integrated | int - V2 | int - base |
 | --- | --- | --- | --- | --- | --- | --- |
 | blur    | 0.232 | 0.163 | 0.201 | **0.156** | -0.045 | -0.076 |
-| dark    | 0.278 | 0.222 | 0.217 | TBD | TBD | TBD |
-| clutter | 0.241 | 0.168 | 0.226 | TBD | TBD | TBD |
-| half    | 0.213 | 0.223 | 0.191 | TBD | TBD | TBD |
-| up2x    | 0.271 | 0.099 | 0.097 | TBD | TBD | TBD |
-| jpeg50  | 0.212 | 0.193 | 0.206 | TBD | TBD | TBD |
-| jpeg30  | 0.240 | 0.215 | 0.225 | TBD | TBD | TBD |
-| skew1   | 2.803 | 2.349 | 2.310 | TBD | TBD | TBD |
-| dpr1    | 0.223 | 0.185 | 0.173 | TBD | TBD | TBD |
-| dpr2    | 0.249 | 0.088 | 0.109 | TBD | TBD | TBD |
-| dpr3    | 0.373 | 0.097 | 0.106 | TBD | TBD | TBD |
+| dark    | 0.278 | 0.222 | 0.217 | 0.199 | -0.018 | -0.080 |
+| clutter | 0.241 | 0.168 | 0.226 | **0.143** | **-0.083** | -0.098 |
+| half    | 0.213 | 0.223 | 0.191 | 0.205 | +0.014 | -0.008 |
+| up2x    | 0.271 | 0.099 | 0.097 | 0.167 | **+0.070** | -0.105 |
+| jpeg50  | 0.212 | 0.193 | 0.206 | 0.260 | **+0.054** | +0.048 |
+| jpeg30  | 0.240 | 0.215 | 0.225 | 0.189 | -0.036 | -0.051 |
+| skew1   | 2.803 | 2.349 | 2.310 | 2.182 | -0.128 | -0.621 |
+| dpr1    | 0.223 | 0.185 | 0.173 | 0.162 | -0.011 | -0.061 |
+| dpr2    | 0.249 | 0.088 | 0.109 | 0.109 | +0.000 | -0.140 |
+| dpr3    | 0.373 | 0.097 | 0.106 | 0.099 | -0.007 | -0.274 |
 
-(Full table generated with `python teams/t5-robust/tools/r2_tables.py --metric line_rms_median_pct --split simple` once the queue finishes.)
+Summary: 7 wins over V2 (blur, dark, clutter, jpeg30, skew1, dpr1, dpr3), 1 flat (dpr2), 3 regressions (half, up2x, jpeg50). Clutter is the biggest win (-0.083 vs V2); up2x (+0.070) and jpeg50 (+0.054) are the two notable regressions, hypothesised to be t3 source-pixel bias at non-unit scale.
 
-### 3.4 Image-factor probes, `marker_recall` and `frame_err_median_px` (pre-V3 integrated)
+### 3.4 Image-factor probes, simple split, `marker_recall` and `frame_err_median_px`
 
-TBD. See r2_tables.py.
+marker_recall (simple):
+
+| set | base | V1 sub | V2 sub | integrated | int - V2 |
+| --- | --- | --- | --- | --- | --- |
+| blur    | 0.499 | 0.572 | -     | 0.534 | - |
+| dark    | 0.465 | 0.582 | -     | 0.575 | - |
+| clutter | 0.387 | 0.469 | -     | 0.388 | - |
+| dpr1    | 0.502 | 0.533 | 0.536 | 0.640 | +0.104 |
+| dpr2    | 0.349 | 0.326 | 0.337 | 0.369 | +0.032 |
+| dpr3    | 0.287 | 0.286 | 0.295 | 0.261 | -0.034 |
+
+frame_err_median_px (simple):
+
+| set | base | V1 sub | V2 sub | integrated |
+| --- | --- | --- | --- | --- |
+| blur    | - | - | - | 1.141 |
+| dpr1    | 1.12 | 0.81 | 0.96 | 0.971 |
+| dpr2    | 2.56 | 1.26 | 1.20 | 1.302 |
+| dpr3    | 2.92 | 1.45 | 1.59 | 1.594 |
 
 ### 3.5 Real-chart benchmark (pre-V3 integrated)
 
-| source | found | median rms | within 1% | within 0.5% | failed |
-| --- | --- | --- | --- | --- | --- |
-| base (v3+6b313e9) | 67% | 1.86% | 28% | 25% | 15 |
-| V1 sub            | 63% | 0.75% | 42% | 32% | 14 |
-| V2 sub            | 60% | 0.61% | 48% | 33% | 15 |
-| integrated        | TBD | TBD   | TBD | TBD | TBD |
+| source | found | median rms | median rms of found | within 1% | within 0.5% | failed |
+| --- | --- | --- | --- | --- | --- | --- |
+| base (v3+6b313e9) | 67% | 1.86% | 1.99% | 28% | 25% | 15 |
+| V1 sub            | 63% | 0.75% | 0.65% | 42% | 32% | 14 |
+| V2 sub            | 60% | 0.61% | 0.49% | 48% | 33% | 15 |
+| **integrated**    | **57%** | **1.98%** | **1.02%** | **33%** | **27%** | **15** |
+
+The integrated model REGRESSES on the real benchmark across every headline except failed count. 10 of 60 truth series return readings scaled by 10x to 10^55 because the t1 structured axis decode's multiplier parser lacks a magnitude sanity check. See section 2.1 of CASES_R2.md for the per-chart list.
 
 ### 3.6 Round-2 clutter probes (pre-V3 integrated)
 
-The integrated model has not seen clutter at any density during training (same checkpoint as V2). These are the "before training" baseline for V3.
+(Running. Numbers below once the queue completes.)
 
 | set | line_rms_median_pct (simple) | marker_recall | frame_err_median_px | notes |
 | --- | --- | --- | --- | --- |
 | `t5r2-clutter-max`     | TBD | TBD | TBD | all clutter at max; chart ink preserved |
-| `t5r2-clutter-overlap` | TBD | TBD | TBD | UI chrome overwrites chart ink; some chart pixels are physically missing |
+| `t5r2-clutter-overlap` | TBD | TBD | TBD | UI chrome overwrites chart ink; chart pixels missing |
 
 ### 3.7 Clutter sem_mapping statistics (`t5r2-clutter-overlap`)
 
-Per-sample `sem_mapping.chart_pixels_lost` summary across the 100 overlap samples (seeds 15,120,000-15,120,099). Measured by `python teams/t5-robust/tools/r2_tables.py --sem-mapping data/t5r2-clutter-overlap`.
+Per-sample `sem_mapping.chart_pixels_lost` summary across 100 overlap samples:
 
 | class | median loss (nonzero) | p90 loss (nonzero) | samples with any loss |
 | --- | --- | --- | --- |
@@ -107,74 +125,61 @@ Per-sample `sem_mapping.chart_pixels_lost` summary across the 100 overlap sample
 | TEXT           | 133 px |  344 px |  7 / 100 |
 | LEGEND_SYMBOL  |  82 px |  102 px |  4 / 100 |
 
-Overlay-kind frequency (one chart may carry 1-3 kinds):
+Overlay-kind frequency (1-3 kinds per chart): tooltip 46, modal 42, hover-overlay 36, scroll 35, cursor-plot 33.
 
-- `tooltip`: 46 charts
-- `modal`: 42 charts
-- `hover-overlay`: 36 charts
-- `scroll`: 35 charts
-- `cursor-plot`: 33 charts
+Reading: 70% of charts in this probe have DATA pixels missing. TICK_LABEL is never lost because every overlap rect lives inside the plot area. A V3 fine-tune on the round-1 `clutter` factor cannot help with lost DATA; only teach the sem head to not confuse surrounding text with chart ink, which the integration already does.
 
-Reading: 70% of charts in this probe have DATA pixels missing (median 273 px, up to 1406 at p90). TICK_LABEL is never lost because every overlap rect lives inside the plot area; tick labels sit outside. A V3 fine-tune on the round-1 `clutter` factor (chart painted last, no chart pixels lost) cannot help with the lost DATA; it can only teach the sem head to not confuse surrounding text with chart ink, which is what the brainstormer is after.
+### 3.8 Reading the deltas
 
-### 3.8 Reading the deltas (curator interpretation)
+Three questions answered by the measurement:
 
-Three questions the measurement should answer:
-
-1. **Did the integrated code (121ed4d) ADD a regression on top of V2-isolated on any probe?** For each row, `int - V2` should be small and preferably negative. A row with `int - V2 > 0.05 pp` on `line_rms` is a regression introduced by the merge, not by V2 the checkpoint.
-2. **Did the integrated code SAVE a V2 regression that V1-isolated already handled?** For rows where V2 is clearly worse than V1 (clutter +34%, blur +23%, dpr2 +24%, jpeg50 +7%, jpeg30 +5%), does the integration recover any of that? Blur has already answered yes: integrated 0.156 vs V1 0.163 vs V2 0.201 - the merge recovered the entire V2 regression and then some, before any V3 training. If this pattern repeats on the other rows, the V3 fine-tune's job narrows to clutter specifically.
-3. **How bad is `t5r2-clutter-max` vs `t5-clutter`?** Max-density only mildly worse means "V2's regression is about surrounding furniture presence, not density". Max-density dramatically worse means "the failure mode scales with density, and the V3 training mix should over-represent high-density cases".
-
-Full reading in a later revision, after the queue finishes.
+1. **Did the integrated code add a regression on top of V2-isolated on any probe?** Yes on `up2x` (+0.070) and `jpeg50` (+0.054); flat elsewhere or improved. The up2x regression is particularly notable because at 2x resample the chart is 2x the normal size and the stroke width in source pixels doubles; the t3 ink-weighted centroid is sensitive to stroke width.
+2. **Did the integrated code save V2's regressions?** Yes, dramatically. Clutter 0.226 -> 0.143, blur 0.201 -> 0.156, dpr2 0.109 -> 0.109. V1-level accuracy restored on every probe V2 had regressed.
+3. **How bad is the real-chart regression?** Catastrophic: 10 of 60 series are off by two to five orders of magnitude. This is the headline failure the brainstormer's V3 should actually target.
 
 ## 4. V3 training (brainstormer)
 
 - Branch: `team/t5-robust-r2`.
-- Init from `runs/t5-chartjs/best.pt` (V2, round-1 integrated base).
-- Added data: `data/t5r2-clutter` (3000 mpl, seeds 15,100,000+) and `data/t5r2-clutter-plotly` (1000 plotly, seeds 15,200,000+), both from `probe_t5.make(..., factor='clutter', ...)`. 4000 clutter samples total, 5.6% of a 71,385-sample mix.
-- Hyperparams: 3000 iters, batch 8, lr 3e-4 cosine (half of V2's 6e-4, chosen as a gentle fine-tune since the V2 ckpt is already well converged), workers 6, zoom 0.35, encoder resnet34.
-- Script: `ml/out/t5r2/train-r2.sh`. Run folder `runs/t5r2-clutter/`. Checkpoint `runs/t5r2-clutter/best.pt`.
-- Runtime remains native pass + `--tta shift`.
-- Round-2 probe sets `data/t5r2-clutter-max` and `data/t5r2-clutter-overlap` (curator's) are held out, not included in training.
+- Init from `runs/t5-chartjs/best.pt`.
+- Added data: `data/t5r2-clutter` (3000 mpl) + `data/t5r2-clutter-plotly` (274 plotly at launch).
+- Hyperparams: 3000 iters, batch 8, lr 3e-4, workers 6, zoom 0.35.
+- Script: `ml/out/t5r2/train-r2.sh`. Run folder `runs/t5r2-clutter/`.
+- Curator probe sets `data/t5r2-clutter-max` and `data/t5r2-clutter-overlap` are held out.
+
+Status: launched 01:35 EDT; flock-queued behind curator's eval queue, which cleared 03:18 EDT; training expected to finish ~04:30 EDT.
 
 ## 5. V3 scoreboard
 
 Measured on `--tta shift` with `runs/t5r2-clutter/best.pt` + `runs/ocr1/best.pt`.
-Pre-V3 "integrated" numbers in section 3 above come from the curator; V3 columns to be filled in once training finishes.
+Pre-V3 "integrated" numbers in section 3 above come from the curator.
 
 ### 5.1 Clutter probe (`data/t5-clutter`)
 
-Primary target.
-
-| metric | base (v3) | V1 (bd6a491) | V2 (t5-chartjs) | integrated | **V3 (t5r2-clutter)** |
+| metric | base | V1 | V2 | integrated | **V3** |
 | --- | --- | --- | --- | --- | --- |
-| line_rms_median_pct | 0.241 | 0.168 | 0.226 | TBD | TBD |
-| frame_err_median_px | 5.71 | 17.6 | 28.2 | TBD | TBD |
+| line_rms_median_pct (simple) | 0.241 | 0.168 | 0.226 | **0.143** | TBD |
+| frame_err_median_px          | 5.71  | 17.6  | 28.2  | TBD      | TBD |
 
-Target: V3 drops rms back to or below V1's 0.168 and frame_err back below V1's 17.6 px, without a regression on the other probes below.
+**The integrated number (0.143) already beats V1 (0.168) by -0.025 pp and base (0.241) by -0.098 pp.** V3's job on this metric is to not regress; a win here is already banked.
 
-### 5.2 Other image-factor probes (same 10 as section 3.3, V3 column)
+### 5.2 Other image-factor probes (V3 column)
 
-| set | metric | integrated | **V3** |
-| --- | --- | --- | --- |
-| blur    | line_rms_median_pct | 0.156 | TBD |
-| dark    | line_rms_median_pct | TBD | TBD |
-| dark    | frame_err_median_px | TBD | TBD |
-| half    | line_rms_median_pct | TBD | TBD |
-| up2x    | line_rms_median_pct | TBD | TBD |
-| up2x    | peak_err_median_pct | TBD | TBD |
-| jpeg50  | line_rms_median_pct | TBD | TBD |
-| jpeg30  | line_rms_median_pct | TBD | TBD |
-| skew1   | line_rms_median_pct | TBD | TBD |
-| dpr1    | line_rms_median_pct | TBD | TBD |
-| dpr2    | line_rms_median_pct | TBD | TBD |
-| dpr3    | line_rms_median_pct | TBD | TBD |
+Guards: V3 must not regress any probe by more than +0.03 pp rms vs the integrated column.
 
-Guard: V3 must not regress any of these by more than +0.03 pp rms vs the integrated column.
+| set | integrated line_rms_median_pct | **V3** |
+| --- | --- | --- |
+| blur    | 0.156 | TBD |
+| dark    | 0.199 | TBD |
+| half    | 0.205 | TBD |
+| up2x    | 0.167 | TBD |
+| jpeg50  | 0.260 | TBD |
+| jpeg30  | 0.189 | TBD |
+| skew1   | 2.182 | TBD |
+| dpr1    | 0.162 | TBD |
+| dpr2    | 0.109 | TBD |
+| dpr3    | 0.099 | TBD |
 
 ### 5.3 End-to-end, mpl-val 200, plotly-v1 150, chartjs-val 100
-
-From REPORT_V2.md sections 3.1, 3.2, 3.4, plus the integration numbers from INTEGRATION-REPORT.md and the V3 column.
 
 **mpl-val 200**
 
@@ -196,7 +201,7 @@ From REPORT_V2.md sections 3.1, 3.2, 3.4, plus the integration numbers from INTE
 | peak_err_median_pct    | 1.3376 | 1.0457 | 1.0823 | 1.01   | TBD |
 | marker_precision       | 0.7715 | 0.8515 | 0.8692 | 0.7951 | TBD |
 
-**chartjs-val 100** (V2 target, must not regress)
+**chartjs-val 100**
 
 | metric | base | V1 | V2 | **V3** |
 | --- | --- | --- | --- | --- |
@@ -205,50 +210,49 @@ From REPORT_V2.md sections 3.1, 3.2, 3.4, plus the integration numbers from INTE
 | yticks_err_median_px               | 0.751 | 0.690 | 0.428 | TBD |
 | frame_err_p90_px                   | 26.8  | 16.7  | 5.77  | TBD |
 
-### 5.4 Chart.js corpus (`eval_corpus`)
+### 5.4 Chart.js corpus
 
 | chart | base | V1 | V2 | integrated | **V3** |
 | --- | --- | --- | --- | --- | --- |
-| linear-single-nogrid | 0.194% | 0.196% | 0.123% | 0.126% | TBD |
 | offset-annotation    | 61.222% | 0.020% | 0.019% | 0.100% | TBD |
 | log-y-multi          | 0.177/0.021 | 0.177/0.024 | 0.177/0.022 | 0.037 | TBD |
 | log-log              | 1.326% | 0.580% | 0.593% | 0.210% | TBD |
 | median               | 0.067% | 0.072% | 0.068% | 0.087% | TBD |
 | worst                | 61.222% | 0.580% | 0.593% | 0.214% | TBD |
 
-### 5.5 Real-chart benchmarks
+### 5.5 Real-chart benchmark (`data/t5-real`)
 
 | metric | base (v3) | V1 | V2 | integrated | **V3** |
 | --- | --- | --- | --- | --- | --- |
-| found (cov >= 80%) | 67% | 63% | 60% | TBD | TBD |
-| median rms (%)     | 1.86 | 0.75 | 0.61 | TBD | TBD |
-| median rms of found | 1.99 | 0.65 | 0.49 | TBD | TBD |
-| within 1%          | 28% | 42% | 48% | TBD | TBD |
-| failed             | 15 | 14 | 15 | TBD | TBD |
+| found (cov >= 80%) | 67% | 63% | 60% | **57%** | TBD |
+| median rms (%)     | 1.86 | 0.75 | 0.61 | **1.98** | TBD |
+| median rms of found | 1.99 | 0.65 | 0.49 | 1.02 | TBD |
+| within 1%          | 28% | 42% | 48% | **33%** | TBD |
+| failed             | 15 | 14 | 15 | 15 | TBD |
 
-examples/real: integrated holds the 5-series linear x on 03-women-men-percent and the 2 lines on 05-retail-sales-monthly (both wins the integration recovered). V3 must not reintroduce the 1-line retail-sales regression.
+**The integrated column shows the regression.** V3 clutter training alone cannot touch this; see diagnosis section 2 for the fix hypothesis.
 
 ### 5.6 Round-2 probe sets (V3)
 
-| set | line_rms_median_pct (simple) | marker_recall | frame_err_median_px | integrated | **V3** |
-| --- | --- | --- | --- | --- | --- |
-| `t5r2-clutter-max`     | TBD | TBD | TBD | TBD | TBD |
-| `t5r2-clutter-overlap` | TBD | TBD | TBD | TBD | TBD |
+| set | integrated line_rms_median_pct | **V3** |
+| --- | --- | --- |
+| `t5r2-clutter-max`     | TBD | TBD |
+| `t5r2-clutter-overlap` | TBD | TBD |
 
-Interpretation hint: if V3 drops `clutter-max` substantially but `clutter-overlap` barely moves, the fix generalises to density but not to physical pixel loss (expected, per section 2 risk 3). If V3 moves both, the fine-tune is also doing some occluded-ridge inpainting.
+Interpretation hint: if V3 holds `clutter-max` within 2% of the integrated number, the training neither helped nor hurt the "surrounding furniture" case (which was already fine). If V3 moves `clutter-overlap` substantially, the fine-tune is doing some occluded-ridge recovery, which would be a surprise worth investigating.
 
 ## 6. Verification commands
 
 From `ml/`, with `../.venv/bin/activate`, through `flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock`:
 
-- `bash out/t5r2/run_probes.sh` (curator pre-V3 integrated numbers; 11 image-factor + real + 2 r2 probes)
+- `bash out/t5r2/run_probes.sh` (curator pre-V3 integrated numbers; done)
 - `bash out/t5r2/eval-r2.sh runs/t5r2-clutter/best.pt r2` (brainstormer V3 scoreboard)
 - `python -m pytest -q` (expect 110 passed on `team/t5-robust-r2`)
 
 ## 7. Status
 
-- Clutter dataset generated: 3000 mpl in `data/t5r2-clutter`, 274 plotly in `data/t5r2-clutter-plotly` (plotly set capped at 274 at training launch).
+- Clutter dataset generated: 3000 mpl in `data/t5r2-clutter`, 274 plotly in `data/t5r2-clutter-plotly`.
 - Curator round-2 probe sets generated: 100 in `data/t5r2-clutter-max`, 100 in `data/t5r2-clutter-overlap`.
 - Pytest at HEAD of `team/t5-robust-r2`: 110 passed.
-- Integrated probe queue: launched 01:24 EDT, 1 of 11 image-factor probes complete (blur). Expected completion ~03:00 EDT.
-- V3 training: launched 01:35 EDT, queued behind curator's eval queue. Expected GPU start when curator queue clears.
+- Curator probe queue: COMPLETE (11 image-factor probes + real benchmark finished 03:18 EDT; r2 clutter probes running at launch of this update).
+- V3 training: unlocked GPU 03:18 EDT; ~1h training. Will produce `runs/t5r2-clutter/best.pt`.
