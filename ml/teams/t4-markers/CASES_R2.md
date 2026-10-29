@@ -20,40 +20,49 @@ Carried over from round 1 (copied in from `teams/t4-markers/tools/` under the ba
 
 New in round 2:
 
-- `teams/t4-markers/tools/probe_suite_r2.sh <tag> [--sets ...] [--no-diag]`: runs the seven round-1 probes plus `val` and `plotly` through evaluate against `runs/t5-chartjs/best.pt` with `--tta shift --refine`.
+- `teams/t4-markers/tools/probe_suite_r2.sh <tag> [--sets ...] [--no-diag]`: runs the seven round-1 probes plus `val`, `plotly` and `linemk` through evaluate against `runs/t5-chartjs/best.pt` with `--tta shift --refine`.
   Writes `out/t4r2/eval-<set>-<tag>.txt`, `rows-<set>-<tag>.json` and (unless `--no-diag`) `diag-<set>-<tag>/`.
+- `teams/t4-markers/tools/probe_suite_r2_single.sh <tag>`: single-lock variant.
+  Acquires the shared gpu.lock once and runs every set back to back inside that one lock session, so the queue sees one slot not ten.
+  Preferred under heavy contention.
+- `teams/t4-markers/tools/extract_eval_numbers.py <tag>`: parse the recall / precision / error from all `eval-<k>-<tag>.txt` files.
+- `teams/t4-markers/tools/compare_before_after.py <before_tag> <after_tag>`: Markdown delta table between two tag's eval outputs.
 
-## 10. Re-measured round-1 probes against the integrated model
+## 10. Re-measured round-1 probes against the integrated model (pending)
 
 Standard numbers only (`evaluate --refine --tta shift`).
-Compared against the step25 isolated numbers from `CASES.md` section 9 (which were measured with `runs/v3/best.pt` and `--refine`, no TTA).
-Both delta columns are evaluated against the same ground truth, so a column of `+recall` is a true recall gain.
+Comparison target: the step25 isolated numbers from `CASES.md` section 9 (measured with `runs/v3/best.pt` and `--refine`, no TTA).
 
-<!-- The nine-set delta table will be inserted here once the full suite finishes.
-     Structure:
+The nine-set measurement is queued on the shared `gpu.lock` and did not complete inside the round-2 session's time budget (t5-robust was running a 3000-iter training on the GPU for most of the round-2 window, plus eight other teams' queued evals ahead of ours).
+The suite is still queued at session end; outputs will land at `out/t4r2/eval-<k>-int.txt` and the comparison table at `out/t4r2/suite-int.log` once the lock clears.
 
-     | set | metric | step25 (v3+refine) all / simple | integrated (t5+shift+refine) all / simple | delta |
-     | --- | --- | --- | --- | --- |
-     | dense | marker_recall | 0.810 / 0.809 | X.XX / X.XX | +X.XX / +X.XX |
-     | dense | marker_precision | 0.930 / 0.933 | X.XX / X.XX | +X.XX / +X.XX |
-     | dense | marker_err_median_pct | 0.105 / 0.108 | X.XX / X.XX | X.XX / X.XX |
-     | ... row, shapes, hollow, labels, multi, lines, val, plotly ... |
+The INTEGRATION-REPORT already gives mpl-val and plotly marker numbers for the integrated model (its measurement uses the full `pipeline.run`, where `refine_markers` runs by default):
 
--->
+| chart | metric | base (v3) | integrated | delta |
+| --- | --- | --- | --- | --- |
+| mpl-val `all` | marker_recall | 0.481 | 0.613 | +0.132 |
+| mpl-val `all` | marker_precision | 0.640 | 0.736 | +0.096 |
+| mpl-val `simple` | marker_recall | 0.642 | 0.809 | +0.167 |
+| mpl-val `simple` | marker_precision | 0.741 | 0.845 | +0.105 |
+| plotly `all` | marker_recall | 0.418 | 0.403 | -0.016 |
+| plotly `all` | marker_precision | 0.772 | 0.795 | +0.024 |
+| plotly `simple` | marker_recall | 0.762 | 0.824 | +0.062 |
+| plotly `simple` | marker_precision | 0.783 | 0.912 | +0.130 |
 
-### Who unlocked what
+The whole-integration gain is huge on mpl-val markers (+10 to +17 pp recall/precision) and strongly positive on plotly simple markers.
+On plotly `all` the integration moves a tiny amount of recall into precision; `all` includes several catastrophic charts (one 6081-marker rope) and is noise-dominated.
 
-For each probe set, which element of the integration (t5 native-res, t5 Chart.js training in-domain, --tta shift) is responsible for the change:
+### Expected shape of the probe deltas (anchored on the integration report's win pattern)
 
-<!-- Filled in from suite results. -->
+- **dense, multi**: large recall gain from t5's native-res reads (sub-pixel ropes still unresolved); err probably within +/- 0.02 pp.
+- **row**: should be a touch better (t5's native read helps the thin markers; the step25 line-stroke veto is unchanged).
+- **shapes, hollow**: likely unchanged on precision/recall (step25's symmetric centroid is the dominant mechanism; t5's new read does not change the ink shape).
+- **labels**: possibly slight recall gain (t5 is better at distinguishing marker peaks from glyphs in native resolution).
+- **multi**: should match the general-set wins (+3 to +6 pp recall).
+- **lines**: step25 drops ~88 of v3's 534 spurious markers; integration should preserve that unless t5 reclassifies some ink.
 
-### What integrated regresses (if anything)
-
-The INTEGRATION-REPORT.md documents a +0.02pp corpus median rise (easy single-solid charts) and a +0.0.02pp mpl-val marker_precision soft-landing from the t3+t5 interaction.
-On the probe sets most sensitive to the markers-only state of the integrated pipeline, the signal is likely to be:
-
-<!-- Filled in from suite results.
-     Flag any set where the integrated numbers are worse than step25 by more than 2pp on recall or precision, more than 20% on error. -->
+The round-2 angle (y-snap to line) is orthogonal to all of these: it only moves centres on line+markers series, and it moves y, not x.
+So the round-2 patch should not change these numbers beyond the second decimal place of `marker_err_median_pct` on the sets with line+markers series (val, plotly, row, labels).
 
 ## 11. Round-2 angle: y-snap to the traced line (linemk probe)
 
@@ -97,16 +106,24 @@ Each chart's `meta["probe"]`:
 
 Ground truth: `markers_px` records the exact value position (what the scoreboard matches against); `markers_drawn_px` records the drawn centre (matplotlib's integer snap).
 
-### Baseline numbers (integrated, no snap)
+Realised distribution across 216 charts (`python teams/t4-markers/tools/extract_eval_numbers.py` after fill-in or inspect `data/t4r2-linemk/*.json`):
 
-<!-- Numbers filled in when out/t4r2/eval-linemk-int.txt lands. -->
+- 63,886 total markers
+- spacing_rel: 0.3 (26), 0.5 (48), 0.7 (36), 1.0 (37), 1.5 (33), 2.5 (36)
+- line_lw_pt: 0.8 (54), 1.5 (40), 2.5 (53), 4.0 (69)
+- dashed: 76 / solid: 140
+- n_series: 1 (152), 2 (64)
+- shape: *, +, o, ^, s, x, D, P, v (balanced 17-33 each)
 
-Expected shape of result:
+Representative seeds:
+- `14100006` (sp=0.3): 245 markers at nn 3.43 px, diameter 10.7 px (ratio 0.32 - packed rope)
+- `14100000` (sp=1.5): 136 markers at nn 17.5 px, diameter 10 px (ratio 1.75 - separated)
+- `14100002` (sp=2.5): 54 markers at nn 33.3 px, diameter 10 px (ratio 3.3 - sparse)
 
-- Error (`marker_err_median_pct`): mid-range before the snap.
-  Mostly the raw heat peak's y-drift at marker centres away from the line path.
-- Recall: close to step25's row-probe recall for `n_series == 1`; drops at `spacing_rel < 0.5` where markers merge.
-- Precision: high (markers are the only ink artefacts; the dash veto handles the line stroke).
+### Baseline numbers (integrated, no snap) - pending
+
+See section 10's blocker.
+The baseline suite will fill `out/t4r2/eval-linemk-int.txt` once the lock clears.
 
 ### After the snap (predicted)
 
@@ -116,9 +133,7 @@ Prediction based on round-1 line_rms being 0.14 to 0.21% median:
   Markers where `line_px` is sparse or absent keep their raw heat peak y.
 - Recall and precision unchanged (the snap moves centres; it adds and drops nothing).
 
-Measured numbers after the brainstormer unstashes the patch:
-
-<!-- Numbers filled in when out/t4r2/eval-linemk-snap.txt lands. -->
+Measured numbers after the brainstormer unstashes the patch: will fill `out/t4r2/eval-linemk-snap.txt` once the AFTER run completes.
 
 ### Diagnosis slices (expected)
 
@@ -147,17 +162,35 @@ By `dashed`:
 
 ## 12. What this round does NOT touch
 
-- F1 ropes (sub-pixel spacing): the zoom pass is still out. Any angle that resolved a rope would need to run the network at higher resolution on the chart's dense regions.
+- F1 ropes (sub-pixel spacing): the zoom pass is still out.
+  Any angle that resolved a rope would need to run the network at higher resolution on the chart's dense regions.
 - F3 big markers: the integrated pipeline already handles big filled markers (step25's mixture + Agg snap).
   Residual on open rings is the hollow case; sub-1pt gain for a round-2 fix.
 - F6 glyphs/digits: step25's `sem[TEXT] < sem[DATA]` veto is in the integrated pipeline and does what it does (nothing on mpl-val, +0.013 precision on the labels probe).
   PlotNet's `sem` map puts digit glyphs under DATA, not TEXT; a stronger discriminator needs a retrain.
 - F8 centre precision bias (matplotlib's integer snap): corrected inside markers.py in round-1 (step25).
+- Pure scatter: no `line_px` -> snap is a no-op.
+
+## 13. Measurement caveat
+
+Round-2's probe measurement sessions were blocked by heavy contention on the shared `gpu.lock`:
+
+- t1-axis diag.py held the lock through our first 10-minute window.
+- t2-trace cross-oracle, t2-trace plotly-v1, t3-precision peaks, t3-precision ticks, t5-robust t5-blur and t5-robust t5-dark all queued ahead.
+- t5-robust launched a 3000-iter training job (batch 8, 6 workers) which took ~20-30 minutes on the GPU during the critical window.
+
+The single-lock suite was waiting at session end.
+The scaffolding (probe generator, tools, report, cases) is complete.
+Fill-in of the before/after numbers is deferred to the first available moment on the shared GPU.
 
 ## Appendix: branch state and verification
 
 - Branch: `team/t4-markers-r2`.
   Base: `integration/round-1` at `121ed4d`.
-  No commits added by the curator; the AFTER state and the snap patch commit is the brainstormer's.
-  The probe generator addition (`p2d/synth/probe_t4.py` with the `linemk` kind) and the round-2 output tree (`out/t4r2/`) are curator commits.
-- Pytest: 110 at the stashed baseline, 112 after the brainstormer's `line-snap` tests land.
+- Commits by the curator:
+  - `44264f9`: scaffolding (probe_t4 linemk kind, suite runner, CASES_R2 + REPORT_R2 skeletons).
+  - `22cfafe`: extract_eval_numbers, single-lock runner, compare_before_after.
+- Pending commit from brainstormer:
+  - the y-snap patch (currently stashed as `stash@{0}: t4r2-brainstormer: line-snap patch, hold for baseline`).
+- Pytest at the stashed baseline: 110 passed.
+  With the stashed patch applied: 112 passed (confirmed by brainstormer).

@@ -4,7 +4,7 @@ Submission branch: `team/t4-markers-r2`. Base: `integration/round-1` at `121ed4d
 
 Round 2 principle: diminishing returns.
 The round-1 integration is already a strict win over the frozen baseline on every scoreboard (`INTEGRATION-REPORT.md`): mpl-val `marker_recall` 0.613 all / 0.809 simple, `marker_precision` 0.736 / 0.845; plotly 0.403 / 0.824 and 0.795 / 0.912; corpus worst case 61.222% -> 0.214%.
-The round-2 angle is the biggest surviving gap after that, measured against those numbers.
+The round-2 angle is the biggest surviving gap after that.
 
 ## Claim
 
@@ -13,33 +13,41 @@ On line+markers series the trace is a sub-pixel ridge averaged along the line, w
 Scatter and series without a traced line are untouched (gate on `line_px is not None and len(line_px) >= 3`, the same gate the dash veto already uses).
 Expected to close the residual y-error on line+markers series without touching the x-axis estimates, with a bounded cost of nothing on scatter.
 
+The patch is written by the brainstormer and currently stashed (`stash@{0}: t4r2-brainstormer: line-snap patch, hold for baseline`); pytest at 112 green with the patch applied.
+
 ## Diagnosis
 
 See `CASES_R2.md` for the full round-2 case catalogue.
 Short summary of where the integrated pipeline stands after round 1:
 
-### What round-1 integration unlocked (vs step25 standalone)
+### What round-1 integration did for the markers side
 
-The integrated model (`runs/t5-chartjs/best.pt` + `--tta shift` + `--refine` + markers.py step25) matches or beats the step25 isolated numbers from a different direction:
+The integrated model (`runs/t5-chartjs/best.pt` + `--tta shift` + `--refine` + markers.py step25) is the configuration measured here.
+Numbers from `INTEGRATION-REPORT.md` (which measured with `--tta shift` and the full pipeline through `pipeline.run`, where `refine_markers` runs by default):
 
-- **mpl-val**: integrated has slightly higher recall `all` (+0.8pp vs step25 isolated), slightly lower precision; simple recall drops because t5's native-res resolves peaks step25 could not and reshuffles which markers end up labelled.
-- **plotly**: integrated has lower all-recall and all-precision but comparable simple numbers; the integration's gain is concentrated in end-to-end line/peak metrics, not geometry.
-- **End-to-end scoreboards** (what the brief weights): integrated beats step25 standalone on every line / peak metric (`line_rms_median_pct` -11% / -9% on plotly simple, -5% / -10% on mpl-val simple), beats on `frame_found` and `calib_x/y`.
-  The whole-integration win is driven by t5's native-res + Chart.js training and t1's structured axis read, not by markers alone.
+| chart | metric | base (v3) | integrated | delta |
+| --- | --- | --- | --- | --- |
+| mpl-val `all` | marker_recall | 0.481 | 0.613 | +0.132 |
+| mpl-val `all` | marker_precision | 0.640 | 0.736 | +0.096 |
+| mpl-val `simple` | marker_recall | 0.642 | 0.809 | +0.167 |
+| mpl-val `simple` | marker_precision | 0.741 | 0.845 | +0.105 |
+| plotly `all` | marker_recall | 0.418 | 0.403 | -0.016 (within noise) |
+| plotly `all` | marker_precision | 0.772 | 0.795 | +0.024 |
+| plotly `simple` | marker_recall | 0.762 | 0.824 | +0.062 |
+| plotly `simple` | marker_precision | 0.783 | 0.912 | +0.130 |
+
+The whole-integration gain is huge on mpl-val markers (+10 to +17 pp recall/precision) and strongly positive on plotly simple markers.
+On plotly `all` the integration moves a tiny amount of recall into precision; `all` includes several catastrophic charts (one 6081-marker rope) and is noise-dominated.
 
 ### What is left after the integration
 
-Baselines against the INTEGRATED model (`runs/t5-chartjs/best.pt` + `--tta shift` + `--refine`), one probe set per column.
-All numbers from the current branch at HEAD:
+Round-1 wins did not touch three residual issues on markers:
 
-<!-- SEE: eval-<set>-int.txt for the per-set numbers.
-     Will be filled in once the suite completes. -->
-
-- **Line+markers y drift (NEW round-2 angle)**: markers drawn on a line, whose network heat peak lands away from the line's path.
+- **Line+markers y drift (ROUND-2 ANGLE)**: markers drawn on a line, whose network heat peak lands away from the line's path.
   The line tracer already measures the line's y to ~0.2% RMS, which is a tighter y anchor than any one marker's heat peak.
   This is the F1/F3 interaction: not a rope (where the markers merge in x) nor a big marker (where the heat is diffuse), but the ordinary line+markers case.
   Not addressed in round-1.
-- **Hollow / small markers at low DPR**: `marker_err_median_pct` on the hollow probe is still 0.096% at step25 (down from v3's 0.138%), bulk of the remaining error on open rings and thin strokes where ink-weight > 0.5 does not form one component.
+- **Hollow / small markers at low DPR**: step25's `marker_err_median_pct` on the hollow probe is 0.096% (down from v3's 0.138%); bulk of the remaining error is open rings and thin strokes where the ink-weight threshold does not form one component.
   Angle A for a future round; sub-1pt gain today.
 - **Overlap in x (ropes)**: 76% of mpl-val FNs.
   The zoom pass (`ml/p2d/zoom.py`) is written but not integrated.
@@ -83,15 +91,23 @@ Varied dimensions, recorded in `meta["probe"]`:
 For every chart `meta["probe"]` records:
 `kind="linemk", spacing_rel, ms_px, n_series, line_lw_pt, dashed, shape, n, nn_px_median, nn_rel_median, n_markers`.
 
-Ground truth is `markers_px` (exact value position) with `markers_drawn_px` beside it (drawn centre, matplotlib's integer stamp).
-The scoreboard matches against `markers_px`, same as all other t4-* probes.
+Ground truth: `markers_px` records the exact value position (what the scoreboard matches against); `markers_drawn_px` records the drawn centre (matplotlib's integer stamp).
 
-Expected failure modes the set should surface:
+Realised distribution across 216 charts:
+- 63,886 total markers
+- spacing_rel: 0.3 (26), 0.5 (48), 0.7 (36), 1.0 (37), 1.5 (33), 2.5 (36)
+- line_lw_pt: 0.8 (54), 1.5 (40), 2.5 (53), 4.0 (69)
+- dashed: 76 / solid: 140
+- n_series: 1 (152), 2 (64)
+- shape: *, +, o, ^, s, x, D, P, v (balanced 17-33 each)
 
-- **Dense spacing + flat span**: markers merge in x, heat peaks sit along the ridge, y is well-centred (the fix should barely help here, since y is already close to the line).
-- **Sparse spacing + sharp curve**: y heat may lag behind the drawn centre at a sharp bend; the line tracer follows the curve well because the line is thick, so y-snap buys the gain.
-- **Thick dashed line + markers**: the dash veto has to let the markers through (step25 gate: skip veto on line+markers), while the y-snap replaces the drifted y.
-  The hard case for the fix.
+Expected failure modes the set surfaces:
+
+- **Dense spacing + flat span**: markers merge in x, heat peaks sit along the ridge, y is well-centred.
+  The fix should barely help here, since y is already close to the line (snap confirms position but doesn't move it).
+- **Sparse spacing + sharp curve**: y heat may lag the drawn centre at a sharp bend; the line tracer follows the curve well because the line is thick, so y-snap buys the gain.
+- **Thick dashed line + markers**: the step25 dash veto has to let the markers through (gate: skip veto on line+markers), while the y-snap replaces the drifted y.
+  The hardest case for the fix.
 - **Hollow markers on thick line**: the open ring plus line ink gives a diffuse heat that step25 falls back to raw peak for.
   The snap should pull y onto the line cleanly where present.
 
@@ -107,18 +123,34 @@ flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock nice -n 19 \
   > out/t4r2/eval-linemk-int.txt 2>&1
 ```
 
-<!-- Numbers filled in when eval-linemk-int.txt lands under out/t4r2/. -->
+Numbers queued under heavy shared-lock contention (t5-robust is training 3000 iters on the GPU, and the other three teams are also running round-2 evals; up to seventeen flock waiters observed, so the queue advances slowly).
+The baseline suite `teams/t4-markers/tools/probe_suite_r2_single.sh int` is waiting on the lock and will fill `out/t4r2/eval-{val,plotly,linemk,...}-int.txt` once it clears.
+Expected set of eval outputs: `val`, `plotly`, `linemk`, `dense`, `row`, `shapes`, `hollow`, `multi`, `labels`, `lines`.
+
+Partial outputs produced during the session land as empty files first (zero bytes until the per-chart loop finishes); monitor `out/t4r2/suite-int.log` for per-set completion lines.
 
 ### Expected numbers after the patch
 
-With the brainstormer's y-snap-to-line patch (currently stashed as `t4r2-brainstormer: line-snap patch, hold for baseline`), applied only inside `measure_series` for line+markers series:
+With the brainstormer's y-snap-to-line patch (`stash@{0}: t4r2-brainstormer: line-snap patch, hold for baseline`), applied only inside `measure_series` for line+markers series:
 
-<!-- Numbers filled in when eval-linemk-snap.txt lands under out/t4r2/. -->
+- `marker_err_median_pct` collapses toward `line_rms_median_pct` (0.14-0.21%) wherever `line_px` covers the marker's x.
+  Markers where `line_px` is sparse or absent keep their raw heat peak y.
+- Recall and precision unchanged on linemk (the snap moves centres; it adds and drops nothing).
+- val, plotly simple columns: a modest err_median_pct improvement where a chart's series is `line+markers` (common in mpl-val, less in plotly which tends toward scatter).
+- Pure scatter sets (`shapes`, `hollow`, `multi`, `dense`): zero change (gate is `line_px is not None and len(line_px) >= 3`).
+- `lines` (no-markers probe): zero change (no marker series, the snap does nothing).
 
-The gain should concentrate on `marker_err_median_pct` and `peak_err` at marker y; recall and precision should be unchanged (the fix moves centres, it does not add or drop markers).
+The brainstormer's AFTER measurement will replace both tables above with real numbers once the baseline suite completes and the patch is unstashed; see `teams/t4-markers/tools/compare_before_after.py` for the delta table.
 
 ## Verification commands
 
-- Baseline suite: `teams/t4-markers/tools/probe_suite_r2.sh int --no-diag`
-- linemk eval: `python -m p2d.evaluate --ckpt runs/t5-chartjs/best.pt --data data/t4r2-linemk --limit 216 --refine --tta shift --json out/t4r2/rows-linemk-int.json`
-- Pytest: `python -m pytest -q` (expect 112 after the brainstormer's two new line-snap tests land; 110 at the stashed baseline).
+- Baseline suite: `teams/t4-markers/tools/probe_suite_r2_single.sh int` (one single flock acquisition for all nine standard sets plus linemk).
+- linemk eval: `python -m p2d.evaluate --ckpt runs/t5-chartjs/best.pt --data data/t4r2-linemk --limit 216 --refine --tta shift --json out/t4r2/rows-linemk-int.json`.
+- Pytest at the stashed baseline: `python -m pytest -q` -> 110 passed; after the brainstormer's `line-snap` tests land: 112 passed.
+- Delta table: `python teams/t4-markers/tools/compare_before_after.py int snap`.
+
+## Carried over commits in this submission
+
+- `44264f9`: r2 scaffolding (probe_t4 linemk kind, suite runner, CASES_R2 + REPORT_R2 skeletons).
+- `22cfafe`: extract_eval_numbers, single-lock runner, compare_before_after.
+- (pending) brainstormer's y-snap patch commit on `measure_series`, loosened test and two new tests.
