@@ -9,6 +9,7 @@ heat around the maximum, which is exact for a Gaussian.
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 
 import cv2
@@ -906,7 +907,7 @@ def _affine_from_marks(pos_net: np.ndarray, marks: np.ndarray, weights: np.ndarr
 
 
 def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift: float = 0.45,
-                 max_spread: float = 0.45, resid_tol: float = 0.35, affine_min_marks: int = 5) -> Extraction:
+                 max_spread: float = 0.45, resid_tol: float = 0.35, affine_min_marks: int | None = None) -> Extraction:
     """Correct an axis's ticks by one affine map fit to all drawn marks or gridlines on the axis.
 
     The network places a tick from everything around it, labels included, and
@@ -938,6 +939,12 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift
     the outside is the side the label sits on, and a gridline runs across the
     span of the other axis's ticks. The frame, when found, only widens that span.
     """
+    # The slope term of the joint fit is the b-DOF. On data where the network
+    # already matches the ticks up to the pixel-snap floor it has nothing to
+    # fit and absorbs noise; the T3R2_SHIFT_ONLY env var pins the fit to b=1
+    # so the ablation can be measured without rebuilding the branch.
+    if affine_min_marks is None:
+        affine_min_marks = 10**9 if int(os.environ.get("T3R2_SHIFT_ONLY", "0")) else 5
     g = img.astype(np.float32).mean(-1)
     H, W = g.shape
     if ex.plot_area is not None:
