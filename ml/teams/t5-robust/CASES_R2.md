@@ -256,9 +256,32 @@ See section 5.3.
 
 See section 4. Headline: integrated **regresses** vs V2 (median rms 0.61% -> 1.98%, within 1% 48% -> 33%).
 
-### 6.5 Round-2 clutter probes, integrated model
+### 6.5 Round-2 clutter probes, integrated+patch vs V3+patch
 
-Blocked: the integrated model crashes on `t5r2-clutter-max` with `OverflowError` in `pipeline._parse_factor` (see section 2.1 above). Re-runnable once angle D's patch is in. Output files: `out/t5r2/r2-clutter-max.err` (traceback), `out/t5r2/r2-clutter-max.txt` (empty). `r2-clutter-overlap` was never started because the surrounding shell `&&` chain broke on the first probe's crash.
+Measured on the patched tree (commit 7f8ab85) after the OverflowError was fixed. Simple-split column.
+
+| probe set | metric | int + patch | V3 ckpt + patch | V3 vs int |
+| --- | --- | --- | --- | --- |
+| `t5r2-clutter-max`     | line_found             | 0.398 | **0.531** | +13.3 pp |
+|                        | line_rms_median_pct    | 0.166 | **0.153** | -0.013 (-8%) |
+|                        | marker_recall          | 0.248 | 0.339 | +9.1 pp |
+|                        | frame_err_median_px    | 150.3 | 147.4 | tie (both bad) |
+|                        | frame_err_p90_px       | 295.1 | 294.4 | tie (both bad) |
+|                        | calib_y_within_0.5pct  | 0.61  | **0.76** | +15 pp |
+| `t5r2-clutter-overlap` | line_found             | 0.712 | 0.742 | +3.0 pp |
+|                        | line_rms_median_pct    | 0.317 | **0.245** | -0.072 (-23%) |
+|                        | marker_recall          | 0.626 | 0.649 | +2.3 pp |
+|                        | frame_err_median_px    | 4.75  | **2.85** | -1.90 (-40%) |
+|                        | frame_err_p90_px       | 133.5 | **22.4** | **-111.1 (-83%)** |
+|                        | calib_y_within_0.5pct  | 0.83  | 0.87  | +4 pp |
+
+Reading:
+- **clutter-max**: V3 helps on line finding, line rms, marker recall, and calibration (+13 to +15 pp on the easy metrics) but frame detection is still **catastrophically bad** at this density (median ~150 px, p90 ~295 px for an 978x555 page). The clutter training samples do not reach this density. For a real improvement on this probe, V4 would need to over-represent high-density clutter in training (or add a tick-anchor-hull frame prior, angle D from the brief).
+- **clutter-overlap**: V3 is a clean win across the board. frame_err_p90 drops from 133 to 22 px (**-83%**), line_rms from 0.317 to 0.245 (-23%), frame_err_median from 4.75 to 2.85 px (-40%). The V3 training generalises to UI-chrome-overlapping-chart-ink even though it never saw overwritten chart pixels during training; apparently learning to call outside-chart text BG also hardens the model against on-top chrome.
+
+**Headline**: V3 helps on both probes, but clutter-max is still broken on frame detection and should be flagged as a round-3 target. clutter-overlap goes from "half the frames are off by over 100 px" to "90% are within 22 px" with the V3 ckpt swap.
+
+Output files: `out/t5r2/r2-{clutter-max,clutter-overlap,v3-clutter-max,v3-clutter-overlap}.txt`.
 
 ### Measurement commands
 

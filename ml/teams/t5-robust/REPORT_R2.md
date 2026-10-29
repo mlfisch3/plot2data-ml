@@ -257,12 +257,23 @@ Corpus is intact with the patch: offset-annotation 0.100% preserves its legitima
 
 ### 5.6 Round-2 probe sets (V3)
 
-| set | integrated line_rms_median_pct | **V3** |
-| --- | --- | --- |
-| `t5r2-clutter-max`     | TBD | TBD |
-| `t5r2-clutter-overlap` | TBD | TBD |
+Simple split, measured on the patched tree.
 
-Interpretation hint: if V3 holds `clutter-max` within 2% of the integrated number, the training neither helped nor hurt the "surrounding furniture" case (which was already fine). If V3 moves `clutter-overlap` substantially, the fine-tune is doing some occluded-ridge recovery, which would be a surprise worth investigating.
+| probe set | metric | int+patch | V3+patch | V3 vs int |
+| --- | --- | --- | --- | --- |
+| `t5r2-clutter-max` | line_found | 0.398 | **0.531** | +13.3 pp |
+| | line_rms_median_pct | 0.166 | **0.153** | -8% |
+| | frame_err_median_px | 150.3 | 147.4 | tie (both broken) |
+| | calib_y_within_0.5pct | 0.61 | **0.76** | +15 pp |
+| `t5r2-clutter-overlap` | line_found | 0.712 | 0.742 | +3.0 pp |
+| | line_rms_median_pct | 0.317 | **0.245** | -23% |
+| | frame_err_median_px | 4.75 | **2.85** | -40% |
+| | frame_err_p90_px | 133.5 | **22.4** | **-83%** |
+| | calib_y_within_0.5pct | 0.83 | 0.87 | +4 pp |
+
+Reading:
+- **clutter-max**: V3 helps on line-finding/line_rms/calib (+13-15 pp) but frame detection is still broken (~150 px median). Dense-clutter frame-head is a round-3 target.
+- **clutter-overlap**: V3 is a clean win across the board, with frame_err_p90 dropping 83%. The clutter training generalises to UI chrome overlapping chart ink even though no overwritten chart pixels appear in the training mix - learning to call outside-chart text BG also hardens the model against on-top chrome.
 
 ## 6. Verification commands
 
