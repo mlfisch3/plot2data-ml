@@ -116,6 +116,62 @@ PENDING INTEG MEASUREMENT (`out/t3r2/integ-ticks.txt`).
 This is the family angle C targets, but round 1's probe was built for the shift-only pipeline and does not isolate N_marks per axis.
 Round 2 replaces this probe with `data/t3-ticks-r2` (section 4).
 
+### 3.4 Chart.js corpus with the new `refine_ticks` (brainstormer's measurement, `out/t3r2/corpus-new.txt`)
+
+Measured on team/t3-precision-r2 at HEAD f8b1b1b, `eval_corpus --tta shift`. Compared against the integration baseline `/home/drd/PROJECT/CLAUDE/PLOT2DATA-integration/ml/out/integ/corpus.txt`.
+
+| chart | integ (`121ed4d`) | new (joint-affine) | delta |
+| --- | --- | --- | --- |
+| **series median** | **0.087** | **0.056** | **-36%** |
+| **series worst** | **0.214** (narrow-peaks) | **0.552** (log-log) | **log-log** |
+| linear-single-solid | 0.082 | **0.024** | **-71%** (reverses the integration regression) |
+| linear-thick-line   | 0.076 | **0.023** | **-70%** |
+| linear-thin-line    | 0.091 | **0.045** | **-51%** |
+| linear-dashed       | 0.078 | **0.048** | -38% |
+| dark-theme          | 0.092 / 0.087 | **0.045 / 0.016** | -51% / -82% |
+| scatter-markers     | 0.087 | **0.056** | -36% |
+| scatter-halo (avg)  | 0.117 | **0.095** | -19% |
+| jpeg-compressed     | 0.021 | 0.028 | +33% |
+| offset-annotation   | 0.100 | **0.049** | **-51%** |
+| **retina-2x**       | 0.015 | **0.099** | **+560% (regression)** |
+| **log-log**         | 0.210 | **0.552** | **+163% (regression)** |
+| log-y               | 0.065 | 0.065 | 0 |
+| log-y-multi (avg)   | 0.037 | 0.037 | 0 |
+| sawtooth-sharp      | 0.113 | 0.113 | 0 |
+| narrow-peaks        | 0.214 | 0.210 | -2% |
+| narrow-small        | 0.109 | 0.109 | 0 |
+| linear-single-nogrid | 0.126 | 0.126 | 0 |
+
+Headline: joint-affine `refine_ticks` cuts the corpus series median by 36 % (0.087 - > 0.056) via the `a` term (median shift), which recovers the integration's known "easy chart source-pixel bias" regression. But the `b` term over-corrects on two high-resolution multi-decade cases - log-log (+163 %) and retina-2x (+560 %) - driving the new worst case from 0.214 to 0.552.
+
+Reading per case:
+- Linear single-solid / thick-line / thin-line / dark-theme go from 0.08 to 0.02 % ph: the a term is doing exactly what the integration report flagged as "a small ink-centring bias on easy flat lines" and takes it out. These were the losses the integration explicitly tolerated against the giant worst-case win.
+- Narrow-peaks / narrow-small / log-y / log-y-multi / sawtooth / nogrid are unchanged. These were tick-floor cases I expected to see angle C help; the probe set below (section 4) shows why: on in-distribution tick positions the b DOF has nothing to fit.
+- Retina-2x and log-log carry a span that magnifies any slope error: retina is a 2x pixel span, log-log is multiplicative with ~4 decades. A tiny slope misfit at the far end of the axis compounds against the trace, which is independent of the tick shift. Both cases bite.
+
+### 3.5 Probe `data/t3-ticks-r2` (brainstormer's measurement, `out/t3r2/ticks.json`)
+
+`eval_ticks_r2 --limit 1000 --tta shift`. 11,852 matched ticks across 2,000 axes. All numbers are |pos_refined - pos_truth| in canvas pixels.
+
+| axis | n matched | net p50 / p90 | shift p50 / p90 | affine p50 / p90 |
+| --- | --- | --- | --- | --- |
+| x | 5,838 | 0.329 / 0.864 | 0.332 / 0.832 | 0.355 / 0.860 |
+| y | 6,014 | 0.327 / 0.792 | 0.328 / 0.794 | 0.334 / 0.799 |
+
+**Null to slightly negative on the probe itself**. The joint-affine fit's extra slope DOF absorbs noise where the network already predicts well. The dpi split confirms this is a resolution effect: at dpi 160 (large charts) affine p50 drops to 0.283 vs net 0.315 - a clean win where the per-mark noise is small enough that the slope is identifiable. At dpi 100 affine is 0.412 vs net 0.337 - a loss where the slope absorbs noise.
+
+Taken together with section 3.4: the corpus median gain of 36 % is almost entirely the `a` term's work. The `b` term is only useful at high resolution and small per-mark noise; outside that regime it hurts.
+
+### 3.6 Reading, and a recommendation
+
+The probe set delivers the direct test of angle C's a-priori hypothesis.
+Synthetic validation (10 marks, 0.4 % scale drift, 0.25 px per-mark Gaussian noise): median error drops 0.60 to 0.04 px, p90 1.32 to 0.08 px.
+Real network outputs on the probe set: median essentially unchanged (0.329 vs 0.332 vs 0.355 on x; 0.327 vs 0.328 vs 0.334 on y). The `b` slope the fit identifies on real charts is close enough to 1.0 that the synthetic win does not transfer; the network does not deliver the 0.4 % scale drift the stress test assumed.
+
+Where the corpus median gain comes from: the a-term median shift, applied to the integrated model which already had a `+0.3 px` ink-centring bias (round-1 `CASES.md` section 3), takes the bias out across the board on easy charts. This is a shift-only correction - the b term is not needed to deliver it.
+
+Recommendation to the integrator: a **shift-only** variant of `refine_ticks` (b forced to 1, keep the identifiability-tolerance machinery and the min_shift / max_spread guards) would plausibly recover 90 % of the median gain while leaving log-log and retina-2x unharmed. The brainstormer's measurement script `eval_ticks_r2` already measures both policies on the same per-chart marks; a quick `corpus --with-shift-only` would answer whether the full-affine `b` is needed for any of the four single-digit per-case wins (dark-theme and linear-single-solid are the two biggest; they are both low-resolution and low-N and the slope is very unlikely to earn its code there).
+
 ## 4. The round-2 probe set: `data/t3-ticks-r2`
 
 Generator: `ml/p2d/synth/probe_t3_r2.py`, family `ticks`, seed base 14,000,000, 1,000 charts.
