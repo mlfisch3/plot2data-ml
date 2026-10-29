@@ -83,10 +83,10 @@ Round-1 numbers are from `ml/out/t2c/v3-<probe>-refine.txt` (frozen v3, no overl
 | shallowx | 0.7576 | 0.8658 | **0.8745** | **+0.0087** | +0.117 |
 | legend | 0.8560 | 0.8971 | **0.8560** | **-0.0411** | 0 |
 | legocclude | 0.8179 | 0.8247 | _(pending)_ | | |
-| multi | 0.6550 | 0.6567 | _(pending)_ | | |
-| wide | 0.8722 | 0.8647 | _(pending)_ | | |
+| multi | 0.6550 | 0.6567 | **0.6600** | **+0.0033** | +0.005 |
+| wide | 0.8722 | 0.8647 | **0.9023** | **+0.0376** | +0.0301 |
 | area | 0.5600 | 0.5550 | _(pending)_ | | |
-| cross | 0.9167 | 0.9267 | _(pending)_ | | |
+| cross | 0.9167 | 0.9267 | **0.9033** | **-0.0234** | -0.0134 |
 | samecolour | 0.9000 | 0.9125 | _(pending)_ | | |
 | dotted | 0.8714 | 0.8905 | _(pending)_ | | |
 | steep | 0.8872 | 0.8910 | _(pending)_ | | |
@@ -95,7 +95,7 @@ Round-1 numbers are from `ml/out/t2c/v3-<probe>-refine.txt` (frozen v3, no overl
 | dense | 0.9118 | 0.9191 | _(pending)_ | | |
 | step | 0.8385 | 0.8490 | _(pending)_ | | |
 | clipped | 0.8016 | 0.8054 | _(pending)_ | | |
-| markers | 0.9167 | 0.9167 | _(pending)_ | | |
+| markers | 0.9167 | 0.9167 | **0.9118** | **-0.0049** | -0.0049 |
 
 ### Key findings
 
