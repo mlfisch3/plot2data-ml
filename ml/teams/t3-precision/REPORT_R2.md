@@ -52,6 +52,72 @@ Guards:
 - max per-tick implied correction above `min_shift` (identical to the baseline's "do not fuss over sub-pixel noise" rule);
 - spread of inlier residuals below `max_spread` (identical to the baseline's final sanity check).
 
+## Diagnosis
+
+The integrated scoreboard at `121ed4d` has:
+- `mpl-val` xticks_err_median 0.2374 px (simple 0.2376), yticks_err_median 0.2625 / 0.2704 px.
+- `plotly-v1` xticks_err_median 0.1069 px, yticks_err_median 0.1555 px.
+- `mpl-val` calib_x_within_0.5pct 0.9050 (10/100 charts miss by >= 0.5 % of full scale), calib_y_within_0.5pct 0.8950 (11/100).
+- `plotly-v1` calib_x_within_0.5pct 0.9933 (ceiling), calib_y_within_0.5pct 0.8867 (symmetric 11-chart gap).
+
+The current `refine_ticks` is a shift-only fit: it finds the drawn tick mark near each predicted tick, computes the median difference, and shifts every tick on the axis by that median - only when at least three marks agree beyond the 0.45 px pixel-snap noise.
+Even with that shift, the median tick error at integration sits at 0.24 - 0.27 px, which is the pixel-snap floor of a single drawn mark.
+
+From round-1 CASES.md section 3:
+- Base network raw bias is -0.02 / +0.10 px with 0.27 / 0.30 px median abs error.
+- The drawn tick marks and gridlines of matplotlib are pixel-snapped +0.3 px from the true position on average.
+- Per axis, the mean error of the ticks on one axis has a stdev of 0.34 / 0.46 px (x / y) across axes against a within-axis residual of 0.29 / 0.28 px: half the variance is a per-axis shift that the current refine_ticks recovers.
+
+What a shift-only fit cannot recover:
+- A per-axis scale drift: the network's heatmap at 768 x 512 for a 1500 px plot expands tick spacing by a fraction of a percent; a single shift leaves that drift in the ticks and in every data value calibrated through them.
+- The sqrt(N) averaging advantage: the shift value is estimated from N marks and in principle has 1 / sqrt(N) scaling, but the raw ink bias is a systematic +0.3 px and shift-only is still off by that bias at the median.
+
+Angle C fits `mark_i = a + b * pos_net_i` by IRLS over per-axis marks, outliers rejected at 2.5 * MAD or 0.5 px, slope `b` accepted only when `|b - 1|` sits inside `max(0.004, min(0.015, 0.015 * sqrt(5 / N)))` and the fit's residual MAD is below 0.35 px.
+For N <= 4 marks the slope is not identifiable and the fit degrades to shift-only (preserves current behaviour).
+For N >= 5 the full affine is applied to every tick, including those with no drawn mark.
+
+### Synthetic validation of the fit function
+
+Stress test on 10 marks spanning 50 - 500 px with 0.4 % scale drift (`b = 1.004`) and 0.25 px Gaussian per-mark noise:
+- none: median 0.60 px, p90 1.32 px
+- shift-only: median 0.50 px, p90 0.88 px (a shift cannot correct slope)
+- affine: median 0.04 px, p90 0.08 px (slope recovered within noise)
+
+Whether real network outputs show this amount of per-axis scale drift is what the `t3-ticks-r2` probe measures.
+
+## Probe sets
+
+### Round-1 probe sets
+
+`data/t3-peaks` (240), `data/t3-spikes` (160), `data/t3-ticks` (576), `data/t3-width`, `data/t3-log`, `data/t3-grid`, `data/t3-frame`, `data/t3-scale`.
+Generator: `p2d.synth.probe_t3`, seed base 13,000,000.
+CASES.md section 7 (round 1) carried the submission-HEAD measurements against base v3.
+
+In round 2, three families are re-measured at the integrated model as regression gates for angle C:
+- `data/t3-peaks`: turning-point measurement should NOT move with the tick change.
+- `data/t3-spikes`: dense-spike peak measurement should NOT move.
+- `data/t3-ticks` (round-1 family): the old tick probe is replaced for diagnosis by `t3-ticks-r2`.
+
+The other five families (width, log, grid, frame, scale) are not re-measured; their round-1 diagnoses did not point at tick-floor behaviour and the integration already closed their representative corpus cases.
+
+### Round-2 probe set `data/t3-ticks-r2`
+
+Generator: `p2d.synth.probe_t3_r2`, seed base 14,000,000, 1,000 charts, family `ticks`.
+
+Factor grid per axis (independent): `n_ticks` in {3,4,5,6,8,10,12} (FixedLocator at exactly N positions), `axis_style` in {linear, log} with a numeric formatter so every tick gets a label, `label_density` in {sparse, dense}, `grid` in {off, on}, `label_rotation` in {0, 45, 90} degrees.
+Chart-level: `dpi` in {80, 100, 160}; `has_offset` with p = 0.25 - ScalarFormatter(useOffset=True, powerlimits=(-1,1)) plus narrow y range so matplotlib prints a "+1eN" offset label.
+
+Coverage verified on all 1,000 charts: 259 charts carry an offset axis (26%), each N bucket has 129 - 155 charts split across linear/log, rotation levels 317 - 352 axes each, 13,603 labelled major ticks across 2,000 axes all with drawn tick marks.
+
+Chart JSON records (per probe chart):
+- `meta.xticks` / `meta.yticks`: standard labelled major ticks with sub-pixel `pos`.
+- `meta.probe.axes.{x,y}.ticks`: per-tick records `{value, pos_canvas, text, mark_drawn, grid_drawn, is_minor}`.
+- `meta.probe.axes.{x,y}.{n_ticks_target, n_ticks, axis_style, label_density, grid, label_rotation}`.
+- `meta.probe.{has_offset, axis_offset, dpi}`.
+
+Measurement script: `p2d.eval_ticks_r2` (commit `6d04060`) joins the probe JSON by chart id and runs three policies offline on the per-chart marks (one network pass per chart).
+Headline is median and p90 of per-tick absolute error under each policy, bucketed by `n_marks` and by factor.
+
 ## Scoreboard
 
 (Pending curator's regenerated probe batch and the full scoreboard sweep.)
