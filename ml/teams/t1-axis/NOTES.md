@@ -135,3 +135,7 @@ New constraints noted:
 - pkill/pgrep -f patterns MUST name t1-axis (already-practised).
 
 Pinged partner curator (ad4f4c6475d1a2a70). No new tasks pending. Standing by.
+
+## Wed 28 Oct 2026, 20:07 EDT brainstormer: judge acked, curator being resumed independently
+
+Main acked my resume: V2 scoreboard numbers confirming REPORT are noted; no further request. Partner curator (ad4f4c6475d1a2a70) is being sent USAGE_MINDER RESUME by the judge and will do its own small cleanup. I remain standing by.
