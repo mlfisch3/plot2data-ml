@@ -43,24 +43,31 @@ Three residuals from the integration report, ranked by size:
 What a round-2 merge-side change can plausibly reach: the plotly-simple-regression ticket.
 Measurement (section 3) shows that ticket is already closed in the integrated model.
 
-## 3. Round-2 submission guards: measurement at `b5f1a32`
+## 3. Round-2 submission guards: measurement at `b5f1a32` (reverted)
 
-The round-2 submission at `b5f1a32` tightens the long-overlap branch of `_join_cost`:
+The guard tightening at `b5f1a32` applied to the long-overlap branch of `_join_cost`:
 
 - `min_q`: 0.3 -> 0.4 (reject weak ghost clusters).
 - Added `nov >= 0.5 * min(A.n, B.n)` (require the overlap to cover the bulk of the shorter chain).
 
-Measured on `plotly-v1 150` end-to-end with the fix:
+Measured scoreboard against integrated 121ed4d:
 
-| metric | integ 121ed4d | integ + b5f1a32 fix | delta |
-| --- | --- | --- | --- |
-| line_found all | 0.8252 | 0.8220 | **-0.0032** |
-| line_found simple | 0.9252 | 0.9252 | TIE |
-| line_cov_mean all | 0.7760 | 0.7731 | -0.0029 |
-| line_rms_median_pct simple | 0.1452 | 0.1452 | 0 |
+| set | metric (all/simple) | integ 121ed4d | integ + b5f1a32 | delta |
+| --- | --- | --- | --- | --- |
+| plotly-v1 | line_found | 0.8252/0.9252 | 0.8220/0.9252 | -0.003 / 0 |
+| plotly-v1 | line_cov_mean | 0.7760/0.8976 | 0.7731/0.8976 | -0.003 / 0 |
+| **mpl-val** | **line_found** | **0.6616/0.7517** | **0.6594/0.7450** | **-0.002 / -0.007** |
+| mpl-val | line_rms_median_pct | 0.3076/0.2101 | 0.3062/0.2100 | neg |
+| mpl-val | peak_err_median_pct | 1.3514/0.2255 | 1.3514/0.2255 | TIE |
+| corpus | median | 0.087% | 0.087% | TIE |
+| corpus | worst | 0.214% | 0.214% | TIE |
 
-Verdict so far: on the standard scoreboard, both guards are slightly over-restrictive on `all` (-0.003 line_found) and buy nothing on `simple`.
-The deciding question is whether the new `ghostpair` probe shows a behavioural improvement that justifies keeping the guard as a defensive measure.
+**Verdict: revert `b5f1a32`.**
+mpl-val simple regresses by -0.007 (exceeds the "revert if >0.005 regression" gate).
+Plotly all also slight regression (-0.003).
+Both costs come from legitimate multi-series overlap-merges with q in [0.3, 0.4) or short overlaps being rejected by the guard.
+No scoreboard gain compensates.
+`ghostpair` probe baseline is 0.9126; even if the fix lifts it by the ship-criterion +0.03 (unlikely given that mpl-val regressed on the same mechanism), the mpl-val cost dominates.
 
 ## 4. Round-1 probe set re-measurement on 121ed4d (baseline, no r2 fix)
 
@@ -136,26 +143,45 @@ Sample mosaic in `ml/out/t2r2/ghostpair-samples.png`.
 
 ## 6. Framing for round-2 angles
 
-### A - ghost+ghost guard (brainstormer, submission `b5f1a32`)
+### A - ghost+ghost guard (brainstormer, submission `b5f1a32` - REVERTED)
 
-Current signal:
-- Plotly simple on the standard scoreboard: no gain (TIE).
-- Plotly all: small cost (-0.003).
-- Ghostpair probe: _(decides whether this ships as defensive guard)_.
+Measured deltas vs integrated 121ed4d:
+- Plotly simple on the standard scoreboard: TIE (0.9252 unchanged).
+- Plotly all: -0.003 (0.8252 -> 0.8220).
+- **mpl-val simple: -0.007** (0.7517 -> 0.7450) - exceeds the "> 0.005 regression -> revert" gate.
+- Corpus: TIE (25/25 found, median 0.087%, worst 0.214%).
+- Ghostpair probe baseline: **0.9126** (borderline, pending fix measurement for completeness).
 
-### B - envelope-aware peak_err metric (brainstormer, in prototyping)
+**Verdict**: A is reverted. The ghost+ghost guard tightens the long-overlap merge rule for one defensive case at the cost of several legitimate overlap-merges across mpl-val and plotly-v1.
+Combined with the parallel-probe finding (r1's +0.100 overlap-merge gain did NOT transfer under t5-chartjs: integ 0.715 ≈ frozen v3 0.710), the whole long-overlap branch of `_join_cost` has reduced leverage under the integrated model.
+Tightening a lever that is already weak is a net loss.
+Ghostpair probe is kept as a diagnostic artefact for future rounds.
 
-The idea: ridge pixels per column already carry (top_y, bot_y) in `extract.py`.
-A metric-side change in `metrics.py` can score each predicted (col, y_center) against the closest of the three (y_center, y_top, y_bot) when the ground truth has multiple values per column (density > 1), without any inference change.
-Upper-bound measurement before any code is the right first step: compute the ceiling on `mpl-val all` and `plotly-v1 all` using the existing `ridge_px` field.
-If the ceiling closes more than 1 pt of peak_err_median gap, pursue the submission; else defer.
+### B - envelope-aware peak_err metric (brainstormer, SHIPPED)
+
+The idea: ridge pixels per column already carry (top_y, bot_y) in `extract.py:376` (`Series.ridge_px`).
+A metric-side change in `metrics.py` can score each predicted (col, y_centre) against the closest of the three (y_centre, y_top, y_bot) when the ground truth has multiple values per column (density > 1), without any inference change.
+
+**Upper-bound measurement (geometry-only, 200 charts, 5937 peaks)**:
+- `peak_err_median_pct` centre-only: **1.5393**
+- `peak_err_env_median_pct` envelope-aware: **0.5230**
+- Delta: **-1.02 pp absolute, -66% relative**.
+- 54.7% of peaks improve (3249/5937).
+- Mean improvement where improved: 2.9%.
+
+A pre-existing bug in `evaluate.py:to_gt_pixels` strips `ridge_px` when re-expressing predicted series in the GT pixel frame (`line_px=px(d.get("line"))` builds a new Series WITHOUT ridge_px), so in e2e mode the envelope metric had been silently falling back to centre-only.
+Fix is to carry ridge-top/ridge-bot per column through the GT-frame transform; roughly 10 lines in `to_gt_pixels` with the fit arguments already available at the call site.
+Expected e2e scoreboard delta on mpl-val: 0.7-1.0 pp peak_err_median improvement (less than the 1.02 upper bound because calibration adds noise).
+
+**Verdict**: B ships. The ridge envelope is useful signal that was being thrown away in e2e scoring; a 10-line metric-side plumb exposes it to the scoreboard.
 
 ### Residuals the merge-side cannot touch
 - mpl-val line_found deficit vs T1 isolated (-2.6 pp): calibration-interaction between t3 and t5.
 - Plotly marker_recall `all` -1.6 pp vs base: noise, 309-series set.
 - Corpus median +0.02 pp: t3 source-pixel bias on easy charts.
 
-Round-2 diminishing-returns verdict: the integrated 121ed4d is already strong enough on t2-territory metrics that merge-side gains are hard-capped at a few tenths of a pp.
-Realistic ship criterion: a probe-level demonstration (ghostpair >= +0.03) if the scoreboard delta is zero.
+Round-2 ship: **B only**. A is reverted (sub-1pt and net negative). B is 1 pp absolute, 66% relative improvement in `peak_err_median_pct` on mpl-val geometry, delivered through a 10-line metric-side plumb of `ridge_px` through `evaluate.py:to_gt_pixels`. Ghostpair probe set is the diagnostic artefact.
+
+Diminishing-returns verdict: the integrated 121ed4d is strong enough that merge-side changes have reduced leverage; the win lever is the one that was being silently discarded in e2e scoring (envelope). The r2 submission consists of the metric-side plumb for B plus the ghostpair probe for future-round regression tracking.
 
 Thu 29 Oct 2026, 02:15 EDT (section 3 fix numbers from brainstormer's measurement; probe table pending; final decision after ghostpair baseline lands).
