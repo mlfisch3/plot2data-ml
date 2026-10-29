@@ -244,6 +244,8 @@ def ticks(seed: int) -> Rendered:
     try:
         x, y = _series(rng, xp, yp)
         if has_offset:
+            # Must materialise the choice to a Python float before storing in meta.probe (json cannot
+            # serialise a Generator object; a numpy scalar is fine but a float is the clean form).
             y_offset = float(rng.choice([1e3, 1e4, 1e5]))
             # Place y data on a narrow window above the offset base, so matplotlib prints "+1e4" above the axis.
             y = y_offset + 0.01 * y_offset * (y - y.min()) / max(1e-9, (y.max() - y.min())) + rng.uniform(0.5, 1.5) * y_offset * 0.001
@@ -287,7 +289,7 @@ def ticks(seed: int) -> Rendered:
         if xp["label_density"] == "dense" or yp["label_density"] == "dense":
             ax.tick_params(axis="both", which="minor", length=2.0, width=0.6, direction="out")
         # Offset formatter wiring (only after locators + scales)
-        axis_offset = _apply_offset(ax, has_offset, rng)
+        axis_offset = _apply_offset(ax, has_offset, y_offset)
         # Plot
         art = _plot(ax, x, y, 1.6, dpi, "#0072B2")
         fig.tight_layout(pad=0.8)
