@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 import torch
+from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 
 from .data import (CANVAS_H, CANVAS_W, H_CORNER, H_LINE, H_MARKER, H_VERTEX, H_XTICK, H_YTICK, MEAN, STD, apply,
@@ -561,59 +562,150 @@ def merge_by_colour(series: list[Series], img, tol: float = 45.0) -> list[Series
     return out
 
 
-def merge_fragments(frags: list[dict], emb_tol: float = 3.0) -> list[dict]:
-    """Join chains end to end: no x overlap to speak of, ends that meet, embeddings that agree."""
+def _end_slope(cols: np.ndarray, ys: np.ndarray, k: int, head: bool) -> float:
+    """Least-squares slope through the first (or last) k samples of a chain."""
+    sel = slice(0, k) if head else slice(-k, None)
+    x, y = cols[sel], ys[sel]
+    if len(x) < 2 or x[-1] == x[0]:
+        return 0.0
+    A = np.column_stack([x - x.mean(), np.ones(len(x))])
+    return float(np.linalg.lstsq(A, y, rcond=None)[0][0])
+
+
+def _join_cost(A: dict, B: dict, emb_tol: float = 3.0, max_dx: int = 90) -> float | None:
+    """Cost of B continuing A, or None if the pair cannot be one series.
+
+    Fragmentation shows up in two shapes:
+
+    - A short gap between an A that ends before B starts (dx > 0). The frozen
+      rule is right here: the pixel ranges of A's last run and B's first run
+      must meet (``gap <= 3 + 2 dx``). The endpoint y positions are what the
+      test should see; the endpoint slope at a turning point does not help.
+      The rule is extended beyond ``dx = 60`` with a slope-extrapolation gate,
+      which catches legend-occlusion stretches where the frozen rule would
+      otherwise forbid the join only because of the length.
+
+    - A long overlap where A and B span the same columns because an embedding
+      cluster boundary ran through a continuous ridge. There both chains are
+      halves of one ridge, so the y gap is nearly CONSTANT along the overlap
+      (the two cluster labels pick the top and the bottom of the ridge, 1-6 px
+      apart); a crossing has a y gap that varies with the local slopes. The
+      median absolute deviation and the linear drift of the gap separate the
+      two cases. The frozen rule's 8-column overlap stays as-is for short
+      overlaps.
+
+    Both branches use the embedding mean distance as a hard reject (same ridge
+    sits in one embedding cluster of the discriminative loss) and no cost is
+    returned for a pair that fails any threshold.
+    """
+    if B["cols"][-1] <= A["cols"][-1]:
+        return None  # B does not extend beyond A
+    if A["cols"][0] > B["cols"][0]:
+        return None  # A does not start first
+    de = float(np.linalg.norm(A["emb"] - B["emb"]))
+    if de > emb_tol:
+        return None
+    if B["cols"][0] <= A["cols"][-1]:
+        lo = int(np.ceil(B["cols"][0]))
+        hi = int(np.floor(A["cols"][-1]))
+        nov = hi - lo + 1
+        if nov < 1:
+            return None
+        ov = np.arange(lo, hi + 1)
+        diff = np.interp(ov, A["cols"], A["ys"]) - np.interp(ov, B["cols"], B["ys"])
+        if nov <= 8:
+            # Short overlap: frozen's max |diff| <= 2.5 is the test, unchanged.
+            if np.abs(diff).max() > 2.5:
+                return None
+            return float(np.abs(diff).mean()) + de + 0.1
+        # Long overlap: evidence that these are two halves of one ridge.
+        if not set(A.get("ks", [])).isdisjoint(B.get("ks", [])):
+            return None  # same-cluster overlap means two different series kept apart on purpose
+        if A.get("q", 0.0) < 0.3 or B.get("q", 0.0) < 0.3:
+            return None
+        if A.get("n", len(A["cols"])) < 50 or B.get("n", len(B["cols"])) < 50:
+            return None
+        med = float(np.median(diff))
+        mad = float(np.median(np.abs(diff - med)))
+        a_lin, _ = np.polyfit(ov.astype(float), diff, 1)
+        drift = float(abs(a_lin * (ov[-1] - ov[0])))
+        if abs(med) > 6.0 or mad > 1.2 or drift > 2.5:
+            return None
+        return abs(med) + 2.0 * mad + 0.5 * drift + de + 0.0005 * nov
+    # No overlap: B's start sits past A's end.
+    dx = int(B["cols"][0] - A["cols"][-1])
+    if dx > max_dx:
+        return None
+    a0, a1 = A["spans"][-1]
+    b0, b1 = B["spans"][0]
+    gap = max(0, b0 - a1 - 1, a0 - b1 - 1)
+    if gap > 3 + 2.0 * dx:
+        return None
+    if dx > 60:
+        sA = _end_slope(A["cols"], A["ys"], min(10, len(A["cols"])), head=False)
+        sB = _end_slope(B["cols"], B["ys"], min(10, len(B["cols"])), head=True)
+        geo = min(abs(A["ys"][-1] + sA * dx - B["ys"][0]),
+                  abs(B["ys"][0] - sB * dx - A["ys"][-1]))
+        tol = 2.5 + 0.25 * dx * (1.0 + min(abs(sA), abs(sB)))
+        if geo > tol:
+            return None
+    # Normalise so a good join sits well under the no_join threshold.
+    return 0.03 * (gap + dx) + de
+
+
+def merge_fragments(frags: list[dict], emb_tol: float = 3.0, no_join: float = 5.0) -> list[dict]:
+    """Join chain fragments that belong to one series.
+
+    Pairs can meet at a small gap or share columns outright; `_join_cost`
+    tests both. The joins are picked globally by linear assignment so one
+    chain is not two series' continuation and two chains do not both claim
+    the same successor.
+    """
     items = [{"cols": f["cols"], "ys": f["ys"], "emb": f["emb"], "ks": [f["k"]], "n": len(f["cols"]),
               "spans": f["spans"], "q": f["q"]} for f in frags]
-    changed = True
-    while changed:
-        changed = False
-        items.sort(key=lambda f: f["cols"][0])
-        for i in range(len(items)):
-            A = items[i]
-            best = None
-            for j in range(len(items)):
-                if i == j:
-                    continue
-                B = items[j]
-                dx = B["cols"][0] - A["cols"][-1]
-                if dx > 60 or B["cols"][-1] <= A["cols"][-1]:
-                    continue
-                if dx <= 0:
-                    # Overlapping ends: only the same curve if they agree where they overlap.
-                    if dx < -8:
-                        continue
-                    ov = (A["cols"] >= B["cols"][0])
-                    if np.abs(A["ys"][ov] - np.interp(A["cols"][ov], B["cols"], B["ys"])).max() > 2.5:
-                        continue
-                    gap = 0
-                else:
-                    a0, a1 = A["spans"][-1]
-                    b0, b1 = B["spans"][0]
-                    gap = max(0, b0 - a1 - 1, a0 - b1 - 1)
-                if gap > 3 + 2.0 * dx:
-                    continue
-                de = float(np.linalg.norm(A["emb"] - B["emb"]))
-                if de > emb_tol:
-                    continue
-                cost = gap + abs(dx) + 5 * de
-                if best is None or cost < best[0]:
-                    best = (cost, j)
-            if best is not None:
-                B = items[best[1]]
-                keep = B["cols"] > A["cols"][-1]
-                w = A["n"] / (A["n"] + B["n"])
-                A["cols"] = np.concatenate([A["cols"], B["cols"][keep]])
-                A["ys"] = np.concatenate([A["ys"], B["ys"][keep]])
-                A["spans"] = A["spans"] + [s for s, k in zip(B["spans"], keep) if k]
-                A["emb"] = w * A["emb"] + (1 - w) * B["emb"]
-                A["ks"] = A["ks"] + B["ks"]
-                A["q"] = w * A["q"] + (1 - w) * B["q"]
-                A["n"] += B["n"]
-                items.pop(best[1])
-                changed = True
-                break
-    return items
+    n = len(items)
+    if n < 2:
+        return items
+    C = np.full((n, n), np.inf)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            c = _join_cost(items[i], items[j], emb_tol=emb_tol)
+            if c is not None:
+                C[i, j] = c
+    # 2n x 2n assignment: either continue into another chain or into one's own ghost.
+    big = np.full((2 * n, 2 * n), 1e9)
+    big[:n, :n] = C
+    diag_no = np.where(np.eye(n, dtype=bool), no_join, 1e9)
+    big[:n, n:] = diag_no  # row i's own "end here" ghost column
+    big[n:, :n] = diag_no  # col j's own "start here" ghost row
+    big[n:, n:] = 0.0
+    ri, cj = linear_sum_assignment(big)
+    nxt = {int(i): int(j) for i, j in zip(ri, cj) if i < n and j < n and C[i, j] < no_join}
+    has_prev = set(nxt.values())
+    out, seen = [], set()
+    for i in range(n):
+        if i in has_prev or i in seen:
+            continue
+        A = dict(items[i])
+        seen.add(i)
+        j = nxt.get(i)
+        while j is not None and j not in seen:
+            seen.add(j)
+            B = items[j]
+            keep = B["cols"] > A["cols"][-1]
+            w = A["n"] / (A["n"] + B["n"])
+            A["cols"] = np.concatenate([A["cols"], B["cols"][keep]])
+            A["ys"] = np.concatenate([A["ys"], B["ys"][keep]])
+            A["spans"] = A["spans"] + [sp for sp, k in zip(B["spans"], keep) if k]
+            A["emb"] = w * A["emb"] + (1 - w) * B["emb"]
+            A["ks"] = A["ks"] + B["ks"]
+            A["q"] = w * A["q"] + (1 - w) * B["q"]
+            A["n"] += int(keep.sum())
+            j = nxt.get(j)
+        out.append(A)
+    return out
 
 
 def _paper_colour(img: np.ndarray, area: list[float] | None) -> np.ndarray:
