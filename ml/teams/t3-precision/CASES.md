@@ -188,3 +188,98 @@ Fix in 6db13c8:
 
 Overlay at `out/t3/cases/narrow-peaks-broken.png` (3 x 6 panels, pre-fix: truth, base, pre-fix live, at 4x zoom on each spike) and `out/t3/cases/narrow-peaks-overlay.png` (same, fixed in the LIVE row).
 
+
+## 7. Scoreboard, probes and corpus at the submission HEAD 9b82fba (replacement curator, 28 Oct 2026 20:30 EDT)
+
+Clean re-measure of the full scoreboard at HEAD 9b82fba (the submission commit), after the chain was killed at 17:28 EDT and the usage window reset. All GPU work serialised through `/home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock`.
+Sources: `out/t3/r4-score5.txt` (geometry), `out/t3/r4-peaks.txt` (probe peaks), `out/t3/r4-spikes.txt` (probe spikes), `out/t3/r4-corpus.txt` (corpus).
+The e2e `#1` and `#2` scoreboards against 9b82fba did not complete inside the first window and are not re-run here; the harness was reverted in 4c56536 so the e2e CLI is byte-identical to the baseline without `--refine`, and the baseline numbers hold on that path.
+
+### 7.1 Scoreboard #5: the apex-both-sides commit regresses the full 200-chart set
+
+Measured at HEAD 9b82fba with `--refine`; compared with the frozen baseline (`out/t3/base-refine.txt`) and the previous commit 8053952 (`out/t3/r3-score5.txt`).
+
+| metric (simple / all) | base (`refine_lines_v1`) | 8053952 | 9b82fba (SUBMISSION) | delta HEAD vs base |
+| --- | --- | --- | --- | --- |
+| line_rms_median_pct | 0.189 / 0.311 | **0.136** / 0.323 | 0.312 / 0.502 | **+0.123 (+65%)** / +0.191 (+61%) |
+| line_rms_mean_pct | 0.575 / 0.883 | 0.653 / 1.041 | 1.183 / 1.407 | +0.608 / +0.524 |
+| line_rms_p90_pct | 1.377 / 2.231 | 1.674 / 2.603 | 3.503 / 3.583 | +2.126 / +1.352 |
+| peak_err_median_pct | 0.307 / 1.766 | **0.276** / 1.778 | 0.327 / 1.972 | +0.020 (+7%) / +0.206 (+12%) |
+| peak_err_p90_pct | 3.006 / 12.476 | **2.635** / **11.973** | 3.403 / 12.838 | +0.397 (+13%) / +0.362 (+3%) |
+| line_found | 0.886 / 0.757 | 0.893 / 0.777 | 0.893 / 0.768 | +0.007 / +0.011 |
+| line_cov_mean | 0.815 / 0.667 | 0.828 / 0.687 | 0.827 / 0.679 | +0.012 / +0.012 |
+| line_good_cov_mean | 0.764 / 0.588 | 0.772 / 0.603 | 0.731 / 0.572 | -0.033 / -0.016 |
+
+Reading: 8053952 was the winning snapshot (-28% simple RMS, -10% peak_err_median, -12% peak_err_p90). The two commits that followed, 4b3b172 (an apex demands ink falling away on BOTH sides) and 4c56536 (harness revert, pure evaluate.py), moved the full 200-chart simple RMS from 0.136% to 0.312% (+130% on the pre-apex-both-sides tree, +65% versus the baseline). The brainstormer's local iter_refine on `out/t3/cache-val60` reported the opposite at 4b3b172 (simple RMS 0.112 -> 0.089, -21%): the 60-chart cache is heavy on narrow and sharp cases where the both-sides gate is correct; it under-samples the long-tail of lines that run into the plot edge and have a legitimate one-sided apex at the final column (see 7.4).
+
+### 7.2 Probe peaks (240 charts; `out/t3/r4-peaks.txt`, `out/t3/base-peaks.txt`)
+
+Isolated turning-point probes (one-series polyline, prominence 5 to 50% of plot height, angles 10 to 90 degrees, line widths 1 to 5 px, round and mitred joins, source widths 400 to 1800 px).
+
+| metric (simple / all) | base | 9b82fba (SUBMISSION) | delta |
+| --- | --- | --- | --- |
+| line_rms_median_pct | 0.221 / 0.317 | 0.218 / 0.433 | -0.003 / +0.116 (+37%) |
+| line_rms_p90_pct | 1.484 / 4.574 | 2.071 / 4.395 | +0.587 (+40%) / -0.180 |
+| peak_err_median_pct | 0.213 / 0.213 | **0.204** / **0.204** | **-0.010 (-5%)** |
+| peak_err_p90_pct | 6.841 / 6.841 | **1.487** / **1.487** | **-5.354 (-78%)** |
+| line_cov_mean | 0.938 / 0.928 | 0.981 / 0.968 | +0.043 / +0.040 |
+| line_good_cov_mean | 0.884 / 0.770 | 0.923 / 0.815 | +0.039 / +0.045 |
+
+Reading: the probe set that the measurement rewrite targets shows a decisive peak_err_p90 win (6.84 -> 1.49, -78%). Flank-fit intersection and classical turn placement reclaim the probe's hardest vertices. Line RMS on the "all" set regresses by +37% in median, the same mechanism as the full scoreboard (false-apex suppression on edge columns).
+
+### 7.3 Probe spikes (160 charts; `out/t3/r4-spikes.txt`, `out/t3/base-spikes.txt`)
+
+Dense spike probes (narrow single-sample tips every 2 to 8 points, flanks 1 to 3 columns wide, round and mitred joins). The baseline could not score most tips (prominence met the metric's floor but the trace clipped them).
+
+| metric (simple / all) | base | 9b82fba (SUBMISSION) | delta |
+| --- | --- | --- | --- |
+| line_rms_median_pct | 1.629 / 3.575 | 1.665 / 3.875 | +0.036 / +0.300 |
+| line_rms_p90_pct | 6.522 / 11.298 | 7.402 / 14.743 | +0.880 / +3.445 |
+| peak_err_median_pct | 5.784 / 3.831 | **0.194** / 1.099 | **-5.590 (-97%)** / **-2.732 (-71%)** |
+| peak_err_p90_pct | 31.441 / 33.411 | 27.482 / 31.580 | -3.959 (-13%) / -1.831 |
+
+Reading: a 97% drop in simple peak_err_median (5.78 -> 0.19 %ph) on the dense-spike probe set. The classical `top + t/2` turn placement reads the apex from the ink's outer edge where the network's blurred vertex head cannot; this is exactly what the measurement rewrite was built for. The line_rms_p90 "all" set is worse (+30%) because the dense-crossing families defeat the per-column nearest-trace run selection; this is the open regression noted in `NOTES.md` under "dense-chart run selection".
+
+### 7.4 Why 60-cache iter_refine said "win" while 200-chart said "lose" at 9b82fba
+
+The brainstormer's `scripts/iter_refine.py --cache out/t3/cache-val60` reads 60 charts the predecessor filtered as "iterable" (every chart has at least one scored peak and a reasonable baseline RMS; selection favoured charts with narrow sampled peaks visible at least 2 columns from the plot edge). On that cache the apex-both-sides change dropped simple RMS from 0.112 to 0.089 (-21%).
+
+The full 200-chart mpl-val is harsher: it contains lines that start or end at the plot's data edge (plot area or data range endpoint) where the natural apex of a line sits on the final column with ink only on one side.
+Before 4b3b172, `sided = lambda v: np.inf if v == -np.inf else v` let a one-sided apex still count (the minimum of (inf, measured_side) is the measured side), so the final column got the classical `top + t/2` correction, which is the right answer there.
+After 4b3b172, the one-sided side maps to 0 and `peak = 0`, so the column silently falls back to the ink centroid (biased by t/2 inward of the true apex position by half a stroke).
+In a chart with ~500 columns and ~495 near-zero errors, three to five mispositioned terminal columns dominate the per-chart RMS: 0.1 pct ph is "0.5 px on a 500-px plot", one terminal column off by 2 px (one stroke of a 2 px line) is 0.4 %ph before averaging.
+
+The 60-cache's selection filter dropped exactly these cases. iter_refine's signal at 4b3b172 is a sampling artefact.
+
+### 7.5 Corpus at HEAD 9b82fba (`out/t3/r4-corpus.txt`)
+
+Clean reading matching the brainstormer's local 9b82fba run (series median 0.085%; same wins and losses).
+
+| case | base v3-corpus.txt | 9b82fba | delta |
+| --- | --- | --- | --- |
+| **log-log** | 1.326 | **0.759** | **-43%** |
+| log-y | 0.170 | 0.117 | -31% |
+| **linear-dashed** | 0.067 | **0.032** | **-52%** |
+| linear-thick-line | 0.042 | 0.029 | -31% (apex-end gate) |
+| sawtooth-sharp | 0.268 | 0.220 | -18% |
+| linear-single-solid | 0.033 | 0.029 | -12% |
+| jpeg-compressed | 0.034 | 0.027 | -21% |
+| retina-2x | 0.109 | 0.102 | -6% |
+| scatter-markers | 0.060 | 0.062 | +3% |
+| linear-single-nogrid | 0.194 | 0.199 | +3% |
+| narrow-peaks | 0.211 | 0.292 | +39% |
+| narrow-small | 0.066 | 0.144 | +118% |
+| dark-theme (2 series) | 0.047 / 0.017 | 0.088 / 0.085 | +87% / +400% |
+| offset-annotation | 61.222 | 61.222 | unchanged (unrelated) |
+| series median | 0.067 | 0.085 | +27% |
+
+### 7.6 Summary at the submission state
+
+The submission at HEAD 9b82fba is net-mixed, not the net-win the REPORT draft describes:
+
+- Scoreboard #5 (headline): regresses on simple and all RMS, modestly worse on peak_err. The win measured at 8053952 did not survive 4b3b172.
+- Probe peaks: a -78% peak_err_p90 win, decisive on the targeted vertex metric.
+- Probe spikes: a -97% peak_err_median win, decisive on dense-spike tips.
+- Corpus: four double-digit wins (log-log, log-y, linear-dashed, sawtooth-sharp, linear-thick-line), four double-digit losses (narrow-peaks, narrow-small, dark-theme, dense tails); series median rises 0.067 -> 0.085.
+
+A judge measuring the submission at HEAD will see the regression on scoreboard #5 and the wins on the probes and the four corpus wins; the full picture is in the probe-level data, not in the scoreboard median alone. The 8053952 commit (`t3: use the trace's slope in the merged-run and occlusion tests`) is the strongest headline-metric commit in the branch; 9b82fba adds the apex-end gate which trades scoreboard-median accuracy for probe-peak accuracy.

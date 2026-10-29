@@ -201,3 +201,23 @@ Full-scoreboard numbers from the curator at 8053952 (`out/t3/r3-score5.txt`): si
 Corpus local eval: series-median 0.067 -> 0.085 (+27%). Big wins: log-log -42%, log-y -31%, sawtooth-sharp -18%, linear-dashed -52%. Losses: linear-thick-line +102%, dark-theme (big), narrow-peaks +39%, narrow-small +118%. The thick-line and narrow-spike regressions have the same root (tall merged runs put cen off the stroke's centre); the spike-triangle fill the predecessor removed used to make them 10-30x worse.
 
 Still waiting on r3-score1 (e2e with new refine default), r3-score1-norefine (harness isolation), r3-score2 plotly, r3-corpus (curator's run), r3-peaks, r3-spikes.
+
+
+## Wed 28 Oct 2026, 20:32 EDT (replacement curator, Opus 4.7 xhigh)
+
+Resumed after the 5-hour window reset. Partner (brainstormer) completed before the pause and was not respawned; the submission at HEAD 9b82fba stands intact.
+
+Finished the r4 chain (serial, under `flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock`) at HEAD 9b82fba:
+
+- `out/t3/r4-score5.txt` (scoreboard #5, geometry, 200 mpl-val, from the pre-pause run that landed at 18:27): simple line_rms_median 0.312% / all 0.502%, peak_err_median 0.327 / 1.972, peak_err_p90 3.403 / 12.838. Regression versus baseline (0.189 / 0.311 simple RMS) and versus r3-score5 at 8053952 (0.136 / 0.323).
+- `out/t3/r4-peaks.txt` (probe peaks, 240 charts, 20:06-20:08): peak_err_median 0.204 / 0.204 (-5% vs base 0.213 / 0.213); peak_err_p90 **1.487 / 1.487 (-78% vs base 6.841)**. line_rms_median simple 0.218 (-1%), all 0.433 (+37%).
+- `out/t3/r4-spikes.txt` (probe spikes, 160 charts, 20:08-20:19): peak_err_median simple **0.194 (-97% vs base 5.784)**, all 1.099 (-71% vs base 3.831). peak_err_p90 27.482 / 31.580 (vs base 31.441 / 33.411). line_rms simple 1.665, all 3.875.
+- `out/t3/r4-corpus.txt` (corpus, 20:19-20:27): series median 0.085 (vs base 0.067, +27%). log-log 0.759 (-43%), linear-dashed 0.032 (-52%), log-y 0.117 (-31%), sawtooth-sharp 0.220 (-18%), linear-thick-line 0.029 (-31%). narrow-peaks 0.292 (+39%), narrow-small 0.144 (+118%), dark-theme 0.088 / 0.085 (+87% / +400%).
+
+Diagnosis: the final commit 4b3b172 ("apex needs ink falling away on BOTH sides") changes `sided = lambda v: np.inf if v == -np.inf else v` -> `0.0 if v == -np.inf else v`. This suppresses apex marking on terminal columns of lines whose natural endpoints sit on the plot's data edge (ink on one side only). Those columns fall back to the ink centroid (biased by t/2 inward of the true apex) and inflate per-chart RMS on charts whose other columns are near-zero error. The brainstormer's local cache-val60 iter_refine signal said -21% at 4b3b172 because the cache's selection filter had already dropped exactly these trace-edge cases.
+
+The 8053952 commit (`sided -> np.inf`) is the stronger headline-median point in the branch (-28% simple RMS, -10% peak_err_median, -12% peak_err_p90 on the full 200-chart scoreboard). The submission at 9b82fba trades that scoreboard-median win for the probe-peak p90 (6.84 -> 1.49, -78%) and the corpus linear-thick-line fix (0.085 -> 0.029).
+
+Did not re-run the r4 e2e steps (score1, score2); the harness revert in 4c56536 makes the baseline evaluate.py path byte-identical to the frozen baseline when `--refine` is not passed, so the e2e scoreboard numbers on that path hold. The `--refine`-on reading at HEAD is unmeasured.
+
+CASES.md section 7 and REPORT.md updated with the HEAD numbers and the probe/scoreboard divergence mechanism.
