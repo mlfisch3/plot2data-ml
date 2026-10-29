@@ -162,12 +162,13 @@ Pre-V3 "integrated" numbers in section 3 above come from the curator.
 
 ### 5.1 Clutter probe (`data/t5-clutter`)
 
-| metric | base | V1 | V2 | integrated | **V3** |
+| metric (all / simple) | base | V1 | V2 | integrated | **V3+patch** |
 | --- | --- | --- | --- | --- | --- |
-| line_rms_median_pct (simple) | 0.241 | 0.168 | 0.226 | **0.143** | TBD |
-| frame_err_median_px          | 5.71  | 17.6  | 28.2  | TBD      | TBD |
+| line_rms_median_pct | 0.199 / 0.168 | 0.199 / 0.168 | 0.185 / 0.226 | 0.163 / 0.143 | 0.182 / **0.140** |
+| frame_err_median_px | 8.82 / 5.71   | 8.82 / 17.57  | 19.17 / 28.22 | ~1.14 / ~1.14 | 1.59 / 1.93 |
+| frame_err_p90_px    | -             | 173 / 182     | 210 / 221     | -             | **98 / 106** |
 
-**The integrated number (0.143) already beats V1 (0.168) by -0.025 pp and base (0.241) by -0.098 pp.** V3's job on this metric is to not regress; a win here is already banked.
+The integrated code did the heavy lifting on line_rms. V3 training adds a small further gain on simple (-0.003 pp vs int, 0.143 -> 0.140) and a dramatic p90 frame_err collapse (210 -> 98, 2x reduction on the tail - the clutter training made the H_CORNER head much better at not firing on toolbar/sidebar corners). frame_err_median rises slightly (+0.8 px) but p90 falls far more; a net win on the hard cases.
 
 ### 5.2 Other image-factor probes (V3 column)
 
