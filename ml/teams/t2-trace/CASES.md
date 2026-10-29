@@ -138,3 +138,56 @@ Composite overlays (`out/t2c/inspect-val/<seed>.png`) show six panels: the extra
 
 - Examples: 9000031 (13 lines for 2 series), 9000144 (17 for 3), 9000109 (15 for 4), 9000032 (8 for 3).
 - Where they come from: ghost chains along the far flank of a thick or jagged stroke, and the fragments of C1-C3 that `drop_duplicates` keeps because they are not inside a longer trace's envelope. They cost precision downstream (matching, the marker-row filter, and every extra CSV column a user has to delete).
+
+## 6. v3 overlap-merge: measured mitigation per failure case
+
+Live tree committed at 4ab8ee0 (`extract.py` merge_fragments + _join_cost + _end_slope + scipy import; see brainstormer's REPORT.md for the design).
+Snapshot in `ml/out/t2c/live-overlap-merge-v3/`, compared against frozen `ml/out/t2c/v3-*-refine.txt` via `teams/t2-trace/tools/compare_runs.py`.
+
+### Mitigation summary by failure case
+
+| case | mechanism | expected relief | observed on probes |
+| --- | --- | --- | --- |
+| C1 - series cut into long non-overlapping pieces | long-overlap merge rule (`median<=1.5`, `MAD<=1.2`, `drift<=2.5`, `q>=0.3`, `len>=50`) joins same-ridge siblings | big relief for parallel, shallowx, legend | parallel +0.100, shallowx +0.108, legend +0.041 (all / line_found), dotted +0.019 |
+| C2 - hopping at a crossing | not directly addressed; peel_chains unchanged | at most indirect (fewer spurious ghosts for Hungarian) | cross +0.010 (small, as expected) |
+| C3 - steep interruption | long-gap branch (dx 60..90, slope-aware) catches some; most C3 gaps are longer | small relief | steep +0.004, dense +0.007, step +0.011 |
+| C4 - dense/steep one-value-per-column | not addressed; representation-side problem | none | multi +0.002, dense good_cov +0.001, markers 0.000 |
+| C5 - spurious lines (ghosts, fragments) | indirectly reduced because Hungarian no_join=5.0 absorbs orphan fragments into merged chains; drop_duplicates untouched | small negative possible (fewer dedupe wins) | plotly simple -0.009 geometry / -0.019 e2e |
+
+### Probe-by-probe v3 numbers (line_found all / line_good_cov_mean all, with delta vs frozen)
+
+| case | n series | line_found all | d_all | good_cov all | d_cov | rms_median | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| cross | 300 | 0.927 | +0.010 | 0.852 | +0.009 | 0.076% | shallow-angle crossings, 2-4 series |
+| samecolour | 240 | 0.913 | +0.013 | 0.752 | +0.009 | 0.355% | one colour pair, usually a dashed vs solid |
+| parallel | 200 | 0.810 | +0.100 | 0.668 | +0.065 | 0.428% | **big**: near-parallel runs merged via overlap rule. Trade-off: peak_err_median +0.153 (merge lands between slightly-offset peaks). |
+| shallowx | 230 | 0.866 | +0.108 | 0.751 | +0.097 | 0.024% | **big**: shallow-angle crossings with ridge-split clusters now rejoined |
+| legocclude | 303 | 0.825 | +0.007 | 0.709 | +0.015 | 0.087% | legend-box occlusion; most gaps >90 cols so only partial relief |
+| legend | 213 | 0.897 | +0.041 | 0.787 | +0.031 | 0.145% | **new big**: in-plot legend split many series into two long pieces reclaimable by long-overlap rule |
+| steep | 100 | 0.891 | +0.004 | 0.787 | +0.007 | 0.179% | single-series probe; merge rarely applies |
+| dotted | 210 | 0.891 | +0.019 | 0.765 | +0.019 | 0.293% | dashed/dotted series split into pieces now joined |
+| thin | 240 | 0.857 | +0.003 | 0.670 | +0.002 | 0.319% | tight; p90 rms worsens +0.21 (worst 10% of thin-line charts) |
+| small | 210 | 0.707 | +0.007 | 0.544 | +0.006 | 0.248% | at small-canvas scales, limited gain |
+| dense | 220 | 0.919 | +0.007 | 0.106 | +0.001 | 8.5% | C4-dominated; the one-value-per-column limit stays |
+| area | 100 | 0.555 | -0.005 | 0.419 | 0.000 | 0.488% | **slight regression**: fill-top ridges look like cluster-split pairs to the long-overlap rule |
+| step | 215 | 0.849 | +0.011 | 0.733 | +0.011 | 1.624% | plateaus with sharp risers; moderate relief |
+| clipped | 258 | 0.805 | +0.004 | 0.592 | +0.006 | 0.546% | small gain; most clip-induced gaps are too long |
+| multi | 400 | 0.657 | +0.002 | 0.473 | +0.004 | 0.382% | 6+ series charts; dominated by C2 (hopping) and C4 |
+| markers | 240 | 0.917 | 0.000 | 0.817 | +0.004 | 0.269% | marker-only probe; merge not exercised. marker_recall +0.007 |
+| wide | 200 | 0.865 | -0.008 | 0.697 | +0.002 | 0.284% | **slight regression**: at 0.5-scale canvas the ridge is thick and long-overlap sees spurious same-cluster pairs; p90 rms +0.27 |
+
+### End-to-end (OCR) deltas (brainstormer's numbers, confirmed from `out/t2c/live-overlap-merge-v3/val-e2e.txt`, `plotly-e2e.txt`)
+
+- mpl-val 200 e2e: line_found 0.551/0.638 all/simple, matching d_simple +0.013 from geometry.
+- plotly-v1 150 e2e: line_found 0.757/0.757 all/simple, with d_simple -0.019 (OCR calibration doubles the geometry-only -0.009 regression).
+- Corpus (25 series, hand-authored): all 25 found, median RMS 0.067%; tied with frozen v3.
+- Real screenshots (ml/data/real-6): usable, no regressions.
+
+### Regressions worth guarding against in a future pass
+
+1. **parallel peak_err_median +0.153** (0.344 -> 0.498). Line coverage rises but turning-point precision pays. Guard idea: when merging a long-overlap pair, pick the piece whose ends are closer to the extremum, not the median.
+2. **plotly simple -0.009 geometry / -0.019 e2e** (2 of 79 charts). Ghost-ghost joining under long-overlap. Guard idea: `min_q` 0.3 -> 0.4 or require `nov >= 50% min(A.n, B.n)`.
+3. **thin / wide p90 rms blow-outs** (+0.21, +0.27). Canvas-scale extremes; may want a scale-aware gate (ridge width in canvas pixels) on the long-overlap rule.
+4. **area -0.005 line_found**. Minor; filled-area ridges fool the long-overlap rule occasionally.
+
+None of these move the headline mpl-val or plotly line_found; the net is strongly positive.
