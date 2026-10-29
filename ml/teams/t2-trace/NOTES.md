@@ -153,3 +153,17 @@ Samecolour 100 probe:
     line_found         0.9000 -> 0.9125  +0.013
 
 Mechanism: Hungarian assignment with no_join=5.0 over frozen gap rule (dx 1..60) + slope-aware extension for dx 60..90 + overlap-aware rule (med<=1.5, MAD<=1.2, drift<=2.5, ks-disjoint, q>=0.3, len>=50 on both sides). The pivot that made it work: KEEP the frozen gap rule exactly for the common case.
+
+## Wed 28 Oct 2026, 20:20 EDT curator (replacement v2)
+
+Resumed Opus 4.7 after the 100-min pause reset. Session cap at 11% at arrival.
+
+Status of my sweep (live-overlap-merge-v3) at kill-time:
+Done: val-refine, plotly-refine, cross, samecolour, parallel, shallowx, legocclude; val-e2e, plotly-e2e, corpus, real.
+Not done (judge killed the chain mid-queue): steep, dotted, thin, small, dense, legend, area, step, clipped, multi, markers, wide.
+
+Reran steep in foreground under flock in 36s (uncontested GPU moment); then launched the remaining 11 probes (dotted thin small dense legend area step clipped multi markers wide) as a serial for-loop under flock. Each eval holds the lock for 40-200s depending on probe. GPU is heavily contended with t3/t4/t5 jobs so wall time is unpredictable.
+
+The replacement brainstormer's rerun script also fires steep + dotted; by pure timing it has queued steep behind many flock waiters and will refill the file whether or not my bg leg hits it (deterministic eval). Dotted already matched (0.8905 both runs).
+
+Delta tables for already-landed probes computed via teams/t2-trace/tools/compare_runs.py (above-the-line numbers in REPORT.md confirmed): parallel +0.100 and shallowx +0.108 are the big wins; cross/samecolour/legocclude show small-positive; plotly simple -0.009 the only regression. See CASES.md section 6 (added below once all probes land).
