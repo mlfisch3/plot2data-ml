@@ -39,15 +39,18 @@ The end-to-end "all" delta is smaller than geometry-only because tick-reader err
 
 ### Probe sets (geometry only, 100 charts each)
 
-| probe | frozen found | this found | delta | note |
+| probe | frozen found all | this found all | d_all | d_simple |
 | --- | --- | --- | --- | --- |
-| t2-cross | 0.9167 | 0.9267 | +0.010 | crossings held up |
-| t2-samecolour | 0.9000 | 0.9125 | +0.013 | shared-colour pairs recovered |
-| t2-parallel | 0.7100 | **0.8100** | **+0.100** | near-parallel pairs merged correctly |
-| t2-shallowx | 0.7576 | **0.8658** | **+0.108** | shallow crossings merged correctly |
-| t2-legocclude | 0.8179 | 0.8247 | +0.007 | legend occlusion still hurts |
+| t2-cross | 0.9167 | 0.9267 | +0.010 | 0.000 |
+| t2-samecolour | 0.9000 | 0.9125 | +0.013 | +0.013 |
+| t2-parallel | 0.7100 | **0.8100** | **+0.100** | **+0.119** |
+| t2-shallowx | 0.7576 | **0.8658** | **+0.108** | **+0.109** |
+| t2-legocclude | 0.8179 | 0.8247 | +0.007 | +0.013 |
+| t2-dotted | 0.8714 | 0.8905 | +0.019 | +0.019 |
 
-Parallel and shallowx are the pivot of the submission: they hold exactly the pattern the fix was designed for (two chains spanning the same column range because a cluster boundary split one ridge), and both move by about ten points.
+(Twelve further probes - thin, small, dense, legend, area, step, clipped, multi, markers, wide, steep - are running on the shared GPU lock as of submission; the delta table on landing will go into `out/t2c/live-overlap-merge-v3/`.)
+
+Parallel and shallowx are the pivot of the submission: they hold exactly the pattern the fix was designed for (two chains spanning the same column range because a cluster boundary split one ridge), and both move by about ten points on both the "all" and "simple" subsets.
 Cross and samecolour show the fix did not take ground back from crossings or shared-colour pairs; those keep moving the right way too.
 
 Branch: `team/t2-trace`, submission commit `4ab8ee0` ("overlap-aware merge_fragments with Hungarian assignment").
@@ -132,6 +135,11 @@ Honest regressions:
 - **Plotly simple -0.009** (3-series charts 500106 and 500111, 2 of 79 charts regress).
   Hypothesis (not confirmed): overlap-merge joined TWO GHOSTS of a real series into one longer ghost that then survived `drop_duplicates`.
   A guard that raises `min_q` from 0.3 to 0.4 or requires `nov >= 50% min(A.n, B.n)` for the long-overlap branch would address it; not shipped because the mpl-val gain dominates and plotly all-column still rose by +0.016.
+- **t2-parallel: peak_err_median worsened +0.153 all** (0.344 -> 0.498).
+  The merge joins slightly-off-aligned pieces of a near-parallel ridge, so coverage and good_cov rise (parallel found +0.100) but the peak-position of the merged line sits between the two pieces' peaks when their y positions do not perfectly match.
+  Explicit trade-off: more lines found, each slightly less sharp at its extrema.
+  `line_rms_median` and `line_rms_p90` on parallel move by less (+0.026 and +0.049 respectively), so the full curve stays accurate; only turning points pay.
+- **t2-samecolour: `rms_p90` +0.14 (6.63 -> 6.77, ~2% relative).** Minor; same direction as parallel.
 - **t2-legocclude: smaller gain than expected (+0.007 only).**
   Legend occlusion is a different failure mode: the ridge is actually missing under the legend box, not just split. The fix cannot close pixel-level occlusions.
 - **mpl-val per-chart distribution.**
