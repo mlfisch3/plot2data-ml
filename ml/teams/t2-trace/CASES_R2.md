@@ -71,8 +71,8 @@ Round-1 numbers are from `ml/out/t2c/v3-<probe>-refine.txt` (frozen v3, no overl
 
 | probe (line_found all) | frozen v3 | r1 overlap | integ 121ed4d | d_integ-vs-r1 | d_integ-vs-frozen |
 | --- | --- | --- | --- | --- | --- |
-| ghostpair (new r2) | n/a | n/a | _(pending; baseline batch queued)_ | n/a | n/a |
-| parallel | 0.7100 | 0.8100 | _(pending)_ | | |
+| ghostpair (new r2) | n/a | n/a | **0.9126** | n/a | n/a |
+| parallel | 0.7100 | 0.8100 | **0.7150** | **-0.0950** | +0.005 |
 | shallowx | 0.7576 | 0.8658 | _(pending)_ | | |
 | legend | 0.8560 | 0.8971 | _(pending)_ | | |
 | legocclude | 0.8179 | 0.8247 | _(pending)_ | | |
@@ -89,6 +89,17 @@ Round-1 numbers are from `ml/out/t2c/v3-<probe>-refine.txt` (frozen v3, no overl
 | step | 0.8385 | 0.8490 | _(pending)_ | | |
 | clipped | 0.8016 | 0.8054 | _(pending)_ | | |
 | markers | 0.9167 | 0.9167 | _(pending)_ | | |
+
+### Key finding so far
+
+**parallel is a leading indicator**: integrated 121ed4d gives 0.7150 (essentially frozen v3's 0.7100), NOT r1 overlap's 0.8100.
+The r1 overlap-merge gain of +0.100 on parallel measured against frozen v3 did NOT carry through to the integrated model.
+Mechanism: the t5-chartjs native-resolution reader with TTA shift reshapes the embedding sufficiently that the "cluster boundary splits a ridge" pattern happens differently, so the long-overlap merge rule (built on frozen v3's embedding) finds fewer same-ridge pairs to join.
+Implication for round 2: the whole long-overlap branch has reduced leverage under t5, so the r2 fix (which tightens that branch) is operating on a lever that has already lost most of its force.
+
+**ghostpair baseline 0.9126** is in the borderline zone (above 0.90, below 0.95).
+The ghost+ghost pattern does form on the integrated model (~16/183 series lost).
+Ship decision for A rides on whether the fix at `b5f1a32` improves ghostpair by at least 0.03.
 
 Comparison helper: `teams/t2-trace/tools/compare_r1_r2.py`.
 

@@ -46,8 +46,8 @@ Round-2 new probe: `ghostpair`, case index 17 in `p2d/synth/probe_t2.py`, seeds 
 
 | probe | n series | frozen v3 | r1 overlap | integ 121ed4d | d_int-vs-r1 | d_int-vs-frozen |
 | --- | --- | --- | --- | --- | --- | --- |
-| ghostpair (new r2) | _200 approx_ | n/a | n/a | _(pending)_ | n/a | n/a |
-| parallel | 200 | 0.7100 | 0.8100 | _(pending)_ | | |
+| ghostpair (new r2) | 183 | n/a | n/a | **0.9126** | n/a | n/a |
+| parallel | 200 | 0.7100 | 0.8100 | **0.7150** | **-0.0950** | +0.0050 |
 | shallowx | 230 | 0.7576 | 0.8658 | _(pending)_ | | |
 | legend | 213 | 0.8560 | 0.8971 | _(pending)_ | | |
 | legocclude | 303 | 0.8179 | 0.8247 | _(pending)_ | | |
