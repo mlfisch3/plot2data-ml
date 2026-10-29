@@ -32,6 +32,7 @@ class Series:
     vertices_px: np.ndarray | None = None  # sharp corners found by the vertex head, kept exactly
     fallback_frac: float = 1.0  # share of columns the source-pixel measurement left to the network
     ridge_px: np.ndarray | None = None  # N x 3 (x, top, bottom): the vertical extent of the network's ridge per canvas column, source px
+    marker_info: object = None  # markers.SeriesMarkers once the markers were measured on the pixels
 
 
 @dataclass
@@ -43,6 +44,7 @@ class Extraction:
     series: list[Series] = field(default_factory=list)
     raw: dict | None = None
     loose_labels: list[list[float]] = field(default_factory=list)  # tick-label text no tick claimed, source px
+    loose_markers: np.ndarray | None = None  # marker peaks no series took (unlabelled, singletons), source px
 
 
 def prepare(img: np.ndarray, native: bool = True) -> tuple[torch.Tensor, np.ndarray]:
@@ -297,7 +299,14 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
     furniture = (sem[LEGEND_SYMBOL] > 0.5) | (sem[TICK_LABEL] > 0.5) | (sem[TEXT] > 0.5)
     roi &= ~furniture
     ink = (lh > line_thr) & roi
-    mpk = [p for p in peaks(mh, marker_thr, nms=2) if roi[int(round(p[1])), int(round(p[0]))]]
+    # A marker peak that lands on a pixel the network classes as text more strongly than data
+    # (sem[TEXT] >= sem[DATA]) is almost certainly a glyph the heat triggered on: digits of value
+    # labels, the printed end values on real charts, text annotations. The curator's measurement on
+    # mpl-val GT sem maps gave a 0.02% false-veto rate for this condition (3 of 15,781 markers),
+    # against 1.26% if we also include LEGEND_SYMBOL/TICK_LABEL, so we keep the condition to TEXT.
+    mpk = [p for p in peaks(mh, marker_thr, nms=2)
+           if roi[int(round(p[1])), int(round(p[0]))]
+           and sem[TEXT, int(round(p[1])), int(round(p[0]))] < sem[DATA, int(round(p[1])), int(round(p[0]))]]
     ys, xs = np.nonzero(ink)
     pts = np.column_stack([xs, ys])
     mp = np.array([[int(round(p[0])), int(round(p[1]))] for p in mpk], np.int64).reshape(-1, 2)
@@ -367,11 +376,16 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
         se.ridge_px = np.column_stack([top[:, 0], top[:, 1], bot[:, 1]])
         ex.series.append(se)
     scatters = []
+    taken = owner >= 0
     for k in range(lab.max() + 1):
-        mk = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero((mk_lab == k) & (owner < 0))[0]]).reshape(-1, 2)
+        sel = np.nonzero((mk_lab == k) & (owner < 0))[0]
+        mk = np.array([[mpk[i][0], mpk[i][1]] for i in sel]).reshape(-1, 2)
         if len(mk) >= 2:
             scatters.append(_make_series("scatter", np.zeros((0, 2)), mk, Mi, img))
+            taken[sel] = True
     ex.series += merge_by_colour(scatters, img)
+    loose = np.array([[mpk[i][0], mpk[i][1]] for i in np.nonzero(~taken)[0]]).reshape(-1, 2)
+    ex.loose_markers = apply(Mi, loose) if len(loose) else np.zeros((0, 2))
     return ex
 
 
@@ -958,63 +972,8 @@ def _pick_line(prof: np.ndarray, lo: int, p: float, search: float, best):
     return best
 
 
-def refine_markers(img: np.ndarray, ex: Extraction, max_shift: float = 1.5, max_asym: float = 0.2) -> Extraction:
-    """Re-measure markers on the source pixels, where the shape makes the centre unambiguous.
+def refine_markers(img: np.ndarray, ex: Extraction, **kw) -> Extraction:
+    """Re-measure markers on the source pixels: size, centre, convention, and what is not a marker (markers.py)."""
+    from .markers import refine_markers as _refine
 
-    For a shape symmetric under a half turn - circle, square, diamond, cross -
-    every charting library puts the data point at the centroid, so the
-    ink-weighted centroid of the blob is the measurement. For anything else (a
-    triangle, whose data point is the bounding-box centre in matplotlib and the
-    circumcentre in Chart.js) the network's estimate, learned from the drawing
-    conventions themselves, stands. Ink weight is position along the paper-to-
-    series-colour blend, so neighbouring markers of other colours weigh nothing.
-    """
-    paper = _paper_colour(img, ex.plot_area).astype(np.float32)
-    imf = img.astype(np.float32)
-    H, W = img.shape[:2]
-    for se in ex.series:
-        if not len(se.markers_px):
-            continue
-        d = np.array(se.color, np.float32) - paper
-        dd = float(d @ d)
-        if dd < 400:
-            continue
-        out = []
-        for mx, my in se.markers_px:
-            r = 9
-            x0, y0 = int(round(mx)) - r, int(round(my)) - r
-            if x0 < 0 or y0 < 0 or x0 + 2 * r + 1 > W or y0 + 2 * r + 1 > H:
-                out.append((mx, my))
-                continue
-            patch = imf[y0:y0 + 2 * r + 1, x0:x0 + 2 * r + 1] - paper
-            t = (patch @ d) / dd
-            off = np.linalg.norm(patch - t[..., None] * d, axis=-1) / math.sqrt(dd)
-            w = np.where(off < 0.3, np.clip(t, 0, 1), 0.0)
-            n, lab = cv2.connectedComponents((w > 0.5).astype(np.uint8), connectivity=8)
-            c0 = lab[r, r]
-            if c0 == 0:
-                # The estimate is between pixels of the blob: take the component nearest it.
-                ys, xs = np.nonzero(lab)
-                if not len(xs):
-                    out.append((mx, my))
-                    continue
-                c0 = lab[ys[np.argmin((xs - r) ** 2 + (ys - r) ** 2)], xs[np.argmin((xs - r) ** 2 + (ys - r) ** 2)]]
-            blob = cv2.dilate((lab == c0).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0  # keep the antialiased rim
-            if blob[0].any() or blob[-1].any() or blob[:, 0].any() or blob[:, -1].any():
-                out.append((mx, my))  # runs out of the window: touching other ink
-                continue
-            ww = np.where(blob, w, 0.0)
-            yy, xx = np.mgrid[0:2 * r + 1, 0:2 * r + 1]
-            s = ww.sum()
-            cx, cy = (ww * xx).sum() / s, (ww * yy).sum() / s
-            # Half-turn symmetry about the centroid.
-            M = cv2.getRotationMatrix2D((float(cx), float(cy)), 180, 1.0)
-            rot = cv2.warpAffine(ww.astype(np.float32), M, (2 * r + 1, 2 * r + 1), flags=cv2.INTER_LINEAR)
-            asym = float(np.abs(rot - ww).sum() / (2 * s))
-            nx, ny = x0 + cx, y0 + cy
-            if asym <= max_asym and math.hypot(nx - mx, ny - my) <= max_shift:
-                out.append((nx, ny))
-            else:
-                out.append((mx, my))
-        se.markers_px = np.array(out, float)
-    return ex
+    return _refine(img, ex, **kw)
