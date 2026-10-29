@@ -67,12 +67,15 @@ Measured against V2's own numbers in round-1 CASES.md.
 
 **Mechanism** (hypothesised, needs probe_net inspection to confirm). The t1 structured axis decode (axis.py, commit 136fd60) + the t1 _OFFSET regex tightening (commit 9b897ad) parse stray numbers in the chart's annotations or caption as multiplier text. The tightening was supposed to require a `.` or an `e[-+]?\d+` after the sign to count as an offset, which excludes bare integers. But the pattern "1e1" (= 10) and the implausible "1e55" (= 10^55) both match the strict pattern (an `e[-+]?\d+` term). No magnitude sanity check prevents a factor of 10^55 from being applied: the fuser accepts whatever OCR output matches `_MULT`.
 
-**Fix hypothesis.**
-- Add a magnitude sanity check in `pipeline.axis_factor`: reject factor if `abs(log10(factor)) > 10` (anything beyond a one-order-of-magnitude renderer unit multiplier is implausible for a real chart).
-- Compare the factor to the span of tick values the fuser already found: if the span is 0-100 and the factor is 10^55, the factor is wrong.
-- Require at least two independent OCR passes to agree on the multiplier text.
+**Fix** (angle D, committed as `7f8ab85` on `team/t5-robust-r2`): two protections in `ml/p2d/pipeline.py`:
+- Cap exponent in `_parse_factor` to `|e| <= 15` (atto to peta, the physical range of mpl axis multipliers; rejects "1e55" and prevents the OverflowError).
+- Gate `apply_factor` at the call site: a mpl-style multiplier is paired with small-magnitude labels (`|v| < 1000`); when the parsed tick labels already read in the hundreds or more, do not apply the spurious multiplier.
+
+Both are a few-line patch, pytest still passes 110.
 
 **Why INTEGRATION-REPORT.md missed it.** It only ran `eval_real` (5 examples/real charts) and did not run `eval_t5real` (30 charts). The regression manifests only on charts whose annotations contain small-integer tokens near the plot top-left (OWID's "Our World in Data" branding, FRED's series ID, etc.).
+
+**Independent confirmation**: the integrated model also CRASHES with `OverflowError: (34, 'Numerical result out of range')` when evaluated on the `t5r2-clutter-max` probe set. The crash is at `pipeline._parse_factor` line 100 (`10.0 ** int(m.group(1) or m.group(2))`), triggered on a synthetic matplotlib chart whose surrounding clutter OCR'd as a very large exponent. The failure mode is not just a wrong number; it is severe enough to kill the whole run. Angle D's cap `|e| <= 15` fixes both the crash and the silent misreads.
 
 ### 2.2 Corpus-easy regression from source-pixel bias (+0.02 pp)
 
@@ -255,7 +258,7 @@ See section 4. Headline: integrated **regresses** vs V2 (median rms 0.61% -> 1.9
 
 ### 6.5 Round-2 clutter probes, integrated model
 
-(Running. Output in `out/t5r2/r2-clutter-max.txt` and `out/t5r2/r2-clutter-overlap.txt`.)
+Blocked: the integrated model crashes on `t5r2-clutter-max` with `OverflowError` in `pipeline._parse_factor` (see section 2.1 above). Re-runnable once angle D's patch is in. Output files: `out/t5r2/r2-clutter-max.err` (traceback), `out/t5r2/r2-clutter-max.txt` (empty). `r2-clutter-overlap` was never started because the surrounding shell `&&` chain broke on the first probe's crash.
 
 ### Measurement commands
 
