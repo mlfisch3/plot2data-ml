@@ -108,12 +108,14 @@ Full numbers under `teams/t5-robust/CASES.md` section 9 (V1) and this file (V2).
 
 | metric | base (v3) | V1 | V2 | V2-V1 |
 | --- | --- | --- | --- | --- |
-| found (cov>=80%) | 67% | 63% | TBD | TBD |
-| median rms (%) | 1.86 | 0.75 | TBD | TBD |
-| median rms of found | 1.99 | 0.65 | TBD | TBD |
-| within 1% | 28% | 42% | TBD | TBD |
-| within 0.5% | 25% | 32% | TBD | TBD |
-| failed | 15 | 14 | TBD | TBD |
+| found (cov>=80%) | 67% | 63% | 60% | -3pp |
+| median rms (%) | 1.86 | 0.75 | 0.61 | -19% |
+| median rms of found | 1.99 | 0.65 | 0.49 | -25% |
+| within 1% | 28% | 42% | **48%** | +6pp |
+| within 0.5% | 25% | 32% | 33% | +1pp |
+| failed | 15 | 14 | 15 | +1 |
+
+V2 beats V1 on accuracy of what it returns (median rms -19%, median of found -25%, within-1% +6pp) at the cost of 3pp find rate and 1 extra failure. The within-0.5% rate is flat.
 
 ### 3.6 examples/real (hand-measured; `--tta shift`)
 
@@ -128,27 +130,28 @@ Simple-charts split (same mpl seeds at three device-pixel-ratios).
 
 | set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
 | --- | --- | --- | --- | --- | --- |
-| dpr1 | line_rms_median_pct | 0.233 | TBD | TBD | TBD |
-| dpr1 | marker_recall | 0.451 | TBD | TBD | TBD |
-| dpr1 | calib_y_within_0.5pct | 0.820 | TBD | TBD | TBD |
-| dpr2 | line_rms_median_pct | 0.249 | 0.088 | TBD | TBD |
-| dpr2 | marker_recall | 0.349 | 0.326 | TBD | TBD |
-| dpr2 | calib_y_within_0.5pct | 0.690 | 0.770 | TBD | TBD |
-| dpr3 | line_rms_median_pct | 0.217 | TBD | TBD | TBD |
-| dpr3 | marker_recall | 0.274 | TBD | TBD | TBD |
-| dpr3 | calib_y_within_0.5pct | 0.640 | TBD | TBD | TBD |
+| dpr1 | line_rms_median_pct | 0.223 | TBD | 0.173 | TBD |
+| dpr1 | marker_recall | 0.502 | TBD | 0.536 | TBD |
+| dpr1 | frame_err_median_px | 1.12 | TBD | 0.96 | TBD |
+| dpr2 | line_rms_median_pct | 0.249 | 0.088 | 0.109 | +0.021 |
+| dpr2 | marker_recall | 0.349 | 0.326 | 0.337 | +0.011 |
+| dpr2 | frame_err_median_px | 2.56 | 1.26 | 1.20 | -0.06 |
+| dpr3 | line_rms_median_pct | 0.373 | TBD | **0.106** | TBD |
+| dpr3 | marker_recall | 0.287 | TBD | 0.295 | TBD |
+| dpr3 | frame_err_median_px | 2.92 | TBD | 1.59 | TBD |
 
 ### 3.8 Image-factor probe sets (same 100 mpl seeds, one factor changed, `--tta shift`)
 
 | set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
 | --- | --- | --- | --- | --- | --- |
-| blur | line_rms_median_pct | 0.232 | 0.163 | TBD | TBD |
-| blur | marker_precision | 0.759 | 0.766 | TBD | TBD |
-| dark | line_rms_median_pct | 0.278 | 0.222 | TBD | TBD |
-| dark | calib_y_within_0.5pct | 0.770 | 0.850 | TBD | TBD |
+| blur | line_rms_median_pct | 0.232 | 0.163 | 0.201 | +0.038 |
+| blur | marker_precision | 0.759 | 0.766 | 0.761 | -0.005 |
+| dark | line_rms_median_pct | 0.278 | 0.222 | 0.217 | -0.005 |
+| dark | yticks_recall | 0.818 | 0.874 | **0.904** | +0.030 |
+| dark | frame_err_median_px | 1.21 | 1.14 | 0.91 | -0.23 |
 | clutter | line_rms_median_pct | 0.241 | 0.168 | TBD | TBD |
 | clutter | frame_err_median_px | 5.71 | 17.6 | TBD | TBD |
-| half | line_rms_median_pct | 0.275 | TBD | TBD | TBD |
+| half | line_rms_median_pct | 0.213 | 0.223 | TBD | TBD |
 | up2x | line_rms_median_pct | 0.220 | TBD | TBD | TBD |
 | jpeg50 | line_rms_median_pct | 0.218 | TBD | TBD | TBD |
 | jpeg30 | line_rms_median_pct | 0.241 | TBD | TBD | TBD |

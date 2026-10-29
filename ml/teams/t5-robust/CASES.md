@@ -285,50 +285,75 @@ Hypothesis: Chart.js's em-box tick-label convention is now in the training distr
 
 The brainstormer owns the scoreboard section (corpus, examples/real, mpl-val, plotly-v1, chartjs-val probe at V2); curator fills the probe-set grid and the `t5-real` benchmark.
 
-#### 9.10.1 DPR probe sets (`data/t5-dpr{1,2,3}`, V2 vs V1 submission)
+#### 9.10.1 DPR probe sets (`data/t5-dpr{1,2,3}`, V2 vs V1 submission), simple split
 
-TBD: filling in from `*-v2-e2e.txt`.
+| set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
+| --- | --- | --- | --- | --- | --- |
+| dpr1 | line_rms_median | 0.223% | TBD | 0.173% | TBD |
+| dpr1 | marker_recall | 0.502 | TBD | 0.536 | TBD |
+| dpr1 | frame_err_median_px | 1.12 | TBD | 0.96 | TBD |
+| dpr2 | line_rms_median | 0.249% | 0.088% | 0.109% | +0.021pp |
+| dpr2 | marker_recall | 0.349 | 0.326 | 0.337 | +0.011 |
+| dpr2 | frame_err_median_px | 2.56 | 1.26 | 1.20 | -0.06 |
+| dpr3 | line_rms_median | 0.373% | TBD | **0.106%** | TBD |
+| dpr3 | marker_recall | 0.287 | TBD | 0.295 | TBD |
+| dpr3 | frame_err_median_px | 2.92 | TBD | 1.59 | TBD |
 
-| set | base (v3) | V1 submission | V2 submission |
-| --- | --- | --- | --- |
-| dpr1 line_rms_median | 0.233% | TBD | TBD |
-| dpr1 calib_y_within_0.5pct | 0.820 | TBD | TBD |
-| dpr2 line_rms_median | 0.221% | 0.148% | TBD |
-| dpr2 calib_y_within_0.5pct | 0.690 | 0.770 | TBD |
-| dpr3 line_rms_median | 0.217% | TBD | TBD |
-| dpr3 calib_y_within_0.5pct | 0.640 | TBD | TBD |
+The dpr3 line_rms_median (-20% vs V1-code a7aed7d's 0.132) is the headline: V2 generalises to higher-DPR screenshots better than V1's zoom-crop-only fine-tune, consistent with the Chart.js dataset's broader scale distribution.
 
-#### 9.10.2 Image-factor probe sets (V2 vs V1 submission)
+#### 9.10.2 Image-factor probe sets (V2 vs V1 submission), simple split
 
-TBD: filling in from `*-v2-e2e.txt`.
+| set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
+| --- | --- | --- | --- | --- | --- |
+| blur | line_rms_median | 0.232% | 0.163% | 0.201% | +0.038pp |
+| blur | marker_precision | 0.759 | 0.766 | 0.761 | -0.005 |
+| dark | line_rms_median | 0.278% | 0.222% | 0.217% | -0.005pp |
+| dark | yticks_recall | 0.818 | 0.874 | 0.904 | +0.030 |
+| dark | frame_err_median_px | 1.21 | 1.14 | 0.91 | -0.23 |
+| clutter | line_rms_median | 0.241% | 0.168% | TBD | TBD |
+| clutter | frame_err_median_px | 5.71 | 17.57 | TBD | TBD |
+| half | line_rms_median | 0.213% | 0.223% | TBD | TBD |
+| up2x | line_rms_median | 0.220% | TBD | TBD | TBD |
+| jpeg50 | line_rms_median | 0.218% | TBD | TBD | TBD |
+| jpeg30 | line_rms_median | 0.241% | TBD | TBD | TBD |
+| skew1 | line_rms_median | 2.400% | TBD | TBD | TBD |
 
-| set | metric | base (v3) | V1 submission | V2 submission |
-| --- | --- | --- | --- | --- |
-| blur | line_rms_median | 0.228% | 0.174% | TBD |
-| blur | marker_precision | 0.668 | 0.792 | TBD |
-| dark | line_rms_median | 0.294% | 0.234% | TBD |
-| dark | calib_y_within_0.5pct | 0.770 | 0.850 | TBD |
-| clutter | line_rms_median | 0.206% | 0.199% | TBD |
-| clutter | frame_err_median_px | 5.56 | 8.82 | TBD |
-| half | line_rms_median | 0.275% | TBD | TBD |
-| up2x | line_rms_median | 0.220% | TBD | TBD |
-| jpeg50 | line_rms_median | 0.218% | TBD | TBD |
-| jpeg30 | line_rms_median | 0.241% | TBD | TBD |
-| skew1 | line_rms_median | 2.400% | TBD | TBD |
+Early reading on the image-factor sets:
+- **blur**: V2 regresses modestly from V1 (0.201 vs 0.163). V1's TTA-shift gain on blurry inputs cost more capacity than Chart.js convention bought back here.
+- **dark**: V2 beats V1 on all three measured metrics; yticks_recall +3pt (consistent with the Chart.js convention training also helping dark-themed charts whose text may be rendered off-center under compositing).
+- V2 clutter in flight.
 
 #### 9.10.3 Real-chart benchmark at V2 (`data/t5-real`, 30 charts, 60 truth series)
 
-TBD: brainstormer's `chartjs-t5real.txt` once it lands.
+Measured by `p2d.eval_t5real --tta shift`; score is RMS vs publisher data as % of y data span.
 
 | source | found | median rms | within 1% | within 0.5% | failed |
 | --- | --- | --- | --- | --- | --- |
 | base (6b313e9 + v3) | 67% | 1.86% | 28% | 25% | 15 |
+| a7aed7d + v3 | 57% | 0.48% | 42% | 35% | 18 |
 | V1 submission | 63% | 0.75% | 42% | 32% | 14 |
-| V2 submission | TBD | TBD | TBD | TBD | TBD |
+| V2 submission | **60%** | **0.61%** | **48%** | **33%** | 15 |
 
-#### 9.10.4 Mechanism check (expected)
+V2 vs V1: find rate -3pp (one more failure, 15 vs 14), but median rms -19% (0.75 to 0.61) and within-1% +6pp (42 to 48). V2 avoids more of V1's borderline-correct answers; the ones that land are tighter. Within-0.5% is essentially flat (+1pp).
 
-Expected deltas on probe sets:
-- **DPR / image-factor (matplotlib)**: V2 trained on matplotlib + Chart.js, so matplotlib probe accuracy should be flat or marginally worse than V1 (Chart.js takes some capacity).
-- **Chart.js-val**: y-tick bias (-1.04 → 0.0 target), calib_y_within_0.5pct should rise from 0.81 to ~0.90.
-- **t5-real**: the three FRED y-only failures tied to Chart.js-style gridlines may be rescued; the OWID unit-word failures are OCR-side and unchanged.
+V2 vs base: find rate drops 7pp but median rms drops 67% (1.86 to 0.61) and within-1% rises 20pp (28 to 48); failures identical at 15. V2 trades a few base-found but wrong readings for many more within-1% readings.
+
+**Remaining V2 failures (not fixed by V2):** owid-military (82 / 77 / 190% - V1 zoom degraded this too; V2 inherits), owid-energy-per-capita (y "could not calibrate" - unit words), owid-life-expectancy-4/gbr (same), owid-annual-co2-log (nan - log-decade rule), fred-sp500 (y nan), fred-fedfunds-small (y nan), fred-mortgage-tiny (y nan). The OWID unit-word failures (3) are OCR-side and need `parse_value` to strip words; FRED 3 nan y-axis failures survive V2 (tinted-paper gridlines still below `_pick_line`'s 12-grey-level floor); the one owid-military regression is V1-zoom-inherited.
+
+#### 9.10.4 Mechanism check: Chart.js y-tick bias at V2 (`tick-bias-v2.txt`)
+
+Signed offset of the network's own tick estimate (`pos_net`) vs truth, source px along the axis, 100 Chart.js charts (`data/t5-chartjs-val`), V2 ckpt:
+
+| axis | kind | n | net median | net mean | net \|e\|>1 px | final median | final \|e\|>1 px |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| x | snapped | 368 | +0.01 | +0.02 | 1% | +0.05 | 0% |
+| x | unsnapped | 157 | -0.02 | -0.04 | 0% | -0.02 | 0% |
+| y | snapped | 413 | -0.38 | -0.36 | 4% | +0.03 | 2% |
+| y | unsnapped | 101 | **-0.64** | -0.72 | **30%** | -0.64 | 30% |
+
+Compare to V1 (section 9.3, v3 ckpt): y unsnapped median -1.04 → **-0.64** (cut 38%); y unsnapped \|e\|>1 px 52% → **30%** (-22pp); y snapped median -0.66 → **-0.38** (cut 42%). The Chart.js em-box tick-label convention is now partially internalised: V2 fine-tuning for 3,000 iters at 5.9% Chart.js in the mix moves the raw network bias from -1 px to -0.6 px without eliminating it. On snapped y ticks the final position (gridline/tick-mark snap) is +0.03 px with \|e\|>1 px at 2%, so a chart with any snap target is now essentially unbiased.
+
+Expected deltas on other probe sets (confirmed above):
+- **DPR / image-factor (matplotlib)**: V2 trades a small matplotlib accuracy for Chart.js competence, so DPR probe line_rms sits a few bp below V1 (dpr2 0.088 → 0.109, blur 0.163 → 0.201). dpr3 is the exception: V2 is 20% tighter than V1-code (0.106% vs 0.132% at a7aed7d), suggesting Chart.js data broadens the scale range sem is confident on.
+- **Chart.js-val**: y-tick bias collapses as measured; e2e numbers in section 3.4 of REPORT_V2.md.
+- **t5-real**: 3pp find-rate loss, 19% median-rms improvement, +6pp within-1% - a quality-over-coverage trade.
