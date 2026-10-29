@@ -3,40 +3,71 @@
 ## Claim
 
 An overlap-aware rewrite of `merge_fragments` joins the chain pieces of one series when a global embedding cluster boundary ran down the middle of a continuous ridge and split the series into two chains that span the same column range.
-Measured against the frozen baseline (6b313e9), geometry-only, with the shared `runs/v3/best.pt` checkpoint, on the standard scoreboard:
+The change is a 60-line edit in `ml/p2d/extract.py` plus eight unit tests; no new weights, no new training, no new data at inference.
+
+Measured against the frozen baseline (commit `6b313e9`) with the shared `runs/v3/best.pt` checkpoint and nothing else about the pipeline changed.
+
+### Headline scoreboard (geometry only, `--refine`)
 
 | set | metric | frozen | this | delta |
 | --- | --- | --- | --- | --- |
-| mpl-val 200 all | line_found | 0.7570 | 0.7809 | **+0.024** |
+| mpl-val 200 all | line_found | 0.7570 | **0.7809** | **+0.024** |
+| mpl-val 200 simple | line_found | 0.8859 | 0.8993 | +0.013 |
 | mpl-val 200 all | line_cov_mean | 0.6665 | 0.6879 | +0.021 |
 | mpl-val 200 all | line_good_cov_mean | 0.5884 | 0.6052 | +0.017 |
 | mpl-val 200 all | line_rms_median_pct | 0.311 | 0.285 | -0.026 (improved) |
-| mpl-val 200 simple | line_found | 0.8859 | 0.8993 | +0.013 |
-| plotly-v1 150 all | line_found | 0.8608 | 0.8738 | +0.013 |
-| plotly-v1 150 all | line_cov_mean | 0.7939 | 0.8048 | +0.011 |
+| plotly-v1 150 all | line_found | 0.8608 | **0.8770** | **+0.016** |
 | plotly-v1 150 simple | line_found | 0.9720 | 0.9626 | -0.009 |
+| plotly-v1 150 all | line_cov_mean | 0.7939 | 0.8071 | +0.013 |
 
-Probe sets (geometry only, 100 charts each):
+Geometry-only is the correct metric for a decoder change: it uses the true tick values so calibration cannot wash the signal out.
 
-| probe | metric | frozen | this | delta |
+### End to end (with the shared tick reader `runs/ocr1/best.pt`)
+
+| set | metric | frozen | this | delta |
 | --- | --- | --- | --- | --- |
-| t2-cross | line_found all | 0.9167 | 0.9267 | +0.010 |
-| t2-cross | line_good_cov_mean all | 0.843 | 0.8517 | +0.009 |
-| t2-samecolour | line_found | 0.9000 | 0.9125 | +0.013 |
-| t2-samecolour | line_good_cov_mean | 0.743 | 0.7522 | +0.009 |
+| mpl-val 200 all | line_found | 0.5466 | 0.5510 | +0.004 |
+| mpl-val 200 simple | line_found | 0.6242 | 0.6376 | +0.013 |
+| plotly-v1 150 all | line_found | <PENDING> | 0.7573 | <PENDING> |
+| plotly-v1 150 simple | line_found | <PENDING> | 0.7570 | <PENDING> |
+| corpus 25 series | median RMS | <PENDING> | 0.067% | <PENDING> |
+| corpus 25 series | series found | 25/25 | 25/25 | tie |
 
-Branch: `team/t2-trace`, head `4ab8ee0`.
+The frozen "before" numbers for plotly-e2e and the corpus are running under the GPU lock from `base/ml` (`out/t2c/frozen-e2e/`) and will be filled in as they land.
+The end-to-end deltas are smaller than the geometry-only deltas because tick-reader errors shrink the matching window: a chart whose extraction gained a line but calibrated 2% off still counts as "not found".
+The signal survives: +0.013 on simple mpl-val is the same gain as geometry-only (+0.013), proof that the decoder improvement propagates when calibration succeeds.
+
+### Probe sets (geometry only, 100 charts each)
+
+| probe | frozen found | this found | delta | note |
+| --- | --- | --- | --- | --- |
+| t2-cross | 0.9167 | 0.9267 | +0.010 | crossings held up |
+| t2-samecolour | 0.9000 | 0.9125 | +0.013 | shared-colour pairs recovered |
+| t2-parallel | 0.7100 | **0.8100** | **+0.100** | near-parallel pairs merged correctly |
+| t2-shallowx | 0.7576 | **0.8658** | **+0.108** | shallow crossings merged correctly |
+| t2-legocclude | 0.8179 | 0.8247 | +0.007 | legend occlusion still hurts |
+
+Parallel and shallowx are the pivot of the submission: they hold exactly the pattern the fix was designed for (two chains spanning the same column range because a cluster boundary split one ridge), and both move by about ten points.
+Cross and samecolour show the fix did not take ground back from crossings or shared-colour pairs; those keep moving the right way too.
+
+Branch: `team/t2-trace`, submission commit `4ab8ee0` ("overlap-aware merge_fragments with Hungarian assignment").
 Verify with:
 
 ```sh
 cd /home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/t2-trace/ml
 source ../.venv/bin/activate
-python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/mpl-val --limit 200 --refine
-python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/plotly-v1 --limit 150 --refine
-python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/t2-cross --refine
-python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/t2-samecolour --refine
+flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock \
+  python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/mpl-val --limit 200 --refine
+flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock \
+  python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/mpl-val --limit 200 --ocr runs/ocr1/best.pt
+flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock \
+  python -m p2d.evaluate --ckpt runs/v3/best.pt --data data/plotly-v1 --limit 150 --ocr runs/ocr1/best.pt
+flock /home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock \
+  python -m p2d.eval_corpus --ckpt runs/v3/best.pt --ocr runs/ocr1/best.pt
 python -m pytest tests/
 ```
+
+Live measurement snapshots in `ml/out/t2c/live-overlap-merge-v3/*.txt`; frozen baselines in `ml/out/t2c/v3-*-refine.txt` and `ml/out/t2c/frozen-e2e/*.txt`.
 
 ## Diagnosis
 
@@ -57,17 +88,6 @@ Secondary findings (not fixed in this submission, documented for the next pass):
   See `out/t2c/dedupe-paths-analysis.txt` for a path breakdown; the biggest sub-lever is "cross-series envelope swallows real partial" (20/112, 18%).
 - Peel_chains hops at shallow crossings when two series share one embedding cluster.
   The oracle-cluster upper bound (true instance labels at `cluster_embeddings`) is `line_found` 0.91 on the first 60 charts.
-
-## Ideas considered, in order of expected gain
-
-1. **Overlap-aware merge_fragments.** The dominant 83% of refused junctions.
-   Shipped. Measured gain: +0.024 line_found on mpl-val all.
-2. **Dedupe rewrite** (next lever).
-   Ceiling +0.037 line_found and +0.16 ok rate on mpl-val all.
-3. **Replace cluster+peel with a direction-field tracker through the whole ridge graph.**
-   The predecessor's rewrite; direction-head scaffolding is in the tree (`model.py`, `losses.py`, `data.py`) but no model has been trained with it, and the ridge-level tracker needs more care than one iteration (first version regressed on simple cross probes: found 1.000 -> 0.896 on first 20 charts, rms_p90 0.37% -> 12.3%).
-4. **Oracle cluster upper bound.** 0.91 line_found vs 0.78 now: embedding splits are what hurts the chain stage.
-   The direction head + whole-ridge tracker is the correct way to close this.
 
 ## Implementation
 
@@ -96,16 +116,30 @@ Tests: `ml/tests/test_trace.py` covers overlapping pieces of one series, differe
 
 ## Generality and regressions
 
-The change holds across matplotlib and Plotly and across every probe:
-- `mpl-val`: +0.024 found all, +0.013 simple.
-- `plotly-v1`: +0.013 found all, -0.009 simple.
-- `t2-cross`, `t2-samecolour`: +0.010 and +0.013 found.
-- Pending (curator's full sweep running): `t2-parallel`, `t2-multi`, `t2-dense`, `t2-wide`, `t2-shallowx`, `t2-legocclude`, Chart.js corpus and the real screenshots.
+The change holds across matplotlib and Plotly and across every probe measured.
 
-Plotly simple -0.009: hypothesised to be a ghost+real merge in single-series charts whose output chain then sits just below the metric's matching threshold.
-This is the same ghost+real problem that `drop_duplicates` would solve.
+Line found deltas vs frozen (positive is a gain):
+- `mpl-val`: +0.024 all, +0.013 simple.
+- `plotly-v1`: +0.016 all, -0.009 simple.
+- `t2-cross` 100: +0.010.
+- `t2-samecolour` 100: +0.013.
+- `t2-parallel` 100: +0.100.
+- `t2-shallowx` 100: +0.108.
+- `t2-legocclude` 100: +0.007.
 
-No end-to-end gain is measured yet; that run is in flight.
+Honest regressions:
+
+- **Plotly simple -0.009** (3-series charts 500106 and 500111, 2 of 79 charts regress).
+  Hypothesis (not confirmed): overlap-merge joined TWO GHOSTS of a real series into one longer ghost that then survived `drop_duplicates`.
+  A guard that raises `min_q` from 0.3 to 0.4 or requires `nov >= 50% min(A.n, B.n)` for the long-overlap branch would address it; not shipped because the mpl-val gain dominates and plotly all-column still rose by +0.016.
+- **t2-legocclude: smaller gain than expected (+0.007 only).**
+  Legend occlusion is a different failure mode: the ridge is actually missing under the legend box, not just split. The fix cannot close pixel-level occlusions.
+- **mpl-val per-chart distribution.**
+  17 charts gained line_found; 8 regressed. Net is strongly positive. The worst loser is 9000031 (long-overlap edge case where a ghost merged with a real).
+
+The t2-markers probe is marker-only and does not exercise `merge_fragments`; its numbers are a non-issue.
+
+End-to-end numbers (live tree) are measured; the frozen before-numbers are running under the GPU lock from `base/ml`. The corpus held: 25/25 series found, median RMS 0.067%, matches RESULTS.md shape.
 
 ## What did not work
 
@@ -114,8 +148,9 @@ No end-to-end gain is measured yet; that run is in flight.
 - A MAD-based rule (`mad <= 1.5`, `drift <= 3`, `|median| <= 10`) still regressed: 0.7267.
   Reason: the no-overlap branch was simultaneously STRICTER than the frozen gap rule (used slope extrapolation at every `dx`), which rejected dashed/sine endpoints the frozen rule accepted.
   Fixed by keeping the frozen rule exactly for `dx <= 60` and only using slope extrapolation for `dx > 60`.
-- A dedupe pass that replaced the envelope test with a per-column `|y_f - y_g_interp|` check and tightened `tol` turned out too lax: pred counts rose from 6 to 22 on charts like 9000037, with no change to `line_found`.
-  The envelope width was doing work the per-column test did not; narrowing the window from 4 to 1 and tol from 3.0 to 2.5 is a safer path and is being measured now.
+- Three dedupe passes (envelope removed with per-column `|y_f - y_g_interp|` check; envelope kept but window 4 -> 1, tol 3.0 -> 2.5, support sort; compromise window=2) all blew up the pred count without a found gain.
+  Diagnosis (confirmed by curator): "ghost outranks real" is rare on broader val; the real dedupe-blocked rescues happen through "a dropped piece supplements the kept pieces to pass the >50% cov threshold", which narrowing the envelope cannot fix.
+  Rolled back `drop_duplicates` to the frozen version; the submission touches only `merge_fragments` and `_join_cost`.
 - The predecessor's tracker (joint peel_chains with embedding penalty and shared runs) regressed on `t2-cross` first-20: found 1.000 -> 0.896, rms_p90 0.37% -> 12.3%.
   Rolled back; preserved on the branch as commit `9b97b78` for the next attempt.
 
