@@ -28,14 +28,22 @@ Geometry-only is the correct metric for a decoder change: it uses the true tick 
 | --- | --- | --- | --- | --- |
 | mpl-val 200 all | line_found | 0.5466 | 0.5510 | +0.004 |
 | mpl-val 200 simple | line_found | 0.6242 | 0.6376 | **+0.013** |
-| plotly-v1 150 all | line_found | pending (see below) | 0.7573 | pending |
-| plotly-v1 150 simple | line_found | pending | 0.7570 | pending |
-| corpus 25 series | median RMS | pending | 0.067% | pending |
-| corpus 25 series | series found | 25/25 | 25/25 | tie |
+| plotly-v1 150 all | line_found | 0.7540 | 0.7573 | +0.003 |
+| plotly-v1 150 simple | line_found | 0.7757 | 0.7570 | **-0.019** |
+| corpus 25 series | median RMS | 0.067% | 0.067% | tie |
+| corpus 25 series | series found | 25/25 (log-y 4/1) | 25/25 (log-y 5/1) | tie / one extra false pred |
 
-The frozen "before" numbers for plotly-e2e and the corpus are queued under the shared GPU lock from `base/ml`; 17 other jobs were ahead of them on the lock at the time of submission, so the back-fill will happen asynchronously into `out/t2c/frozen-e2e/plotly-e2e.txt` and `.../corpus.txt`.
-The signal propagating is already proven: +0.013 on simple mpl-val end-to-end matches the +0.013 geometry-only delta on the same set, i.e. the decoder gain carries through intact wherever calibration succeeds.
-The end-to-end "all" delta is smaller than geometry-only because tick-reader errors shrink the matching window: a chart whose extraction gained a line but calibrated 2% off still counts as "not found".
+End-to-end deltas are smaller (and in one case negative) because tick-reader errors shrink the matching window: a chart whose extraction gained a line but calibrated 2% off still counts as "not found".
+
+The signal that propagates:
+- **+0.013 on simple mpl-val end-to-end matches the +0.013 geometry-only delta** on the same set - the decoder gain carries through intact when calibration succeeds.
+
+The signal that does not:
+- **plotly simple -0.019 end-to-end vs -0.009 geometry-only**: the plotly simple regression doubles under the OCR pipeline.
+  Same mechanism as the geometry-only loss (ghost+ghost merge in 1-3 series charts) but calibration jitter amplifies it: a chart with a slightly-wrong extracted line slips below the matching threshold more easily.
+  This is now the clearest signal that the ghost-ghost guard proposed in "Next steps" is worth doing first on any follow-up.
+
+The corpus held: same median RMS, same series counts; the only difference is one extra false line prediction on `log-y` (5 lines predicted vs 4; the true count is 1, so both are already "wrong" by the same amount, just differently wrong).
 
 ### Probe sets (geometry only, 100 charts each)
 
@@ -133,9 +141,11 @@ Line found deltas vs frozen (positive is a gain):
 
 Honest regressions:
 
-- **Plotly simple -0.009** (3-series charts 500106 and 500111, 2 of 79 charts regress).
+- **Plotly simple regresses in both measurements: -0.009 geometry-only, -0.019 end-to-end** (2 charts, 500106 and 500111, drive most of it).
   Hypothesis (not confirmed): overlap-merge joined TWO GHOSTS of a real series into one longer ghost that then survived `drop_duplicates`.
-  A guard that raises `min_q` from 0.3 to 0.4 or requires `nov >= 50% min(A.n, B.n)` for the long-overlap branch would address it; not shipped because the mpl-val gain dominates and plotly all-column still rose by +0.016.
+  A guard that raises `min_q` from 0.3 to 0.4 or requires `nov >= 50% min(A.n, B.n)` for the long-overlap branch would address it; not shipped because the mpl-val gain dominates and plotly-all still rose (+0.016 geometry, +0.003 e2e).
+  The end-to-end -0.019 doubles the geometry-only loss because calibration jitter in a 1-3 series chart tips the matching threshold more easily when the line is slightly wrong.
+  **This is now the first thing to do in any follow-up round.**
 - **t2-parallel: peak_err_median worsened +0.153 all** (0.344 -> 0.498).
   The merge joins slightly-off-aligned pieces of a near-parallel ridge, so coverage and good_cov rise (parallel found +0.100) but the peak-position of the merged line sits between the two pieces' peaks when their y positions do not perfectly match.
   Explicit trade-off: more lines found, each slightly less sharp at its extrema.
