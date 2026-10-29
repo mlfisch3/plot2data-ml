@@ -1,29 +1,31 @@
 """Compare integrated-model probe numbers to round-1 numbers.
 
-Reads a chosen metric (default line_found) all/simple from:
+Reads line_found all/simple (or any other metric) from:
   r1 frozen:   /home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/t2-trace/ml/out/t2c/v3-<probe>-refine.txt
   r1 overlap:  /home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/t2-trace/ml/out/t2c/live-overlap-merge-v3/<probe>-refine.txt
-  r2 integ:    ml/out/t2r2/int-<probe>-refine.txt
+  r2 integ:    /tmp/claude-1000/.../scratchpad/t2-baseline/ml/out/t2r2-base/int-<probe>-refine.txt
+  r2 fix:      /home/drd/PROJECT/CLAUDE/PLOT2DATA-r2/t2-trace/ml/out/t2r2/int-<probe>-refine.txt (if present)
 
-Prints a markdown table that fills section 3 of CASES_R2.md.
+Prints a markdown table that fills the probe-set section in CASES_R2.md / REPORT_R2_sections.md.
 
 Usage:
-  python -m teams.t2-trace.tools.compare_r1_r2 [metric]
+  python ml/teams/t2-trace/tools/compare_r1_r2.py [metric]
+  metric defaults to line_found; try line_cov_mean, line_rms_median_pct, peak_err_median_pct ...
 """
 from __future__ import annotations
 import os
 import re
 import sys
 
-PROBES = ["cross", "samecolour", "parallel", "shallowx", "legocclude", "legend", "dotted", "steep",
-          "thin", "small", "dense", "area", "step", "clipped", "multi", "markers", "wide", "ghostpair"]
+PROBES = ["ghostpair", "parallel", "shallowx", "legend", "legocclude", "multi", "wide", "area",
+          "cross", "samecolour", "dotted", "steep", "thin", "small", "dense", "step", "clipped", "markers"]
 R1_FROZEN = "/home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/t2-trace/ml/out/t2c"
 R1_OVERLAP = "/home/drd/PROJECT/CLAUDE/PLOT2DATA-teams/t2-trace/ml/out/t2c/live-overlap-merge-v3"
-R2_INT = "/home/drd/PROJECT/CLAUDE/PLOT2DATA-r2/t2-trace/ml/out/t2r2"
+R2_BASE = "/tmp/claude-1000/-home-drd-PROJECT-CLAUDE-PLOT2DATA/23ab78d4-5220-41dc-a4b1-aa1de0c3c1f6/scratchpad/t2-baseline/ml/out/t2r2-base"
+R2_FIX = "/home/drd/PROJECT/CLAUDE/PLOT2DATA-r2/t2-trace/ml/out/t2r2"
 
 
 def _read(path: str, metric: str = "line_found") -> tuple[float | None, float | None]:
-    """Return (all, simple) for `metric` from an evaluate-style output file."""
     if not os.path.exists(path):
         return None, None
     try:
@@ -32,7 +34,7 @@ def _read(path: str, metric: str = "line_found") -> tuple[float | None, float | 
     except OSError:
         return None, None
     for line in text.splitlines():
-        m = re.match(rf"^{re.escape(metric)}\s+([\d.nan-]+)\s+([\d.nan-]+)\s*$", line)
+        m = re.match(rf"^{re.escape(metric)}\s+([\d.na-]+)\s+([\d.na-]+)\s*$", line)
         if m:
             def _as_float(s: str) -> float | None:
                 try:
@@ -44,31 +46,30 @@ def _read(path: str, metric: str = "line_found") -> tuple[float | None, float | 
 
 
 def _fmt(x: float | None) -> str:
-    if x is None:
-        return "-"
-    return f"{x:.4f}"
+    return "-" if x is None else f"{x:.4f}"
 
 
 def _delta(a: float | None, b: float | None) -> str:
     if a is None or b is None:
         return "-"
     d = a - b
-    sign = "+" if d >= 0 else ""
-    return f"{sign}{d:.4f}"
+    return f"{'+' if d >= 0 else ''}{d:.4f}"
 
 
 def main() -> None:
     metric = sys.argv[1] if len(sys.argv) > 1 else "line_found"
     print(f"\n### {metric}\n")
-    print(f"| probe | frozen v3 all | r1 overlap all | integrated all | d_int-vs-r1 | d_int-vs-frozen |")
-    print("| --- | --- | --- | --- | --- | --- |")
+    cols = ["probe", "frozen v3", "r1 overlap", "integ 121ed4d", "r2 fix b5f1a32", "d_int-vs-r1", "d_fix-vs-int"]
+    print("| " + " | ".join(cols) + " |")
+    print("| " + " | ".join(["---"] * len(cols)) + " |")
     for p in PROBES:
         f_all, _ = _read(f"{R1_FROZEN}/v3-{p}-refine.txt", metric)
         o_all, _ = _read(f"{R1_OVERLAP}/{p}-refine.txt", metric)
         if o_all is None:
             o_all, _ = _read(f"{R1_OVERLAP}/{p}.txt", metric)
-        i_all, _ = _read(f"{R2_INT}/int-{p}-refine.txt", metric)
-        print(f"| {p} | {_fmt(f_all)} | {_fmt(o_all)} | {_fmt(i_all)} | {_delta(i_all, o_all)} | {_delta(i_all, f_all)} |")
+        i_all, _ = _read(f"{R2_BASE}/int-{p}-refine.txt", metric)
+        x_all, _ = _read(f"{R2_FIX}/int-{p}-refine.txt", metric)
+        print(f"| {p} | {_fmt(f_all)} | {_fmt(o_all)} | {_fmt(i_all)} | {_fmt(x_all)} | {_delta(i_all, o_all)} | {_delta(x_all, i_all)} |")
 
 
 if __name__ == "__main__":
