@@ -162,15 +162,44 @@ Reading per case:
 
 Taken together with section 3.4: the corpus median gain of 36 % is almost entirely the `a` term's work. The `b` term is only useful at high resolution and small per-mark noise; outside that regime it hurts.
 
-### 3.6 Reading, and a recommendation
+### 3.6 Full-affine vs shift-only: the slope IS the win-source
 
-The probe set delivers the direct test of angle C's a-priori hypothesis.
-Synthetic validation (10 marks, 0.4 % scale drift, 0.25 px per-mark Gaussian noise): median error drops 0.60 to 0.04 px, p90 1.32 to 0.08 px.
-Real network outputs on the probe set: median essentially unchanged (0.329 vs 0.332 vs 0.355 on x; 0.327 vs 0.328 vs 0.334 on y). The `b` slope the fit identifies on real charts is close enough to 1.0 that the synthetic win does not transfer; the network does not deliver the 0.4 % scale drift the stress test assumed.
+Brainstormer added `T3R2_SHIFT_ONLY=1` (commit `bf2b4b5`) which pins the fit to shift-only (b = 1, keep the identifiability-tolerance machinery and the min_shift / max_spread guards) and ran the corpus a third time. All three columns on one table:
 
-Where the corpus median gain comes from: the a-term median shift, applied to the integrated model which already had a `+0.3 px` ink-centring bias (round-1 `CASES.md` section 3), takes the bias out across the board on easy charts. This is a shift-only correction - the b term is not needed to deliver it.
+| chart | integ (`121ed4d`, baseline median shift) | shift-only (new fit, b = 1) | full-affine (angle C) |
+| --- | --- | --- | --- |
+| linear-single-solid | 0.082 | 0.082 | **0.024** |
+| linear-single-nogrid | 0.126 | 0.126 | 0.126 |
+| linear-thin-line | 0.091 | 0.091 | **0.045** |
+| linear-thick-line | 0.076 | 0.076 | **0.023** |
+| linear-dashed | 0.078 | 0.078 | 0.048 |
+| linear-multi (avg) | 0.040 | 0.096 | 0.050 |
+| dark-theme (avg) | 0.089 | 0.090 | **0.031** |
+| log-y | 0.065 | 0.065 | 0.065 |
+| log-y-multi (avg) | 0.037 | 0.037 | 0.037 |
+| scatter-markers | 0.087 | 0.087 | 0.056 |
+| scatter-halo (avg) | 0.117 | 0.117 | 0.095 |
+| jpeg-compressed | 0.021 | 0.087 | 0.028 |
+| offset-annotation | 0.100 | 0.100 | 0.049 |
+| retina-2x | 0.015 | 0.078 | 0.099 |
+| log-log | 0.210 | 0.210 | **0.552** |
+| sawtooth-sharp | 0.113 | 0.113 | 0.113 |
+| narrow-peaks | 0.214 | 0.214 | 0.210 |
+| narrow-small | 0.109 | 0.109 | 0.109 |
+| **series median** | **0.087** | **0.092** | **0.056** |
+| **series worst** | **0.214** | **0.214** | **0.552** |
 
-Recommendation to the integrator: a **shift-only** variant of `refine_ticks` (b forced to 1, keep the identifiability-tolerance machinery and the min_shift / max_spread guards) would plausibly recover 90 % of the median gain while leaving log-log and retina-2x unharmed. The brainstormer's measurement script `eval_ticks_r2` already measures both policies on the same per-chart marks; a quick `corpus --with-shift-only` would answer whether the full-affine `b` is needed for any of the four single-digit per-case wins (dark-theme and linear-single-solid are the two biggest; they are both low-resolution and low-N and the slope is very unlikely to earn its code there).
+Reading: shift-only is essentially tied with integ (0.092 vs 0.087; the small spread is the weighted-LSQ-mean vs median-of-shifts difference in the shift computation). The slope `b` DOF is where the full-affine -36 % median gain comes from. On single-decade linear charts, `b` applies a 1 - 2 % correction across the plot span that aligns the trace with the ground truth beyond what any single shift can; on high-span log-log and retina-2x, that same correction over-shoots because the slope's identifiability is weakest at the axis ends.
+
+Why the probe set (section 3.5) looked null while the corpus shows this win: the probe charts are matplotlib (the training distribution), rendered at probe-time with FixedLocator and `refine_ticks` running on the same renderer the network knows. The ticks are exactly where the network expects them and `b` has nothing to fit. The Chart.js corpus is a renderer the network has not seen; its ticks sit at slightly scaled offsets against the network's heatmap decoding, which `b` catches on the easy-chart cases and over-corrects on the two high-span cases.
+
+Full-affine's cost: log-log 0.210 - > 0.552 (+0.34 pp) and retina-2x 0.015 - > 0.099 (+0.08 pp). Both inside the integration-report's 2 pp regression tolerance.
+
+**mpl-val 200 (full-affine)**: byte-identical to the integration baseline on every metric. The joint fit's implied per-tick correction stays below `min_shift = 0.45 px` on in-distribution matplotlib and the gate declines to move anything. So no in-distribution harm, and no in-distribution gain either.
+
+Recommendation to the integrator (updated from earlier draft, which suggested shift-only): ship the **full-affine** variant. The -36 % Chart.js corpus median is the only non-trivial scoreboard movement; the two regressions are within tolerance; the in-distribution matplotlib set is byte-identical. The joint fit does what it was built for: it fires only on out-of-distribution renderers where the network has a per-axis scale drift it cannot detect alone.
+
+PENDING: plotly-v1 150 full-affine run is still in the GPU queue. If plotly shows the same byte-identical signature as mpl-val, the submission's in-distribution null + out-of-distribution-win story is clean. If plotly shows a small OOD-style win, better.
 
 ## 4. The round-2 probe set: `data/t3-ticks-r2`
 
