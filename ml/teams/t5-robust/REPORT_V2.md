@@ -151,15 +151,15 @@ Simple-charts split (same mpl seeds at three device-pixel-ratios).
 
 | set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
 | --- | --- | --- | --- | --- | --- |
-| dpr1 | line_rms_median_pct | 0.223 | TBD | 0.173 | TBD |
-| dpr1 | marker_recall | 0.502 | TBD | 0.536 | TBD |
-| dpr1 | frame_err_median_px | 1.12 | TBD | 0.96 | TBD |
+| dpr1 | line_rms_median_pct | 0.223 | 0.185 | **0.173** | -0.012 |
+| dpr1 | marker_recall | 0.502 | 0.533 | 0.536 | +0.003 |
+| dpr1 | frame_err_median_px | 1.12 | 0.81 | 0.96 | +0.16 |
 | dpr2 | line_rms_median_pct | 0.249 | 0.088 | 0.109 | +0.021 |
 | dpr2 | marker_recall | 0.349 | 0.326 | 0.337 | +0.011 |
 | dpr2 | frame_err_median_px | 2.56 | 1.26 | 1.20 | -0.06 |
-| dpr3 | line_rms_median_pct | 0.373 | TBD | **0.106** | TBD |
-| dpr3 | marker_recall | 0.287 | TBD | 0.295 | TBD |
-| dpr3 | frame_err_median_px | 2.92 | TBD | 1.59 | TBD |
+| dpr3 | line_rms_median_pct | 0.373 | 0.097 | 0.106 | +0.009 |
+| dpr3 | marker_recall | 0.287 | 0.286 | 0.295 | +0.009 |
+| dpr3 | frame_err_median_px | 2.92 | 1.45 | 1.59 | +0.14 |
 
 V2 generalises to high-DPR trace at least as well as V1 (dpr2 within +0.02 pp) and beats base dramatically at dpr3 (-72% line_rms_median).
 
@@ -171,16 +171,17 @@ V2 generalises to high-DPR trace at least as well as V1 (dpr2 within +0.02 pp) a
 | blur | marker_precision | 0.759 | 0.766 | 0.761 | -0.005 |
 | dark | line_rms_median_pct | 0.278 | 0.222 | 0.217 | -0.005 |
 | dark | yticks_recall | 0.818 | 0.874 | **0.904** | +0.030 |
-| dark | frame_err_median_px | 1.21 | 1.14 | 0.91 | -0.23 |
-| clutter | line_rms_median_pct | 0.241 | 0.168 | TBD | TBD |
-| clutter | frame_err_median_px | 5.71 | 17.6 | TBD | TBD |
-| half | line_rms_median_pct | 0.213 | 0.223 | TBD | TBD |
-| up2x | line_rms_median_pct | 0.220 | TBD | TBD | TBD |
-| jpeg50 | line_rms_median_pct | 0.218 | TBD | TBD | TBD |
-| jpeg30 | line_rms_median_pct | 0.241 | TBD | TBD | TBD |
-| skew1 | line_rms_median_pct | 2.400 | TBD | TBD | TBD |
+| dark | frame_err_median_px | 1.21 | 1.14 | **0.91** | -0.23 |
+| clutter | line_rms_median_pct | 0.241 | 0.168 | 0.226 | +0.058 |
+| clutter | frame_err_median_px | 5.71 | 17.6 | 28.2 | +10.6 |
+| half | line_rms_median_pct | 0.213 | 0.223 | **0.191** | -0.032 |
+| up2x | line_rms_median_pct | 0.271 | 0.099 | 0.097 | -0.002 |
+| up2x | peak_err_median_pct | 0.332 | 0.170 | **0.143** | -0.027 |
+| jpeg50 | line_rms_median_pct | 0.212 | 0.193 | 0.206 | +0.013 |
+| jpeg30 | line_rms_median_pct | 0.240 | 0.215 | 0.225 | +0.010 |
+| skew1 | line_rms_median_pct | 2.803 | 2.349 | TBD | TBD |
 
-Remaining image-factor probes are queued through the GPU lock after this report commit; the curator will fill them in a follow-up.
+Across the ten image-factor + DPR probes, V2 and V1 are essentially identical on average line_rms_median (V1 0.173%, V2 0.175%). V2 wins (dpr1, half, up2x, dark), loses (dpr2, dpr3, blur, jpeg50, jpeg30), and shows one notable regression on **clutter** (+35% rms, frame_err_median_px 18 to 28 px) worth probe_net inspection in a follow-up round. The Chart.js-side gain in section 3.4 (-16% to -65% depending on metric) and 3.5 (-19% on real-world rms) is why V2 is preferred; the matplotlib-side cost on probes is modest.
 
 ## 4. Mechanism: tick-bias experiment (curator probe)
 

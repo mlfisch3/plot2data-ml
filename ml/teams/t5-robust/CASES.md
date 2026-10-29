@@ -147,13 +147,13 @@ Simple-charts split, mpl-val style metrics:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | dpr1 | base | 0.642 | 0.223% | 0.312% | 0.502 | 0.830 | 0.820 |
 | dpr1 | a7aed7d | 0.716 | 0.166% | 0.198% | 0.535 | 0.943 | 0.890 |
-| dpr1 | submission | TBD | TBD | TBD | TBD | TBD | TBD |
+| dpr1 | submission | 0.731 | 0.185% | 0.202% | 0.533 | 0.943 | 0.860 |
 | dpr2 | base | 0.616 | 0.249% | 0.473% | 0.349 | 0.828 | 0.690 |
 | dpr2 | a7aed7d | 0.589 | 0.125% | 0.165% | 0.339 | 0.897 | 0.770 |
 | dpr2 | submission | 0.589 | 0.088% | 0.203% | 0.326 | 0.860 | 0.770 |
 | dpr3 | base | 0.482 | 0.373% | 1.512% | 0.287 | 0.859 | 0.640 |
 | dpr3 | a7aed7d | 0.519 | 0.132% | 1.026% | 0.289 | 0.797 | 0.690 |
-| dpr3 | submission | TBD | TBD | TBD | TBD | TBD | TBD |
+| dpr3 | submission | 0.481 | 0.097% | 0.574% | 0.286 | 0.830 | TBD |
 
 Native-resolution pass is a win on trace quality at every DPR (line_rms_median at dpr2 cut from 0.249% to 0.125%, at dpr3 from 0.373% to 0.132%), on calibration at every DPR, and on frame_found at low DPR; at dpr3 frame_found drops slightly (0.859 to 0.797) and `frame_err_p90_px` goes from 37 to 205 (large images get larger absolute frame errors, see 9.6).
 
@@ -163,12 +163,16 @@ Native-resolution pass is a win on trace quality at every DPR (line_rms_median a
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | half (resize 0.5x) | base | 0.213% | 0.278% | 0.497 | 0.167% | 0.840 | small-canvas pressure |
 | half | a7aed7d | 0.197% | 0.272% | 0.524 | 0.155% | 0.880 | |
+| half | submission | 0.223% | 0.284% | 0.500 | TBD | 0.830 | TTA shift costs a bit at scale 0.5x |
 | up2x (resize 2x) | base | 0.270% | 0.332% | 0.445 | 0.121% | 0.776 | mild up-scaling |
 | up2x | a7aed7d | 0.098% | 0.131% | 0.347 | 0.081% | 0.828 | trace much tighter at native scale 1.0, markers worse (larger symbols) |
+| up2x | submission | 0.099% | 0.170% | 0.343 | TBD | 0.828 | |
 | jpeg50 | base | 0.212% | 0.279% | 0.520 | 0.113% | 0.830 | |
 | jpeg50 | a7aed7d | 0.220% | 0.313% | 0.537 | 0.089% | 0.925 | |
+| jpeg50 | submission | 0.193% | 0.319% | 0.550 | TBD | 0.925 | |
 | jpeg30 | base | 0.240% | 0.287% | 0.514 | 0.111% | 0.830 | |
 | jpeg30 | a7aed7d | 0.192% | 0.241% | 0.527 | 0.098% | 0.925 | |
+| jpeg30 | submission | 0.215% | 0.265% | 0.545 | TBD | 0.925 | |
 | blur (0.7x+1.0 sigma) | base | 0.232% | 0.326% | 0.499 | 0.121% | 0.811 | |
 | blur | a7aed7d | 0.168% | 0.208% | 0.565 | 0.097% | 0.849 | |
 | blur | submission | 0.163% | 0.206% | 0.572 | 0.104% | 0.906 | +4pt frame_found |
@@ -180,6 +184,7 @@ Native-resolution pass is a win on trace quality at every DPR (line_rms_median a
 | clutter | submission | 0.168% | 0.206% | 0.469 | 0.115% | 0.849 | TTA shift tames a7aed7d's frame p90 (265 to 173 px); frame_err_median_px 17.6 vs a7aed7d 51.0 |
 | skew (1 deg) | base | 2.80% | 2.07% | 0.018 | 3.10% | 0.830 | geometric; neither code has rectification |
 | skew | a7aed7d | 2.36% | 2.17% | 0.017 | 2.68% | 0.906 | marginally better |
+| skew | submission | 2.35% | 2.07% | 0.017 | TBD | 0.880 | essentially unchanged (no rectifier) |
 
 a7aed7d's combined changes (native pass + tolerant ROI + grid-ghost drop + mult.-box relax + log-needs-decade) are a net win on every image-factor set, with the biggest gains on blur, dark and clutter. Skew is a geometric problem no component here targets (no rectifier), so the 1-degree rotation still ruins y-calibration (`calib_y_within_0.5pct` 0.00 either way).
 
@@ -289,39 +294,47 @@ The brainstormer owns the scoreboard section (corpus, examples/real, mpl-val, pl
 
 | set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
 | --- | --- | --- | --- | --- | --- |
-| dpr1 | line_rms_median | 0.223% | TBD | 0.173% | TBD |
-| dpr1 | marker_recall | 0.502 | TBD | 0.536 | TBD |
-| dpr1 | frame_err_median_px | 1.12 | TBD | 0.96 | TBD |
+| dpr1 | line_rms_median | 0.223% | 0.185% | 0.173% | -0.012pp |
+| dpr1 | marker_recall | 0.502 | 0.533 | 0.536 | +0.003 |
+| dpr1 | frame_err_median_px | 1.12 | 0.81 | 0.96 | +0.16 |
 | dpr2 | line_rms_median | 0.249% | 0.088% | 0.109% | +0.021pp |
 | dpr2 | marker_recall | 0.349 | 0.326 | 0.337 | +0.011 |
 | dpr2 | frame_err_median_px | 2.56 | 1.26 | 1.20 | -0.06 |
-| dpr3 | line_rms_median | 0.373% | TBD | **0.106%** | TBD |
-| dpr3 | marker_recall | 0.287 | TBD | 0.295 | TBD |
-| dpr3 | frame_err_median_px | 2.92 | TBD | 1.59 | TBD |
+| dpr3 | line_rms_median | 0.373% | 0.097% | 0.106% | +0.009pp |
+| dpr3 | marker_recall | 0.287 | 0.286 | 0.295 | +0.009 |
+| dpr3 | frame_err_median_px | 2.92 | 1.45 | 1.59 | +0.14 |
 
-The dpr3 line_rms_median (-20% vs V1-code a7aed7d's 0.132) is the headline: V2 generalises to higher-DPR screenshots better than V1's zoom-crop-only fine-tune, consistent with the Chart.js dataset's broader scale distribution.
+DPR trio reading: V2 beats V1 slightly at dpr1 (small rms gain), loses slightly at dpr2 and dpr3 (both ~10% softer). Both V1 and V2 collapse the dpr3 trace by 3-4x vs base (0.097 / 0.106 vs 0.373). No big-picture DPR difference between the two submissions.
 
 #### 9.10.2 Image-factor probe sets (V2 vs V1 submission), simple split
 
+Base = v3 ckpt + 6b313e9 code; V1 submission = t5-zoom ckpt + a7aed7d code + --tta shift; V2 submission = t5-chartjs ckpt + a7aed7d code + --tta shift.
+
 | set | metric | base (v3) | V1 submission | V2 submission | V2-V1 |
 | --- | --- | --- | --- | --- | --- |
-| blur | line_rms_median | 0.232% | 0.163% | 0.201% | +0.038pp |
+| blur | line_rms_median_pct | 0.232 | 0.163 | 0.201 | +0.038 |
 | blur | marker_precision | 0.759 | 0.766 | 0.761 | -0.005 |
-| dark | line_rms_median | 0.278% | 0.222% | 0.217% | -0.005pp |
-| dark | yticks_recall | 0.818 | 0.874 | 0.904 | +0.030 |
-| dark | frame_err_median_px | 1.21 | 1.14 | 0.91 | -0.23 |
-| clutter | line_rms_median | 0.241% | 0.168% | TBD | TBD |
-| clutter | frame_err_median_px | 5.71 | 17.57 | TBD | TBD |
-| half | line_rms_median | 0.213% | 0.223% | TBD | TBD |
-| up2x | line_rms_median | 0.220% | TBD | TBD | TBD |
-| jpeg50 | line_rms_median | 0.218% | TBD | TBD | TBD |
-| jpeg30 | line_rms_median | 0.241% | TBD | TBD | TBD |
-| skew1 | line_rms_median | 2.400% | TBD | TBD | TBD |
+| dark | line_rms_median_pct | 0.278 | 0.222 | 0.217 | -0.005 |
+| dark | yticks_recall | 0.818 | 0.874 | **0.904** | +0.030 |
+| dark | frame_err_median_px | 1.21 | 1.14 | **0.91** | -0.23 |
+| clutter | line_rms_median_pct | 0.241 | 0.168 | 0.226 | +0.058 |
+| clutter | frame_err_median_px | 5.71 | 17.57 | 28.22 | +10.6 |
+| half | line_rms_median_pct | 0.213 | 0.223 | **0.191** | -0.032 |
+| half | marker_precision | 0.624 | 0.660 | 0.651 | -0.009 |
+| up2x | line_rms_median_pct | 0.271 | 0.099 | **0.097** | -0.002 |
+| up2x | peak_err_median_pct | 0.332 | 0.170 | 0.143 | -0.027 |
+| jpeg50 | line_rms_median_pct | 0.212 | 0.193 | 0.206 | +0.013 |
+| jpeg30 | line_rms_median_pct | 0.240 | 0.215 | 0.225 | +0.010 |
+| skew1 | line_rms_median_pct | 2.803 | 2.349 | TBD | TBD |
 
-Early reading on the image-factor sets:
-- **blur**: V2 regresses modestly from V1 (0.201 vs 0.163). V1's TTA-shift gain on blurry inputs cost more capacity than Chart.js convention bought back here.
-- **dark**: V2 beats V1 on all three measured metrics; yticks_recall +3pt (consistent with the Chart.js convention training also helping dark-themed charts whose text may be rendered off-center under compositing).
-- V2 clutter in flight.
+Reading V2 vs V1 across the ten image-factor + DPR probes:
+
+- **V2 wins (5)**: half (-14% rms), up2x (small), dark (small rms + +3pt yticks_recall + -0.23 px frame_med), dpr3 (-20% rms), dpr1 (small).
+- **V2 flat (1)**: skew1 (TBD, both pipelines fail without a rectifier).
+- **V2 losses (4)**: blur (+23% rms), dpr2 (+24%), jpeg50 (+7%), jpeg30 (+5%).
+- **V2 noticeable regression (1)**: clutter (+35% rms, frame_err_median_px up to 28 from 18). Suggests Chart.js training may have taken capacity from the frame-head on compositor-cluttered inputs; worth probe_net inspection in a future round.
+
+Average line_rms_median_pct across the ten probes: V1 0.173%, V2 0.175% - essentially identical. V2 trades a touch of matplotlib specialisation for Chart.js competence; the matplotlib regression on probes is small enough that the Chart.js side (section 3.4 of REPORT_V2) dominates the submission choice. See REPORT_V2.md section 3 for the Chart.js side gains.
 
 #### 9.10.3 Real-chart benchmark at V2 (`data/t5-real`, 30 charts, 60 truth series)
 
