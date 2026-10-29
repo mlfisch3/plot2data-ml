@@ -145,6 +145,103 @@ def test_refine_ticks_snaps_to_tick_marks_without_a_frame():
         assert t["pos"] == pytest.approx(x, abs=0.05) and t["pos_net"] == x - 1.5
 
 
+def test_affine_from_marks_pure_shift_identifiable_slope():
+    # Six marks, every one shifted by exactly -1.5 px. The fit should return b = 1 and a = -1.5.
+    from p2d.extract import _affine_from_marks
+
+    pos_net = np.array([40.0, 90.0, 140.0, 190.0, 240.0, 290.0])
+    marks = pos_net - 1.5
+    w = np.ones_like(pos_net)
+    a, b, inliers, mad = _affine_from_marks(pos_net, marks, w, slope_tol=0.015, resid_tol=0.35)
+    assert b == pytest.approx(1.0, abs=5e-4)
+    assert a == pytest.approx(-1.5, abs=5e-4)
+    assert inliers.all() and mad < 1e-6
+
+
+def test_affine_from_marks_recovers_shift_and_scale():
+    # The network's tick positions carry a per-axis scale drift of 1 part in 400
+    # (0.25%). Six marks are enough to see it; the fit should land within 0.02 px.
+    from p2d.extract import _affine_from_marks
+
+    pos_net = np.array([40.0, 90.0, 140.0, 190.0, 240.0, 290.0])
+    a_true, b_true = -1.2, 1.0025  # 0.25% expansion, slope within the N=6 window.
+    marks = a_true + b_true * pos_net
+    w = np.ones_like(pos_net)
+    a, b, inliers, mad = _affine_from_marks(pos_net, marks, w, slope_tol=0.015, resid_tol=0.35)
+    assert b == pytest.approx(b_true, abs=5e-4)
+    assert a == pytest.approx(a_true, abs=0.05)
+    assert inliers.all() and mad < 1e-6
+
+
+def test_affine_from_marks_rejects_a_wrong_tick_mark():
+    # One mark is 2 px off (a glyph stroke misdetected). The IRLS outlier
+    # rejection must drop it, and the fit over the remaining five must land
+    # on the true shift.
+    from p2d.extract import _affine_from_marks
+
+    pos_net = np.array([40.0, 90.0, 140.0, 190.0, 240.0, 290.0])
+    marks = pos_net - 1.5
+    marks[2] = pos_net[2] + 0.9  # 2.4 px off the fit line
+    w = np.ones_like(pos_net)
+    a, b, inliers, mad = _affine_from_marks(pos_net, marks, w, slope_tol=0.015, resid_tol=0.35)
+    assert not inliers[2] and int(inliers.sum()) == 5
+    assert b == pytest.approx(1.0, abs=5e-4)
+    assert a == pytest.approx(-1.5, abs=5e-4)
+    assert mad < 1e-6
+
+
+def test_affine_from_marks_falls_back_to_shift_when_slope_runs_away():
+    # Four marks only (shift-only regime), with one outlier. _affine_from_marks
+    # must still return a usable shift when the slope cannot be identified at all.
+    from p2d.extract import _affine_from_marks
+
+    pos_net = np.array([40.0, 90.0, 140.0, 190.0])
+    marks = pos_net - 0.7
+    w = np.ones_like(pos_net)
+    a, b, inliers, mad = _affine_from_marks(pos_net, marks, w, slope_tol=0.0, resid_tol=0.35)
+    assert b == 1.0
+    assert a == pytest.approx(-0.7, abs=5e-3)
+    assert inliers.all() and mad < 1e-6
+
+
+def test_refine_ticks_affine_corrects_a_scale_drift():
+    # Six x-axis ticks whose network positions are stretched by 1 part in 200
+    # across the plot. The joint fit should pull every tick back to the drawn
+    # mark; the previous shift-only logic would have left the end ticks ~0.6 px off.
+    from p2d.extract import Extraction, refine_ticks
+
+    tx = [60, 110, 160, 210, 260, 300]
+    img = _axes_image([40, 90, 140, 190, 240], tx, w=360)
+    ex = Extraction(M=np.eye(2, 3), plot_area=None)
+    # Scale drift centred on the plot: pos_net = (true - 180) / 1.005 + 180, with a 0.4 px shift.
+    def net_pos(x: float) -> float:
+        return (x - 180.0) * 1.005 + 180.0 - 0.4
+    ex.xticks = [dict(pos=net_pos(x), anchor=[net_pos(x), 240.0], score=1.0, label_box=[x - 10, 248, x + 10, 258]) for x in tx]
+    ex.yticks = []  # not under test
+    refine_ticks(img, ex)
+    for t, x in zip(ex.xticks, tx):
+        assert t["pos"] == pytest.approx(x, abs=0.1)
+    # The record of the pre-refinement position is kept.
+    assert all("pos_net" in t for t in ex.xticks)
+
+
+def test_refine_ticks_keeps_three_mark_axis_shift_only():
+    # Three ticks is the shift-only regime: an affine fit is not identifiable.
+    # The result must match the single-median shift behaviour of the baseline.
+    from p2d.extract import Extraction, refine_ticks
+
+    ty = [50, 120, 190]
+    img = _axes_image(ty, [100, 160, 220])
+    ex = Extraction(M=np.eye(2, 3), plot_area=None)
+    ex.yticks = [dict(pos=y + 0.9, anchor=[60.0, y + 0.9], score=1.0, label_box=[20, y - 5, 50, y + 5]) for y in ty]
+    ex.xticks = []
+    refine_ticks(img, ex)
+    # Each tick moves by essentially the same shift and lands within half a pixel of the mark.
+    for t, y in zip(ex.yticks, ty):
+        assert t["pos"] == pytest.approx(y, abs=0.5)
+        assert t["pos_net"] == y + 0.9
+
+
 def test_log_needs_a_decade_or_a_label_saying_so():
     # Years 1970..2021 with the last label misplaced: a log fit would take all six, but is absurd.
     pos = [29, 81, 133, 184, 236, 293]
