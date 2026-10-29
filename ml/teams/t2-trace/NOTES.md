@@ -167,3 +167,7 @@ Reran steep in foreground under flock in 36s (uncontested GPU moment); then laun
 The replacement brainstormer's rerun script also fires steep + dotted; by pure timing it has queued steep behind many flock waiters and will refill the file whether or not my bg leg hits it (deterministic eval). Dotted already matched (0.8905 both runs).
 
 Delta tables for already-landed probes computed via teams/t2-trace/tools/compare_runs.py (above-the-line numbers in REPORT.md confirmed): parallel +0.100 and shallowx +0.108 are the big wins; cross/samecolour/legocclude show small-positive; plotly simple -0.009 the only regression. See CASES.md section 6 (added below once all probes land).
+
+## Wed 28 Oct 2026, 21:17 EDT curator
+
+All 12 remaining probes landed via bg job brfsk06tr (4084s wall, GPU contended). Added CASES.md section 6 with v3 overlap-merge mitigation table tied to failure cases C1-C5, probe-by-probe v3 numbers for all 19 probes, OCR e2e deltas, and the four regressions worth guarding against (parallel peak_err, plotly-simple ghost-ghost, thin/wide p90, area). Headlines unchanged. Brainstormer informed of the three new findings: legend +0.041 big win, thin/wide canvas-scale p90 blow-outs, area slight regression. Submission remains at 4ab8ee0.
