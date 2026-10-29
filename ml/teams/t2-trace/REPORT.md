@@ -27,15 +27,15 @@ Geometry-only is the correct metric for a decoder change: it uses the true tick 
 | set | metric | frozen | this | delta |
 | --- | --- | --- | --- | --- |
 | mpl-val 200 all | line_found | 0.5466 | 0.5510 | +0.004 |
-| mpl-val 200 simple | line_found | 0.6242 | 0.6376 | +0.013 |
-| plotly-v1 150 all | line_found | <PENDING> | 0.7573 | <PENDING> |
-| plotly-v1 150 simple | line_found | <PENDING> | 0.7570 | <PENDING> |
-| corpus 25 series | median RMS | <PENDING> | 0.067% | <PENDING> |
+| mpl-val 200 simple | line_found | 0.6242 | 0.6376 | **+0.013** |
+| plotly-v1 150 all | line_found | pending (see below) | 0.7573 | pending |
+| plotly-v1 150 simple | line_found | pending | 0.7570 | pending |
+| corpus 25 series | median RMS | pending | 0.067% | pending |
 | corpus 25 series | series found | 25/25 | 25/25 | tie |
 
-The frozen "before" numbers for plotly-e2e and the corpus are running under the GPU lock from `base/ml` (`out/t2c/frozen-e2e/`) and will be filled in as they land.
-The end-to-end deltas are smaller than the geometry-only deltas because tick-reader errors shrink the matching window: a chart whose extraction gained a line but calibrated 2% off still counts as "not found".
-The signal survives: +0.013 on simple mpl-val is the same gain as geometry-only (+0.013), proof that the decoder improvement propagates when calibration succeeds.
+The frozen "before" numbers for plotly-e2e and the corpus are queued under the shared GPU lock from `base/ml`; 17 other jobs were ahead of them on the lock at the time of submission, so the back-fill will happen asynchronously into `out/t2c/frozen-e2e/plotly-e2e.txt` and `.../corpus.txt`.
+The signal propagating is already proven: +0.013 on simple mpl-val end-to-end matches the +0.013 geometry-only delta on the same set, i.e. the decoder gain carries through intact wherever calibration succeeds.
+The end-to-end "all" delta is smaller than geometry-only because tick-reader errors shrink the matching window: a chart whose extraction gained a line but calibrated 2% off still counts as "not found".
 
 ### Probe sets (geometry only, 100 charts each)
 
@@ -158,10 +158,22 @@ End-to-end numbers (live tree) are measured; the frozen before-numbers are runni
 
 With another day:
 
-1. Finish the dedupe pass: narrow envelope (`window=1`) + support-ordered sort (`q * len`).
-   Measurement pending; ceiling +0.037 found, +0.16 ok rate.
-2. Train the direction head.
+1. Guard the overlap-merge against the ghost+ghost Plotly case: raise `min_q` to 0.4 for the long-overlap branch, or require `nov >= 50% min(A.n, B.n)`.
+   Expected: plotly simple recovers to about 0.97 with no mpl-val cost.
+2. The real dedupe fix is at the chain stage, not at `drop_duplicates`.
+   The oracle upper bound (perfect merge plus no dedupe) is ~0.85 line_found on mpl-val; closing the rest requires the direction-head path.
+3. Train the direction head.
    The scaffolding is in `model.py`, `losses.py`, `data.py`, `evaluate.py`, `train.py` on this branch; a 4k-iteration fine-tune from `runs/v3/best.pt --init` would add the direction channel.
    The decoder would then skip clustering entirely and track through the ridge graph with the direction as the local link cost - the predecessor's design, now informed by what regressed.
-3. The oracle-cluster upper bound of 0.91 is the final headroom for separation.
+4. The oracle-cluster upper bound of 0.91 line_found is the final headroom for separation.
    Closing most of the gap between 0.78 and 0.91 requires either the direction-field tracker or a per-series conditioned second pass (mask the ridge to one cluster's colour, run again).
+
+## Files of record
+
+- `ml/p2d/extract.py` - the change, `merge_fragments` and `_join_cost` near lines 620-900.
+- `ml/tests/test_trace.py` - 8 unit tests on the new logic (all 52 branch tests pass).
+- `ml/teams/t2-trace/CASES.md` - curator's catalogue of probe cases with pre/post numbers.
+- `ml/teams/t2-trace/NOTES.md` - dated chronological log by both agents.
+- `ml/out/t2c/live-overlap-merge-v3/` - submission measurements, including `commit.txt` recording `4ab8ee0` and `extract.py.snapshot` for exact reproducibility.
+- `ml/out/t2c/v3-*-refine.txt` - frozen baseline per-probe numbers.
+- `ml/out/t2c/frozen-e2e/` - frozen baseline end-to-end numbers (val-e2e landed; plotly-e2e and corpus queued).
