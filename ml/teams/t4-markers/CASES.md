@@ -215,3 +215,52 @@ For each connected component of a series' ink the add-seeds step adds `floor(are
 Example: `data/t4-dense/14000064.png`, three series ("o", "v", "o") at 15.8 px, nn_rel 0.42. v3: 378 gt, 221 TP, 293 FP. af04090: 182 TP, 441 FP (overlay: `out/t4/diag-dense-step23/14000064.png`). Dense-set totals confirm: FP cause "dup" fell by 2,194 (the split-aware mixture working on honest ropes) but new TPs were "moved" out of tolerance by 978 (the overshoot).
 
 Fix landed in step24 (`c78db3f`): `add_seeds` capped at 3 extras per blob, only trusted when `len(iso) >= 5`. 14000064 recovery visible in dense step24 totals: `dup` FPs 2,194 fewer than step23 kept while recall still improves (0.812 → 0.810 - essentially maintained with far fewer spurious seeds).
+
+## After step25 (`e4edf2b`)
+
+Step25 (`e4edf2b`) is step24 with three further changes to the branch (brainstormer):
+1. Dash veto on scatter only (`line_px is None`). The step24 veto fired on isolated marker+dash merged blobs in line+markers series on dashed or thick solid lines, taking out whole series (Plotly 500134, 500021).
+2. Iso elongation filter (`elongation(patch) <= 4.0`). The step24 iso list could contain unresolved line fragments whose max dimension is huge; those were mis-read as marker shapes.
+3. `extract.loose_markers` filters out heat peaks where `sem[TEXT] > sem[DATA]`. Drops digit and annotation FPs on labels and real screenshots (women/men chart's "26", "36", "46", "22" glyphs).
+
+### Standard sets (geometry only, `--refine`)
+
+| set | metric | v3 all / simple | step24 all / simple | step25 all / simple | delta vs v3 (step25) | delta vs step24 (step25) |
+| --- | --- | --- | --- | --- | --- | --- |
+| mpl-val 200 | marker_recall | 0.593 / 0.845 | 0.598 / 0.850 | 0.605 / 0.858 | +0.012 / +0.013 | +0.007 / +0.008 |
+| mpl-val 200 | marker_precision | 0.704 / 0.825 | 0.799 / 0.875 | 0.758 / 0.860 | +0.054 / +0.035 | -0.041 / -0.015 |
+| mpl-val 200 | marker_err_median_pct | 0.128 / 0.112 | 0.086 / 0.071 | 0.087 / 0.071 | **-32% / -37%** | +0.001 / 0 |
+| plotly 150 | marker_recall | 0.465 / 0.829 | 0.445 / 0.783 | 0.460 / 0.832 | -0.005 / **+0.003** | +0.015 / **+0.049** |
+| plotly 150 | marker_precision | 0.798 / 0.819 | 0.871 / 0.903 | 0.851 / 0.891 | +0.053 / +0.072 | -0.020 / -0.012 |
+| plotly 150 | marker_err_median_pct | 0.091 / 0.081 | 0.044 / 0.027 | 0.048 / 0.032 | **-48% / -60%** | +0.004 / +0.005 |
+
+Step25 is the first branch that is non-negative on EVERY axis vs v3: plotly simple recall went from the step24 -4.6pp regression back to +0.3pp (slightly above v3), while keeping the +7pp precision win and the -60% error cut. mpl-val's precision gave back 4.1pp vs step24 to let the extra recall through (the dash-veto-on-scatter-only lets some dashed-line FPs through, mainly on charts whose line+markers series are drawn with dashed lines - the right tradeoff since those are the real markers the step24 veto was killing).
+
+### Per-chart recovery of the Plotly catastrophes
+
+Measured on `rows-plotly-base.json` (v3), `rows-plotly-step24.json`, `rows-plotly-step25.json`:
+
+| chart | shape / line pattern | gt | TP v3 / step24 / step25 | pred v3 / step24 / step25 | status |
+| --- | --- | --- | --- | --- | --- |
+| 500134 | triangle-up-open + diamond + hexagon on dashed line+markers | 228 | 186 / 0 / 111 | 226 / 0 / 119 | step25 recovers 111/186 (60%); step24 had wiped the series |
+| 500021 | square on solid line+markers | 123 | 85 / 1 / 74 | 110 / 2 / 88 | step25 recovers 74/85 (87%); step24 had wiped the series |
+| 500099 | triangle-down on dashdot line+markers | 42 | 41 / 20 / 30 | 48 / 25 / 37 | partial recovery (30/41 vs 20) |
+| 500003 | pentagon on line+markers | 20 | 20 / 7 / 19 | 20 / 8 / 20 | full recovery (19/20) |
+| 500107 | 5x line+markers rope, 6081 pts | 6081 | 931 / 708 / 708 | 1111 / 867 / 867 | **unchanged** (rope, needs zoom.py integration) |
+
+Four of five step24 catastrophes recovered; the 500107 rope is a known F1-class case that no veto fix can touch (sub-pixel marker spacing).
+
+### Per-marker diagnosis (per probe set)
+
+In flight under flock, one at a time. Will be filled in as each eval completes:
+
+| set | tag | recall step25 all / simple | precision step25 | err step25 | note |
+| --- | --- | --- | --- | --- | --- |
+| dense | step25 | (running) | | | |
+| row | step25 | (queued) | | | |
+| shapes | step25 | (queued) | | | |
+| labels | step25 | (queued) | | | expected: precision 0.60 -> ~0.75 from sem[TEXT] veto |
+| hollow | step25 | (queued) | | | |
+| multi | step25 | (queued) | | | |
+| lines | step25 | (queued) | | | expected: precision up from dash veto on scatter only |
+

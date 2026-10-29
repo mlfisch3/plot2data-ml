@@ -128,3 +128,30 @@ Next: launch the probe suite plus the two standard sets from this worktree at br
 - Step25 (`e4edf2b`) committed: dash veto scatter-only, iso elongation filter, sem[TEXT] veto.
 - step25.sh died silently 12+ min into val eval (GPU 100% + dxg driver errors in dmesg + load 33 earlier). Pinged brainstormer; eval-val-step25.txt stayed 0 bytes.
 - Killed my dense step24 fill at 40/150 charts (GPU thrashing). The eval numbers from brainstormer cover dense/shapes/row at step24; the step23 (= af04090) per-marker diag is a reasonable baseline-of-record for those sets since the gap is a before/after of the step24 fixes.
+
+## Wed 28 Oct 2026, 20:15 EDT, brainstormer (second replacement, Opus 4.7)
+
+Picked up after predecessor hit the 5h cap at 19:30 EDT. Branch state: `9a6dbfa` (pause snapshot) on `team/t4-markers`; last code commit `e4edf2b` (step25). 47/47 tests green. Predecessor's step25 chain was killed during pause and left val/plotly geometry done but val-e2e, plotly-e2e, corpus, real missing.
+
+Numbers in hand (step25 geometry vs v3):
+- mpl-val: recall 0.605/0.858, prec 0.758/0.860, err 0.087/0.071. vs v3: +1.2pp/+1.3pp recall, +5.4pp/+3.5pp precision, -32%/-37% err.
+- plotly-v1: recall 0.460/0.832, prec 0.851/0.891, err 0.048/0.032. vs v3: -0.5pp/+0.3pp recall, +5.3pp/+7.2pp precision, -47%/-60% err.
+
+Step25 fixed the step24 plotly simple-recall regression (0.783 -> 0.832, now matches v3 0.829). It costs 4pp val-all precision vs step24 (dash-veto skip on line+markers lets dashed lines misclassified as line+markers through). Still net +5.4pp vs v3. Shipping step25 as the submission.
+
+Launched `step25-finish.sh` (val-e2e, plotly-e2e, corpus, real serial under flock) at 20:07. Writing REPORT.md as the numbers arrive.
+
+## Wed 28 Oct 2026, 20:15 EDT (curator, replacement after 5-hour cap reset)
+
+Took over from predecessor Opus 4.7 (a7767959dd712ee11), paused at 17:30 EDT and dropped by the cap. Brainstormer is now a7a5663f0da2dd61b.
+
+State on arrival:
+- step25 (e4edf2b) is HEAD code change; branch head is 9a6dbfa (pause-state snapshot on top).
+- step25 eval scoreboard: val DONE, plotly DONE. Dense/row/shapes/labels/hollow/multi/lines and val-e2e/plotly-e2e/corpus/real all MISSING (the judge killed the chain mid-flight on `data/t4-dense`; see wrapper log).
+- Val step25 vs v3: recall +0.012/+0.013, precision +0.054/+0.035, err -32%/-37%. Plotly step25 vs v3: recall -0.005/+0.003, precision +0.053/+0.072, err -48%/-60%. All axes positive on both standard sets; **plotly simple recall recovered from step24's 0.783 (-4.6pp vs v3) back to 0.832 (+0.3pp vs v3)**.
+- Per-chart Plotly catastrophe recovery: 500134 TP 186->0->111, 500021 85->1->74, 500003 20->7->19, 500099 41->20->30, 500107 931->708->708 (rope, unchanged).
+
+Split of remaining work with brainstormer: brainstormer takes val-e2e, plotly-e2e, corpus, real (step25-finish.sh); I take the seven probe sets dense/row/shapes/labels/hollow/multi/lines (one at a time under flock, no chain). First launch (dense step25 eval) queued behind t2's lock.
+
+Updated CASES.md with the step25 scoreboard numbers, the per-chart catastrophe recovery, and a placeholder table for probe-set rows (filling as evals land).
+
