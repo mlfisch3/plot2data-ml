@@ -24,6 +24,7 @@ substantial new code**:
 | C two-label log tiebreak | **< 0.3 pt** | small | round 1 already took `t1-two_log/y` 0.575 -> 0.975, `/x` 0.650 -> 1.000. The 4 remaining "two-label log" mpl-val y-axes are now OCR failures (e.g. 9000044 `['1e0','1e1']` -> `['1e1','0']`), not tiebreak failures. |
 | D date improvements      | **0 pt on mpl-val** (no date axes), ~0.3 pt plotly-v1 x | moderate | 65% of `t1-dates/x` probe fails is a probe-only gap. Plotly-v1 calib_x already at 0.9933 in integration. |
 | E axis-title unit parsing | **0 pt on mpl-val** | moderate | mpl-val JSON has no `xlabel/ylabel/title`; axis-title unit parsing has no scoreboard metric that reads it. Plotly-v1 has some, but the metric for plotly uses chart series pos->value, not axis-title words. |
+| F `t1-offset` sign-regex fix (new, from curator's probe-integrated diag) | **0 pt on mpl-val**, +6 pt probe-only | small (~5-10 lines) | Every `t1-offset/y` probe chart flips the offset sign; `pipeline._OFFSET` either absorbs a stray `-` or fails to match `+N.Ne K`. mpl-val has no `+N.Ne K` offsets, so scoreboard-invisible. |
 
 Full write-up of each angle in **Diagnosis** below.
 
@@ -52,6 +53,45 @@ Same code before and after; the two columns are identical.
 | line_found          | 0.8252 / 0.9252 |
 | calib_x_within_0.5  | 0.9933 |
 | calib_y_within_0.5  | 0.8867 |
+
+### Probe set after integration (`data/t1-probe` 640 charts; `runs/t5-chartjs/best.pt` + `--tta shift`)
+
+Measured by the curator; files under `ml/out/t1-r2/diag-probe-integrated/` and per-style
+breakdown in `ml/teams/t1-axis/CASES_R2.md` (commit `44a4198`).
+
+Overall:
+
+| metric                | frozen base | integrated | delta   |
+| --------------------- | ----------- | ---------- | ------- |
+| calib_x_within_0.5pct | 0.841       | 0.9266     | +8.6 pt |
+| calib_x_scale_ok      | 0.945       | 0.9688     | +2.4 pt |
+| calib_y_within_0.5pct | 0.778       | 0.8609     | +8.3 pt |
+| calib_y_scale_ok      | 0.942       | 0.9672     | +2.5 pt |
+
+Per style (within on the style's test axis):
+
+| style             | base  | integrated | delta  |
+| ----------------- | ----- | ---------- | ------ |
+| t1-rot90/x        | 0.00  | 0.925      | +92.5  |
+| t1-mult_sci/y     | 0.10  | 0.825      | +72.5  |
+| t1-two_log/y      | 0.57  | 0.950      | +38.0  |
+| t1-two_log/x      | 0.65  | 0.975      | +32.5  |
+| t1-pow10_edge/y   | 0.40  | 0.550      | +15.0  |
+| t1-tiny/y         | 0.78  | 0.850      | +7.0   |
+| t1-offset/y       | 0.00  | 0.000      | 0      |
+| t1-dates/x        | 0.20  | 0.175      | -2.5   |
+| t1-rot45/x        | 0.88  | 0.875      | -0.5   |
+| t1-crowded_y/y    | 1.00  | 0.925      | -7.5   |
+| (11 styles saturated at >= 0.95)      |
+
+The probe confirms the mpl-val ceiling story: the four big movers are the integration's four
+big wins (90-degree deskew, two-label log tiebreak, multiplier/offset parsing, superscript
+box fix). The small regressions are each 1-3 charts on a 40-chart cell, inside sampling noise.
+
+Three residual styles sit cleanly inside the five-angle sizing above: `t1-rot45/x` (angle B1),
+`t1-dates/x` (angle D), `t1-pow10_edge/y` + `t1-tiny/y` (within B2's uncertain ceiling).
+One residual, `t1-offset/y` at 0.000, is new signal the mpl-val analysis did not surface
+and is covered as **angle F** in the Diagnosis.
 
 ### Chart.js corpus, 25 series
 
@@ -160,6 +200,17 @@ mpl-val JSON carries no `xlabel/ylabel/title`; the standard metric compares pipe
 values to the ground-truth tick values which are already in SI units. Scoreboard impact:
 0 pt on mpl-val, uncertain and probably 0 pt on plotly-v1. **Below bar.**
 
+**F. `t1-offset` sign-regex fix** (surfaced by curator's probe-integrated diagnostic).
+Every one of the 40 `t1-offset/y` probe charts fails with the printed offset applied with the
+WRONG SIGN - gt offset `+1.783e2`, pipeline factor `-1.783e2`, y error ~5000. First causes:
+multiplier_read 22, multiplier_missed 18. In 22/40 cases `pipeline._OFFSET` matches but a `-`
+leaks into the sign from a neighbouring ink column; in 18/40 the regex fails to match the
+`+N.Ne K` form at all. The fix the curator sketches is ~5-10 lines in `pipeline._OFFSET` plus
+a stricter sign anchoring. **Scoreboard impact: 0 pt** - mpl-val has `1eK`-style multipliers
+(CASES class 4), not `+N.Ne K` offsets, and the real-screenshot set has none. Would move probe
+`calib_y_within` by ~6 pt (one style at 0.000 -> ~1.000). **Below bar on the standard scoreboard,
+deferred alongside D and E;** worth a round-3 clean-up if someone is already in `pipeline.py`.
+
 ## Implementation
 
 None.
@@ -196,6 +247,8 @@ Ranked by expected payoff per unit of work:
 5. **Dates and axis-title units** (angles D, E). Useful for product users on real charts,
    but neither is on the standard scoreboard. Would need a dedicated real-chart gallery
    bench to measure.
+6. **`t1-offset` sign-regex fix** (angle F). Trivial code change, 0 standard-scoreboard pt,
+   +6 pt on the probe set, closes an active sign-flip bug in `pipeline._OFFSET`.
 
 ## Verification
 
