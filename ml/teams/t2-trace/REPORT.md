@@ -56,8 +56,20 @@ The corpus held: same median RMS, same series counts; the only difference is one
 | t2-legocclude | 0.8179 | 0.8247 | +0.007 | +0.013 |
 | t2-dotted | 0.8714 | 0.8905 | +0.019 | +0.019 |
 | t2-steep | 0.8872 | 0.8910 | +0.004 | +0.004 |
+| t2-legend | 0.8560 | **0.8971** | **+0.041** | **+0.042** |
+| t2-thin | 0.8533 | 0.8567 | +0.003 | +0.004 |
+| t2-small | 0.7000 | 0.7067 | +0.007 | +0.008 |
+| t2-dense | 0.9118 | 0.9191 | +0.007 | n/a |
+| t2-step | 0.8385 | 0.8490 | +0.011 | +0.011 |
+| t2-clipped | 0.8016 | 0.8054 | +0.004 | +0.013 |
+| t2-multi | 0.6550 | 0.6567 | +0.002 | n/a |
+| t2-markers | 0.9167 | 0.9167 | 0.000 | 0.000 |
+| t2-area | 0.5600 | 0.5550 | **-0.005** | **-0.005** |
+| t2-wide | 0.8722 | 0.8647 | **-0.008** | **-0.008** |
 
-(Eleven further probes - thin, small, dense, legend, area, step, clipped, multi, markers, wide - are running on the shared GPU lock as of submission; the delta table on landing will go into `out/t2c/live-overlap-merge-v3/`.)
+**t2-legend +0.041** is the biggest probe win and the same mechanism as parallel and shallowx: a legend box fragments a series into two long non-overlapping pieces that the frozen 60-col rule could not bridge, the new short-gap/long-gap branch does.
+**t2-legocclude +0.007** is the smaller sibling because its occlusion is wider than 90 cols in most charts, so the slope-gated long-gap branch fires only sometimes.
+**t2-area -0.005** and **t2-wide -0.008** are new small regressions discussed below.
 
 Parallel and shallowx are the pivot of the submission: they hold exactly the pattern the fix was designed for (two chains spanning the same column range because a cluster boundary split one ridge), and both move by about ten points on both the "all" and "simple" subsets.
 Cross and samecolour show the fix did not take ground back from crossings or shared-colour pairs; those keep moving the right way too.
@@ -151,8 +163,15 @@ Honest regressions:
   Explicit trade-off: more lines found, each slightly less sharp at its extrema.
   `line_rms_median` and `line_rms_p90` on parallel move by less (+0.026 and +0.049 respectively), so the full curve stays accurate; only turning points pay.
 - **t2-samecolour: `rms_p90` +0.14 (6.63 -> 6.77, ~2% relative).** Minor; same direction as parallel.
+- **t2-thin: `line_rms_p90` +0.21 (1.73 -> 1.94); line_found +0.003 (improved).**
+  Thin lines produce blurrier y positions; the merge candidate check accepts pairs whose piece ends are close in index space but noisier in y, pulling in a borderline-correct second piece whose rms blows the p90. Median and found still improve.
+- **t2-wide: `line_rms_p90` +0.27 (1.71 -> 1.99) AND `line_found` -0.008 (0.872 -> 0.865).**
+  At wide (0.5 scale) placements the ridge is thick in canvas pixels; the long-overlap branch sees spurious same-cluster pairs and joins them. Only wholesale regression on a non-pivot probe.
+- **t2-area: `line_found` -0.005 (0.56 -> 0.555).**
+  Area series have their ridge at the top of a filled region; adjacent half-fills with different fills look like one series split by a cluster boundary and the long-overlap rule joins them. Minor and in a probe where baseline is already 0.56.
 - **t2-legocclude: smaller gain than expected (+0.007 only).**
-  Legend occlusion is a different failure mode: the ridge is actually missing under the legend box, not just split. The fix cannot close pixel-level occlusions.
+  Legend occlusion is a different failure mode than the `legend` probe: the ridge is actually missing under the legend box over more than 90 cols, so the slope-gated long-gap branch cannot fire.
+  (`legend` probe, where the occlusion is narrower, gained the full +0.041.)
 - **mpl-val per-chart distribution.**
   17 charts gained line_found; 8 regressed. Net is strongly positive. The worst loser is 9000031 (long-overlap edge case where a ghost merged with a real).
 
