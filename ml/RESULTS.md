@@ -1,117 +1,107 @@
 # Results
 
-Measured on Sun 25 Oct 2026 (v1, v2, classical) and Wed 28 Oct 2026 (v3).
-The current model is `v3`: PlotNet (ResNet-34 U-Net) trained 14,000 iterations at batch 8 on 40,000 matplotlib charts (`v1`, about three hours on the RTX 3080 laptop GPU), fine-tuned 8,000 iterations on those plus 12,000 charts in house styles (`v2`), then fine-tuned 16,000 iterations on all of that plus 12,000 Plotly charts (`v3`).
-The tick reader trained 8,000 iterations on the labels of the matplotlib charts.
+Measured on Thu 29 Oct and Fri 30 Oct 2026.
+The current app is `integration/round-2` + the round-3 FRED fix, promoted to `main` at commit `4d42ad7`.
+Checkpoint: `runs/t5r2-clutter/best.pt` + `--tta shift`; tick reader `runs/ocr1/best.pt`.
+120 pytest pass on `main`.
 
-Errors are a percentage of the plot's full height (the unit of `../ACCURACY.md`): 0.1% is a tenth of a percent of full scale.
+The pipeline is the research product of a five-team improvement contest that ran in two rounds plus one focused round-3 fix.
+Each round the five teams (axis, trace, precision, markers, robustness) worked in isolated pairs (brainstormer plus curator); their winning changes were integrated and the integrated app became the baseline for the next round.
+The integration from round 1 missed a catastrophic regression on real-world charts (axis-factor misfiring on sem-less multiplier text in cluttered dashboards); round 2 caught and fixed it.
+
+Errors are a percentage of the plot's full height, the unit of `../ACCURACY.md`.
+"Simple" means at most three series and fewer data points than pixel columns.
 "Good coverage" is the fraction of a true curve's pixel columns where the extraction is within 1% of the truth; a trace that wanders onto the wrong curve counts as wrong, not as covered.
 
 ## End to end on synthetic charts
 
-Everything automatic: frame, ticks, the tick reader, calibration, series.
-"Simple" means at most three series and fewer data points than pixel columns, which is what most screenshots look like; "all" adds up to six overlapping series of up to 2,500 points.
+### Matplotlib validation set (200 charts, including house styles never trained on)
 
-### Matplotlib validation set (200 charts, including house styles v1 never trained on)
-
-| | v3, simple | v3, all | v2, simple | v2, all | v1, simple | Classical, simple |
-| --- | --- | --- | --- | --- | --- | --- |
-| line series found (coverage > 50%) | 62% | 55% | 62% | 54% | 52% | 14% |
-| good coverage of true curves | 51% | 41% | 54% | 41% | 44% | 11% |
-| median RMS of found lines | 0.31% | 0.44% | 0.28% | 0.42% | 0.36% | 0.38% |
-| median error at turning points | 0.39% | 2.3% | 0.34% | 2.0% | 0.44% | 0.19% |
-| markers found / precision | 64% / 74% | 48% / 64% | 66% / 75% | 51% / 68% | 52% / 61% | 5% / 4% |
-| calibration within 0.5%, x / y (all charts) | 85% / 78% | | 84% / 79% | | 74% / 70% | |
-
-v3 and v2 are within noise of each other on matplotlib charts; the Plotly training of v3 bought nothing here.
-v1's column was measured before the decoding fixes of 25 Oct (tick-label grouping, tick snapping, marker re-measurement); most of the end-to-end gain from v1 is from those.
-The classical engine's RMS and peak figures describe only the few series it found.
-
-With the true tick values supplied instead of read (`--oracle-ticks`), v1 already found 81% of simple series at 0.20% RMS: calibration from the labels is where most of the remaining end-to-end loss is.
-
-### Plotly charts (150 held out; v3 trained on other Plotly charts, v1 and v2 on none)
-
-| | v3, simple | v3, all | v2, simple | v2, all | v1, simple | Classical, simple |
-| --- | --- | --- | --- | --- | --- | --- |
-| line series found | 78% | 75% | 79% | 72% | 59% | 13% |
-| good coverage | 70% | 61% | 70% | 58% | 53% | 11% |
-| median RMS | 0.18% | 0.25% | 0.22% | 0.27% | 0.24% | 0.15% |
-| markers found / precision | 76% / 78% | 42% / 77% | 72% / 73% | 39% / 72% | 59% / 69% | 32% / 16% |
-| calibration within 0.5%, x / y | 95% / 86% | | 95% / 87% | | 83% / 83% | |
-| tick recall, x / y | 92% / 92% | 93% / 93% | 84% / 88% | 88% / 90% | | |
-| frame corner error, median / p90 | 0.7 / 3.7 px | 0.6 / 3.2 px | 1.1 / 9.1 px | 1.0 / 9.0 px | | |
-
-Training on Plotly made the geometry of Plotly charts markedly better (ticks, frame, RMS); the end-to-end counts moved little because they are limited by label reading and series separation, not by the renderer.
-
-### Geometry alone (true tick values, `evaluate --refine`), matplotlib validation set
-
-| | v3, simple | v3, all | v2, simple | v2, all | v1, simple |
+| | main (v4), simple | main (v4), all | v3, simple | v3, all | Classical, simple |
 | --- | --- | --- | --- | --- | --- |
-| line series found | 89% | 76% | 86% | 75% | 88% |
-| good coverage | 76% | 59% | 75% | 58% | 76% |
-| median RMS | 0.19% | 0.31% | 0.19% | 0.29% | 0.20% |
-| median error at turning points | 0.31% | 1.8% | 0.33% | 1.9% | 0.34% |
-| markers found / precision | 84% / 83% | 59% / 70% | 83% / 79% | 59% / 70% | 82% / 79% |
-| median marker error | 0.11% | 0.13% | 0.10% | 0.12% | 0.10% |
-| tick recall / position error | 95% / 0.30 px | 95% / 0.31 px | 95% / 0.32 px | 93% / 0.31 px | 92% / 0.31 px |
+| line series found (coverage > 50%) | 75% | 69% | 62% | 55% | 14% |
+| good coverage of true curves | 67% | 56% | 51% | 41% | 11% |
+| median RMS of found lines | 0.19% | 0.28% | 0.31% | 0.44% | 0.38% |
+| peak_err_median_pct | 0.23% | 1.29% | 0.34% | 2.0% | 0.19% |
+| envelope peak_err_median_pct (new metric) | 0.13% | 0.60% | n/a | n/a | n/a |
+| markers found / precision | 81% / 84% | 61% / 73% | 64% / 74% | 48% / 64% | 5% / 4% |
+| calibration within 0.5%, x / y | 91% / 90% (all) | | 85% / 78% (all) | | |
 
-The "all" peak error is dominated by charts with more data points than pixel columns, where one value per column cannot keep both the top and the bottom of a one-column spike.
+Headline move since v3: `line_found` 55% to 69% end to end on all; 62% to 75% on simple.
+Median RMS of found lines dropped 36% on all; marker recall rose 13 pt.
 
-## Chart.js corpus, end to end (`eval_corpus`)
+The envelope-aware `peak_err_env_median_pct` is a new scoreboard metric from round 2: the ridge envelope was already produced in extract.py but was being stripped before scoring; the metric exposes a view of peak error that correctly handles columns where the drawn ink spans more than one pixel row.
 
-`../corpus/` is the classical engine's own test set: 18 Chart.js charts it was tuned on, and a renderer PlotNet never saw.
-Same definition as `../ACCURACY.md` (RMS over 200 points, % of full scale), with ticks read by the tick reader:
+### Plotly held out (150 charts, no Plotly chart was in training before v3)
 
-| Case | v3 | v2 | v1 | Classical |
-| --- | --- | --- | --- | --- |
-| linear-single-solid | 0.033% | 0.033% | 0.033% | 0.031% |
-| linear-single-nogrid | 0.194% | 0.202% | 0.200% | 0.193% |
-| linear-thin-line | 0.031% | 0.032% | 0.033% | 0.044% |
-| linear-thick-line | 0.042% | 0.056% | 0.035% | 0.035% |
-| linear-dashed | 0.067% | 0.075% | 0.081% | 0.055% |
-| linear-multi | 0.037%, 0.046%, 0.017% | 0.042%, 0.041%, 0.015% (one split, 45% cover) | 0.039%, 0.041%, 0.015% | 0.033%, 0.043%, 0.037% |
-| dark-theme | 0.047%, 0.017% | 0.045%, 0.017% | 0.039%, 0.018% | 0.032%, 0.035% |
-| log-y | 0.170% (plus 3 spurious series) | 0.170% | 0.170% | 0.043% |
-| log-y-multi | 0.177%, 0.021% (plus 3 spurious) | 0.177%, 0.021% | 0.170%, 0.021% | 0.047%, 0.048% |
-| scatter-markers | 0.060% | 0.060% | 0.060% | 0.031% |
-| scatter-halo-colours | 0.07-0.10% | 0.08-0.10% | 0.06-0.08% | 0.017-0.027% |
-| jpeg-compressed | 0.034% | 0.034% | 0.034% | 0.036% |
-| offset-annotation | 61% (multiplier not read) | fails | fails | 0.032% |
-| retina-2x | 0.109% | 0.104% | 0.055% | 0.196% |
-| log-log | 1.33% (68% cover) | 0.62% (67% cover) | 0.62% (68% cover) | 0.074% |
-| sawtooth-sharp | 0.268% | 0.286% | 0.303% | 0.258% |
-| narrow-peaks | 0.211% | 0.240% | 0.278% | 0.362% |
-| narrow-small | 0.066% | 0.066% | 0.066% | 0.077% |
-| median over series | 0.067% | 0.075% | 0.060% | 0.037% |
+| | main (v4), simple | main (v4), all | v3, simple | v3, all | Classical, simple |
+| --- | --- | --- | --- | --- | --- |
+| line series found | 93% | 82% | 78% | 75% | 13% |
+| good coverage | 88% | 70% | 70% | 61% | 11% |
+| median RMS | 0.14% | 0.19% | 0.18% | 0.25% | 0.15% |
+| peak_err_median_pct | 0.25% | 0.83% | 0.42% | 1.34% | - |
+| markers found / precision | 84% / 91% | 40% / 81% | 76% / 78% | 42% / 77% | 32% / 16% |
+| calibration within 0.5%, x / y | 99% / 89% (all) | | 95% / 86% (all) | | |
 
-All 25 series are found by every version.
-Before ticks were snapped to their drawn tick marks the whole column read 0.15-0.2%: the network had learned matplotlib's offset between a label and its tick, and Chart.js places its labels differently. Where there is no tick mark or gridline to snap to (`nogrid`) that bias remains.
-`offset-annotation` prints a `1e6` multiplier touching the top tick label; the pipeline reads multipliers that stand apart (matplotlib's), not this one, so v3 finds the series and scales it wrongly.
-v3 returns spurious extra series on the two `log-y` cases (text scraps taken as lines) and loses more of `log-log` than v2: the two regressions of v3.
+## Chart.js corpus (end to end, `eval_corpus`)
 
-## Real screenshots (`eval_real`)
+`../corpus/` is the classical engine's own test set: 18 Chart.js charts tuned for it; a renderer PlotNet never saw.
+RMS over 200 points, % of full scale.
+All 25 series found by every version; main lists correct line counts throughout.
 
-The images in `../examples/real/`, against the classical project's hand-measured tick anchors:
+| | main (v4) | v3 | Classical |
+| --- | --- | --- | --- |
+| series median | 0.071% | 0.067% | 0.037% |
+| worst case | 0.563% (log-log) | 61.22% (offset-annotation) | 0.074% (log-log) |
+| offset-annotation (1e6 multiplier) | 0.045% (`WARN y axis: values scaled by 1e6`) | 61.22% | 0.032% |
+| log-log coverage | 68% | 68% | 100% |
+| retina-2x | 0.031% | 0.055% | 0.196% |
+| log-y / log-y-multi | 0.059% / 0.056%, 0.019% | 0.170% / 0.177%, 0.021% | 0.043% / 0.047%, 0.048% |
+| nogrid | 0.129% | 0.200% | 0.193% |
 
-| Image | Series found, v3 (v2) | Calibration error at the anchors, v3 |
+The classical engine still wins the easy-case median on its own corpus, but main dominates the hard cases: `offset-annotation` 61% to 0.045% (a 1,500× reduction), `nogrid` -35%, `retina-2x` -44%, `log-y` and `log-y-multi` roughly a third of the v3 figure.
+
+## Real-world benchmark (`eval_t5real`, `data/t5-real`)
+
+30 real charts (FRED daily series, OWID country-level panels, GISS global mean, NOAA CO2, Chart.js in-the-wild) whose underlying data is published; each extraction is scored against the published numbers.
+This set was built by team 5 in round 1 and was explicitly added to the mandatory scoreboard in round 2 after the round-1 integrator missed a regression on it.
+
+| | base (v3) | round-1 integrated | **main (round-2 + FRED fix)** |
+| --- | --- | --- | --- |
+| median RMS | 1.86% | 1.98% (regressed) | **0.48%** |
+| within 1% | 28% | 42% | **48%** |
+| within 0.5% | 25% | 27% | **37%** |
+| charts failed | 15 | 14 | 15 |
+
+Round-2's axis-factor plausibility patch recovered the regression round-1 had missed; the round-3 fix added structured 2-tick nice-step tiebreaking that turned `fred-dgs10-daily` from a 760% error into a 3% error.
+
+Residual real-world cases (round-4 candidates): `fred-dexuseu` 383% (TTA shift corrupts the 5-px label crop); `fred-houst-thick` 72% (two-tick axis still mis-fits); several FRED charts register as "could not calibrate from the tick labels".
+
+## `examples/real/` screenshots
+
+| Image | main (v4) | Notes |
 | --- | --- | --- |
-| 01 panels 1, 2, 3 (dashboard crops, no axis lines) | 1, 1, 1 (correct) | x <= 1.1 px, y <= 4.0 px (v2: y <= 2.7 px) |
-| 02 microprocessor trend (log y, 5 marker series, colour-coded text legend) | 5 marker series (correct), y read as log | - |
-| 03 women/men percent (news style, direct labels, no y axis line) | the 2 lines, plus 2 short fragments and the printed end values taken as markers; v3 reads the x axis as log (wrong), v2 as linear | x 2.0 px, y 2.2 px |
-| 04 hits per visit | 2 lines (correct) | - |
-| 05 retail sales, monthly spikes | 1 (correct), spikes traced to their tips | x 0.96 px, y 2.1 px |
+| 01 panels 1, 2, 3 | 1, 1, 1 lines (correct); x within 0.9 px, y within 2.6 px | Dashboard crops with no axis lines |
+| 02 microprocessor trend (log y, 5 marker series) | 5 marker series (correct), y read as log | `10^k` labels still read as `0^k`, numeric value correct via parse_value |
+| 03 women/men percent (news style, direct labels) | 4 series (lost 1 line), x mis-classified as log | Round-2 regression from the t5r2-clutter checkpoint; round-4 target |
+| 04 hits per visit | 2 lines (correct) | |
+| 05 retail sales | 1 line (correct) | Round-2 reduced spike recovery vs v3; round-4 target |
 
 ## Tick reader
 
 98.8% of 9,880 validation tick labels read exactly (string match).
+Reader unchanged across all three rounds.
 
 ## What limits accuracy now
 
-1. Calibration from the labels: one axis in five or six misses 0.5%, from misread or misgrouped labels (`10^3` read as `0^3`), axes with only two labels, multipliers that touch a label, and the linear/log decision.
-2. Series separation and tracing: even with true ticks, 11% of simple and 24% of all line series are not found, and a quarter of the columns of the found ones are off by more than 1%.
-3. Precision: tick positions are good to 0.3 px, which caps the corpus at about 0.03-0.07%; the classical engine's hand-tuned sub-pixel measurement is still better on its own corpus.
-4. Markers: a third missing and a quarter spurious on simple charts end to end; printed numbers taken as markers.
-5. Renderers never seen (Chart.js, and everything else): the `nogrid` bias, `retina-2x`, `log-log`.
-6. Dense data (more points than pixel columns) is represented one value per column.
+Round-4 candidates in descending expected impact on the real-world benchmark:
 
-An improvement contest on exactly these five fronts is running on branches `team/t1-axis` to `team/t5-robust`; see `teams/BRIEF.md`.
+1. 2-tick label calibration failures: several FRED and OWID axes still cannot calibrate because the pipeline only reads 2 labels and the fit has no redundancy; one of them is `fred-dexuseu` where TTA shift corrupts the label crop itself.
+2. `03-women-men` regression (round-2): one line dropped and x fit as log; the t5r2-clutter checkpoint is slightly more conservative than t5-chartjs on direct-labelled news-style charts.
+3. `05-retail-sales` regression (round-2): spike reading simplified from 2 lines to 1.
+4. Chart.js scatter-markers filled-marker `w > 0.5` ink threshold (round-2 small corpus median regression).
+5. log-log still at 68% coverage; a specialised log-log fit (fit in log-log space rather than extracting then transforming) would likely close this.
+6. Dense data (more points than pixel columns) represented one value per column; envelope-aware metric is a visibility improvement but the pipeline still returns a single value.
+
+The research product sits at `main @ 4d42ad7`.
+`INTEGRATION-REPORT.md` and `INTEGRATION-REPORT-R2.md` on branches `integration/round-1` and `integration/round-2` document how each winning change was integrated; `teams/*/REPORT.md` and `teams/*/REPORT_R2.md` give per-team diagnostics.
