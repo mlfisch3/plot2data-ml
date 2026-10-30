@@ -50,6 +50,27 @@ class TickRead:
         return (self.pos, self.text, self.conf, self.value)
 
 
+_LEADING_ZERO_INT = re.compile(r"^-?0[0-9]")
+
+
+def _canonical_label(text: str) -> bool:
+    """Reject uncanonical label texts that a chart tick locator would not produce.
+
+    A matplotlib or Chart.js tick locator never prints "03" for the value 3, or
+    "007" for 7, or "01.10" for 1.1: a leading zero before another digit is a
+    reading artefact, not a label a chart draws. On a sparse axis (two labels
+    read), such a reading poisons the fit and the correct beam alternative
+    ("1", "1.10") sits a few log-prob below it; filtering here keeps the
+    nice-step tiebreak honest without touching log-prob scoring.
+    """
+    t = text.strip()
+    # Strip a leading currency sign or opening paren so "$01" and "(03" are caught.
+    body = t.lstrip("$(")
+    if _LEADING_ZERO_INT.match(body):
+        return False
+    return True
+
+
 def candidates(logits: np.ndarray, beam: int = 8, keep: int = 6, floor: float = -14.0) -> list[tuple[str, float, float]]:
     """The parsable readings of one label from a beam search, best first."""
     out = []
@@ -57,6 +78,8 @@ def candidates(logits: np.ndarray, beam: int = 8, keep: int = 6, floor: float = 
     for text, lp in beam_decode(logits, beam=beam):
         v = parse_value(text)
         if v is None or not math.isfinite(v) or text in seen:
+            continue
+        if not _canonical_label(text):
             continue
         if out and lp < out[0][1] + floor:
             break
@@ -353,8 +376,19 @@ def decode_axis(reads: list[TickRead], tol_px: float = 3.0, hint: str | None = N
         all_values = list(values.values()) + [v for _, v, _ in extra.values()]
         if progression(all_values, h.scale):
             score += prog_bonus
-        if h.scale == "linear" and spacing > 0 and nice_step(abs(fit.b) * spacing):
-            score += 1.0
+        if h.scale == "linear" and spacing > 0:
+            # Tick locators (matplotlib, Chart.js, D3) only emit nice steps - 1, 2, 2.5, 5 x 10^k.
+            # On a sparse axis (two chosen labels, no third confirming), a 2-tick fit whose
+            # implied step is NOT nice is almost always a misread of one of the two labels,
+            # and the right beam alternative (whose step IS nice) is only a few log-prob behind.
+            # Weight the nice-step prior strongly in that regime; keep the mild +1 bonus for
+            # three-or-more-tick fits, where RANSAC inlier counts already dominate.
+            is_nice = nice_step(abs(fit.b) * spacing)
+            sparse = len(h.chosen) <= 2 and not extra
+            if is_nice:
+                score += 5.0 if sparse else 1.0
+            elif sparse:
+                score -= 3.0
         final.append((score, h, fit, extra))
     if not final:
         return None

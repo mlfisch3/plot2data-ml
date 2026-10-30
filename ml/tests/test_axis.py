@@ -140,3 +140,45 @@ def test_nice_steps_and_log_pairs():
     assert not nice_step(90) and not nice_step(0.7)
     assert log_like(10, 100) and log_like(0.01, 1) and log_like(2, 2000)
     assert not log_like(10, 20) and not log_like(0, 100) and not log_like(3, 30)
+
+
+def test_sparse_two_tick_prefers_nice_step_over_narrow_label_misread():
+    # FRED's DGS10 y-axis: labels 0 through 6 at ~98 px apart, but only "0" and the "1" tick are
+    # detected. The "1" crop is 3 px wide; the OCR's top beam is "13" (confident but wrong),
+    # with "1" sitting a couple of log-prob below. A 2-tick fit on (0, 13) implies a step of 13
+    # per 93-px spacing, which is NOT a nice-locator step; (0, 1) is. Pick the nice-step pair.
+    # weak {1: ("", -1.0)} keeps "13" as greedy but lets the beam reach "1" (via a blanked "3")
+    # about 2.5 log-prob behind - the gap matches the real FRED-DGS10 OCR failure.
+    reads = [tick(633, "0"), tick(541, "13", {1: ("", -1.0)}, keep=8)]
+    cand_texts = [t for t, _, _ in reads[1].cands]
+    assert "13" in cand_texts and "1" in cand_texts
+    # And "13" sits above "1" in log-prob, as in the real failure.
+    lp_by_text = {t: lp for t, lp, _ in reads[1].cands}
+    assert lp_by_text["13"] > lp_by_text["1"]
+    f = decode_axis(reads)
+    assert f is not None and f.scale == "linear"
+    assert f.to_value(541) == pytest.approx(1.0, abs=1e-6)
+    assert f.to_value(633) == pytest.approx(0.0, abs=1e-6)
+    assert reads[1].text == "1"
+
+
+def test_leading_zero_integer_candidates_are_filtered():
+    # "03" never comes out of a tick locator - it would read as "3". If the beam surfaces it
+    # (one leading-zero wrong beam over the correct "3"), the sparse-axis tiebreak must not
+    # pick it over the canonical "3".
+    from p2d.axis import _canonical_label
+
+    assert _canonical_label("0") and _canonical_label("0.95")
+    assert _canonical_label("10") and _canonical_label("100")
+    assert _canonical_label("1e5") and _canonical_label("-5.0")
+    assert not _canonical_label("03") and not _canonical_label("007")
+    assert not _canonical_label("-03") and not _canonical_label("01.10")
+
+
+def test_two_tick_axis_still_picks_sensible_fit_when_both_steps_are_nice():
+    # The usual 2-tick case must still work: "0" and "6" give step 6 (nice) and read as 6 per tick,
+    # not something exotic. Guards against the sparse-axis bonus swinging a well-posed case.
+    f = decode_axis([tick(500, "0"), tick(100, "6")])
+    assert f is not None and f.scale == "linear"
+    assert f.to_value(100) == pytest.approx(6, abs=1e-6)
+    assert f.to_value(500) == pytest.approx(0, abs=1e-6)
