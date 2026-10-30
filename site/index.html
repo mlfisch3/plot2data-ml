@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plot2data-ml - the numbers behind a chart, back out of a screenshot</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a href="#top" class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M3 20h18M3 20V4M7 16l3-5 3 3 5-9" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      plot2data<span class="brand-sep">-</span><span class="brand-ml">ml</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#numbers">Numbers</a>
+      <a href="#gallery">Gallery</a>
+      <a href="#pipeline">How it works</a>
+      <a href="#research">The research</a>
+      <a href="#demo">Try it</a>
+    </nav>
+    <button class="theme" id="theme-toggle" aria-label="Toggle theme">
+      <svg class="sun" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="4" fill="currentColor"/><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg>
+      <svg class="moon" viewBox="0 0 24 24" width="18" height="18"><path d="M20 14.5A8 8 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" fill="currentColor"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-tag">a learned chart reader, trained on synthetic charts, out of distribution</div>
+    <h1>The numbers behind a chart, back out of a screenshot.</h1>
+    <p class="hero-lede">
+      plot2data-ml takes a chart image and returns the series as CSV.
+      A convolutional network trained on randomly rendered matplotlib and Plotly charts does the perception;
+      sub-pixel geometry, a CTC tick reader and robust calibration do the arithmetic.
+      Five pairs of research agents iterated for a week; the integrated reader lands here.
+    </p>
+    <div class="hero-stats">
+      <a class="stat" href="#corpus">
+        <div class="stat-value">61.2% <span class="arrow">to</span> 0.21%</div>
+        <div class="stat-label">worst-case Chart.js corpus RMS<br><small>(classical/base to integrated)</small></div>
+      </a>
+      <a class="stat" href="#mpl-val">
+        <div class="stat-value">55% <span class="arrow">to</span> 66%</div>
+        <div class="stat-label">line_found on 200-chart matplotlib validation set<br><small>(end to end, all charts)</small></div>
+      </a>
+      <a class="stat" href="#real">
+        <div class="stat-value">4.0 px <span class="arrow">to</span> 2.6 px</div>
+        <div class="stat-label">y-error on real dashboard panel 2<br><small>(v3 base to integrated, at hand-measured ticks)</small></div>
+      </a>
+    </div>
+    <div class="hero-ctas">
+      <a class="btn primary" href="#gallery">See 15 extractions</a>
+      <a class="btn ghost" href="#demo">Drop an image in</a>
+    </div>
+  </div>
+</section>
+
+<section id="numbers">
+  <div class="wrap">
+    <h2>The scoreboard</h2>
+    <p class="section-lede">
+      Measured on Thu 29 Oct 2026 by the integrator, Fri 30 Oct 2026 the figures below were lifted into this site.
+      Every number is the integrated reader (<code>runs/t5-chartjs/best.pt</code> + <code>runs/ocr1/best.pt</code> + <code>--tta shift</code>) against the frozen v3 base and the classical engine.
+      All errors are a percentage of the plot's full height; "simple" means at most three series and fewer data points than pixel columns.
+    </p>
+
+    <div class="figures">
+      <div id="corpus" class="figure">
+        <div class="figure-title">Chart.js corpus, worst-case RMS</div>
+        <img src="assets/scoreboard-corpus.svg" alt="log-scale bar chart: classical, v1, v2, v3 all at ~61.2% worst-case RMS; integrated drops to 0.214%" loading="lazy">
+        <p class="figure-note">
+          The old worst case was <code>offset-annotation</code>, a chart with a <code>1e6</code> multiplier at the corner.
+          The base reader missed the multiplier and reported the series 1,000,000 times too small (61% error).
+          Team 5's clutter training and team 1's structured axis decoder both fixed it; the integrated reader lands at 0.21%, 280x better than base.
+        </p>
+      </div>
+
+      <div id="mpl-val" class="figure">
+        <div class="figure-title">matplotlib validation set, 200 charts, end-to-end</div>
+        <img src="assets/scoreboard-mpl-val.svg" alt="Side-by-side bar charts: line_found simple 14% classical to 75% integrated, and peak-err 0.39% v3 to 0.23% integrated." loading="lazy">
+        <p class="figure-note">
+          Over the full set the integrated reader finds 66% of all series and 75% of simple series, up from 55/62% on v3 base.
+          Peak error at turning points drops 42% on simple charts and 41% overall.
+        </p>
+      </div>
+
+      <div id="plotly" class="figure">
+        <div class="figure-title">Plotly held-out set, 150 charts</div>
+        <img src="assets/scoreboard-plotly.svg" alt="Side-by-side bar charts: Plotly line_found simple 13% to 93%, median RMS 0.15% to 0.145%." loading="lazy">
+        <p class="figure-note">
+          The classical engine finds 13% of these series; the integrated reader finds 93% of the simple ones at a median RMS of 0.145%.
+          v3 was trained on different Plotly charts and never saw this held-out set.
+        </p>
+      </div>
+
+      <div id="real" class="figure">
+        <div class="figure-title">Real screenshots, dashboard panels 1 to 3</div>
+        <img src="assets/scoreboard-real.svg" alt="Grouped bar chart: v3 base vs integrated x- and y- pixel error on three dashboard panels; integrated is lower on all six measurements." loading="lazy">
+        <p class="figure-note">
+          Lowest x-error and y-error of any version measured, panel by panel.
+          On <code>05-retail-sales-monthly</code> the integrated reader restores the second series that team 5's V2 training alone had regressed to one line.
+        </p>
+      </div>
+    </div>
+
+    <h3 class="table-head">Full scoreboard, end to end</h3>
+    <div class="scrollable">
+      <table class="scoreboard">
+        <thead>
+          <tr>
+            <th>metric</th>
+            <th>Classical</th>
+            <th>v3 base</th>
+            <th class="winner">Integrated</th>
+            <th>Delta (base to int.)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="5" class="section-row">mpl-val, 200 charts</td></tr>
+          <tr><td>line_found (simple)</td><td>14%</td><td>62%</td><td class="winner">75%</td><td class="good">+12.8 pp</td></tr>
+          <tr><td>line_found (all)</td><td>n/a</td><td>55%</td><td class="winner">66%</td><td class="good">+11.5 pp</td></tr>
+          <tr><td>median RMS, simple</td><td>0.38%</td><td>0.31%</td><td class="winner">0.21%</td><td class="good">-32%</td></tr>
+          <tr><td>peak-error median, simple</td><td>0.19%</td><td>0.39%</td><td class="winner">0.23%</td><td class="good">-42%</td></tr>
+          <tr><td>marker recall, simple</td><td>5%</td><td>64%</td><td class="winner">81%</td><td class="good">+16.7 pp</td></tr>
+          <tr><td>calibration within 0.5%, y</td><td>-</td><td>78%</td><td class="winner">90%</td><td class="good">+12.0 pp</td></tr>
+
+          <tr><td colspan="5" class="section-row">Plotly held out, 150 charts</td></tr>
+          <tr><td>line_found (simple)</td><td>13%</td><td>78%</td><td class="winner">93%</td><td class="good">+15.0 pp</td></tr>
+          <tr><td>median RMS, simple</td><td>0.15%</td><td>0.18%</td><td class="winner">0.145%</td><td class="good">-21%</td></tr>
+          <tr><td>marker precision, simple</td><td>16%</td><td>78%</td><td class="winner">91%</td><td class="good">+13.0 pp</td></tr>
+          <tr><td>calibration within 0.5%, x</td><td>-</td><td>95%</td><td class="winner">99%</td><td class="good">+4.7 pp</td></tr>
+
+          <tr><td colspan="5" class="section-row">Chart.js corpus, 18 charts (median / worst)</td></tr>
+          <tr><td>median RMS</td><td class="winner-faint">0.037%</td><td>0.067%</td><td>0.087%</td><td class="bad">+0.02 pp</td></tr>
+          <tr><td>worst-case RMS</td><td>-</td><td>61.222%</td><td class="winner">0.214%</td><td class="good">-99.6%</td></tr>
+          <tr><td>series failed (missed entirely)</td><td>varies</td><td>0 / 25</td><td class="winner">0 / 25</td><td>-</td></tr>
+
+          <tr><td colspan="5" class="section-row">Real screenshots (x / y px error, worst panel)</td></tr>
+          <tr><td>panel1 anchors</td><td>-</td><td>1.08 / 1.94</td><td class="winner">0.82 / 1.89</td><td class="good">best</td></tr>
+          <tr><td>panel2 anchors</td><td>-</td><td>0.48 / 3.99</td><td class="winner">0.44 / 2.62</td><td class="good">best</td></tr>
+          <tr><td>panel3 anchors</td><td>-</td><td>1.02 / 1.61</td><td class="winner">0.85 / 1.32</td><td class="good">best</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">
+      <strong>Honest hangs.</strong>
+      On easy Chart.js charts the median RMS rises 0.02 pp - a known trade of the source-pixel measurement swapped for the giant worst-case win.
+      On Plotly, marker_recall over all charts moved -1.6 pp from base, within noise for a 309-series set.
+      On mpl-val line_found, the integrated reader is 2.6 pp behind one team's isolated submission (T1), as some of T1's gains leaked when combined with t3 and t5.
+      Full numbers in <a href="../INTEGRATION-REPORT.md"><code>INTEGRATION-REPORT.md</code></a>.
+    </p>
+  </div>
+</section>
+
+<section id="gallery">
+  <div class="wrap">
+    <h2>Fifteen extractions</h2>
+    <p class="section-lede">
+      Each panel shows the source image, the extracted geometry drawn over a faded copy (lines in a contrasting colour, markers as tilted crosses, ticks as red crosses, label boxes blue, plot frame orange), and the first few rows of the CSV the pipeline writes.
+      Pick any card to open its CSV.
+    </p>
+    <div class="filter">
+      <button class="chip active" data-filter="all">All</button>
+      <button class="chip" data-filter="Chart.js corpus">Chart.js corpus</button>
+      <button class="chip" data-filter="Real screenshot">Hand-picked real</button>
+      <button class="chip" data-filter="FRED screenshot">FRED</button>
+      <button class="chip" data-filter="OWID screenshot">Our World in Data</button>
+    </div>
+    <div id="gallery-grid" class="grid">
+      <div class="placeholder">Loading extractions ...</div>
+    </div>
+  </div>
+</section>
+
+<section id="pipeline">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="section-lede">
+      The pipeline is a convolutional network that does the perceptual work and a short classical tail that does the arithmetic.
+      Image in, numbers out, in about one second on a laptop GPU.
+    </p>
+    <div class="pipeline-diagram">
+      <!-- Inline SVG kept legible on dark and light with currentColor. -->
+      <svg viewBox="0 0 920 220" aria-labelledby="pipeline-title" role="img">
+        <title id="pipeline-title">The plot2data-ml pipeline, left to right</title>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="Inter, sans-serif" font-size="13" fill="currentColor" stroke="currentColor">
+          <!-- Boxes -->
+          <g>
+            <rect x="10"  y="60" width="130" height="100" rx="10" fill="none" stroke-width="1.4"/>
+            <text x="75"  y="85"  text-anchor="middle" font-weight="600" stroke="none">1. Placement</text>
+            <text x="75"  y="110" text-anchor="middle" stroke="none" font-size="11">fit to canvas,</text>
+            <text x="75"  y="124" text-anchor="middle" stroke="none" font-size="11">record transform</text>
+            <text x="75"  y="146" text-anchor="middle" stroke="none" font-size="11" opacity="0.7">img &rarr; 768x512</text>
+          </g>
+          <g>
+            <rect x="160" y="40" width="150" height="140" rx="10" fill="none" stroke-width="1.4"/>
+            <text x="235" y="63"  text-anchor="middle" font-weight="600" stroke="none">2. PlotNet</text>
+            <text x="235" y="86"  text-anchor="middle" stroke="none" font-size="11">ResNet-34 U-Net</text>
+            <text x="235" y="104" text-anchor="middle" stroke="none" font-size="11">sem, heat, emb</text>
+            <text x="235" y="124" text-anchor="middle" stroke="none" font-size="11" opacity="0.7">three heads</text>
+            <text x="235" y="156" text-anchor="middle" stroke="none" font-size="11" fill="#2563eb">+ TTA shift</text>
+          </g>
+          <g>
+            <rect x="330" y="60" width="150" height="100" rx="10" fill="none" stroke-width="1.4"/>
+            <text x="405" y="85"  text-anchor="middle" font-weight="600" stroke="none">3. Decode</text>
+            <text x="405" y="108" text-anchor="middle" stroke="none" font-size="11">peaks, ridges,</text>
+            <text x="405" y="122" text-anchor="middle" stroke="none" font-size="11">embed-cluster,</text>
+            <text x="405" y="140" text-anchor="middle" stroke="none" font-size="11">source-pixel re-measure</text>
+          </g>
+          <g>
+            <rect x="500" y="40" width="150" height="140" rx="10" fill="none" stroke-width="1.4"/>
+            <text x="575" y="63"  text-anchor="middle" font-weight="600" stroke="none">4. Tick reader</text>
+            <text x="575" y="86"  text-anchor="middle" stroke="none" font-size="11">crop labels,</text>
+            <text x="575" y="104" text-anchor="middle" stroke="none" font-size="11">CTC OCR,</text>
+            <text x="575" y="124" text-anchor="middle" stroke="none" font-size="11">parse value</text>
+            <text x="575" y="156" text-anchor="middle" stroke="none" font-size="11" fill="#2563eb">structured axis decode</text>
+          </g>
+          <g>
+            <rect x="670" y="60" width="130" height="100" rx="10" fill="none" stroke-width="1.4"/>
+            <text x="735" y="85"  text-anchor="middle" font-weight="600" stroke="none">5. Calibrate</text>
+            <text x="735" y="108" text-anchor="middle" stroke="none" font-size="11">RANSAC, LSQ,</text>
+            <text x="735" y="122" text-anchor="middle" stroke="none" font-size="11">linear or log,</text>
+            <text x="735" y="140" text-anchor="middle" stroke="none" font-size="11">multiplier if any</text>
+          </g>
+          <g>
+            <rect x="820" y="60" width="90" height="100" rx="10" fill="none" stroke-width="1.4" stroke="#2563eb"/>
+            <text x="865" y="85"  text-anchor="middle" font-weight="600" stroke="none" fill="#2563eb">6. CSV</text>
+            <text x="865" y="108" text-anchor="middle" stroke="none" font-size="11">auto-sample,</text>
+            <text x="865" y="122" text-anchor="middle" stroke="none" font-size="11">warnings,</text>
+            <text x="865" y="140" text-anchor="middle" stroke="none" font-size="11">data units</text>
+          </g>
+        </g>
+        <!-- Arrows -->
+        <g stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#arrow)">
+          <path d="M140 110 L158 110"/>
+          <path d="M310 110 L328 110"/>
+          <path d="M480 110 L498 110"/>
+          <path d="M650 110 L668 110"/>
+          <path d="M800 110 L818 110"/>
+        </g>
+      </svg>
+    </div>
+    <ol class="pipeline-steps">
+      <li><strong>Placement</strong>. Scale the image onto a 768x512 canvas with one affine; every output is mapped back through it.</li>
+      <li><strong>PlotNet</strong>. A ResNet-34 U-Net with three heads: a per-pixel class head (ink, grid, axis, tick label, legend, text, background), six heat maps for series centre lines, markers, polyline vertices, labelled x and y ticks and plot-frame corners, and an 8-D embedding trained with a discriminative loss so pixels of one series cluster together. Test-time augmentation shifts the image by a few pixels and fuses the results.</li>
+      <li><strong>Decode</strong>. Peaks and ridges refined to sub-pixel precision by a parabola through the log heat; series by embedding clusters; one centre-line sample per column; marker centres from the marker heat. Each line is re-measured on the <em>source</em> pixels as the ink-weighted centroid of the paper-to-series-colour blend.</li>
+      <li><strong>Tick reader</strong>. Each labelled tick is cropped and read by a small convolutional CTC recogniser trained on the synthetic labels. Values parse <code>1,000</code>, <code>45%</code>, <code>$1.2M</code>, <code>10^3</code>, <code>2.5e+08</code>. A structured axis decoder from team 1 joint-reads whole axes to fix misreads.</li>
+      <li><strong>Calibrate</strong>. RANSAC over tick pairs in pixel space, least squares over the ones that agree; linear and log both tried, the one that explains more ticks wins. Printed multipliers like <code>1e6</code> are detected and applied as warnings, not silently.</li>
+      <li><strong>Sample</strong>. A marker series returns one point per marker. A curve is resampled uniformly in x; by default at the coarsest step whose linear reconstruction stays within the trace's uncertainty, so the finest feature on the curve sets the step for the whole curve.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="research">
+  <div class="wrap">
+    <h2>How the gains were earned</h2>
+    <p class="section-lede">
+      From a frozen baseline at <code>6b313e9</code>, five pairs of research agents worked their own fronts in parallel on their own branches.
+      Each pair submitted a self-measured scoreboard; the integrator read all five submissions, resolved conflicts and composed them in order; a second round found and fixed one integration miss.
+    </p>
+    <div class="teams">
+      <div class="team">
+        <div class="team-tag">T1</div>
+        <div class="team-title">Axis</div>
+        <div class="team-body">A structured axis decoder: joint-read all the labels of an axis as one grammar, with a tight multiplier regex that rejects an integer offset. Fixed the <code>offset-annotation</code> and <code>log-log</code> cases outright.</div>
+      </div>
+      <div class="team">
+        <div class="team-tag">T2</div>
+        <div class="team-title">Trace</div>
+        <div class="team-body">Overlap-aware fragment merging using Hungarian assignment across time: series that crossed stopped swapping, and short fragments at the end of a line got re-joined.</div>
+      </div>
+      <div class="team">
+        <div class="team-tag">T3</div>
+        <div class="team-title">Precision</div>
+        <div class="team-body">Source-pixel column measurement: a per-source-column re-measurement of each line as the ink-weighted centroid of the series colour. Peak-error median dropped 42% on simple charts.</div>
+      </div>
+      <div class="team">
+        <div class="team-tag">T4</div>
+        <div class="team-title">Markers</div>
+        <div class="team-body">Point-symmetric marker re-measurement on the source pixels. Markers found rose from 48% to 59% on dense charts; precision up to 74%.</div>
+      </div>
+      <div class="team">
+        <div class="team-tag">T5</div>
+        <div class="team-title">Robustness</div>
+        <div class="team-body">Native-resolution reading, TTA shift, zoom-crop training on cluttered real screenshots, and a Chart.js fine-tune. The worst-case corpus RMS of 61.222% collapsed to 0.593% in isolation, and the base checkpoint for the integrated reader was this one.</div>
+      </div>
+    </div>
+    <p class="small">
+      <strong>Round 2.</strong> A follow-up integration round found and fixed the <code>t5-real</code> <code>axis_factor</code> regression (a multiplier that touched the top label was being read into the data).
+      Full writeup in <a href="../INTEGRATION-REPORT.md"><code>INTEGRATION-REPORT.md</code></a> on <code>integration/round-1</code>.
+    </p>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="wrap">
+    <h2>Try it on your own chart</h2>
+    <p class="section-lede">
+      This site is static (open <code>site/index.html</code> directly, or serve it with any HTTP server).
+      The live reader runs on your machine via <code>p2d.serve</code>, a tiny FastAPI app that loads the checkpoint and reads a dropped image.
+    </p>
+    <div class="demo-steps">
+      <div class="step">
+        <div class="step-n">1</div>
+        <div class="step-body">
+          <h3>Start the backend</h3>
+          <pre><code>cd ml
+source ../.venv/bin/activate
+python -m p2d.serve \
+  --ckpt runs/t5-chartjs/best.pt \
+  --ocr runs/ocr1/best.pt --port 8417</code></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">2</div>
+        <div class="step-body">
+          <h3>Open the test bench</h3>
+          <p>Visit <a href="http://localhost:8417/">http://localhost:8417/</a> (drop a chart into the drop zone, or paste from the clipboard).</p>
+          <p>Or run one image at a time from the shell:</p>
+          <pre><code>python -m p2d.pipeline chart.png \
+  --ckpt runs/t5-chartjs/best.pt \
+  --ocr runs/ocr1/best.pt \
+  --csv out.csv --overlay out.png</code></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-n">3</div>
+        <div class="step-body">
+          <h3>Shortcut</h3>
+          <p>From this directory, <code>./serve.sh</code> starts the backend with the integrated checkpoint and opens the browser.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-cols">
+      <div>
+        <div class="foot-title">plot2data-ml</div>
+        <p>a learned chart reader, split from the classical <a href="https://github.com/mlfisch3/plot2data">plot2data</a> lineage.</p>
+      </div>
+      <div>
+        <div class="foot-title">Repository</div>
+        <ul>
+          <li><a href="../README.md">README.md</a></li>
+          <li><a href="../ml/README.md">ml/README.md (design)</a></li>
+          <li><a href="../ml/RESULTS.md">ml/RESULTS.md (numbers)</a></li>
+          <li><a href="../INTEGRATION-REPORT.md">INTEGRATION-REPORT.md</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="foot-title">Branch</div>
+        <p><code>site/showcase</code>, built on <code>integration/round-1</code> at <code>121ed4d</code>.</p>
+      </div>
+    </div>
+    <div class="foot-small">Fri 30 Oct 2026. All numbers measured from this repo, nothing extrapolated.</div>
+  </div>
+</footer>
+
+</main>
+<script src="script.js" defer></script>
+</body>
+</html>
