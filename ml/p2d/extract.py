@@ -9,6 +9,7 @@ heat around the maximum, which is exact for a Gaussian.
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 
 import cv2
@@ -833,20 +834,100 @@ def refine_lines_v1(img: np.ndarray, ex: Extraction, keep_vertex: float = 0.3) -
     return ex
 
 
-def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift: float = 0.45,
-                 max_spread: float = 0.45) -> Extraction:
-    """Correct an axis's ticks by the offset of the drawn tick marks or gridlines from them.
+def _affine_from_marks(pos_net: np.ndarray, marks: np.ndarray, weights: np.ndarray,
+                       slope_tol: float, resid_tol: float):
+    """Fit `mark = a + b * pos_net` by iteratively reweighted least squares.
 
-    The network places a tick from everything around it, labels included, and a
-    label's offset from its tick is a house style that differs between charting
-    libraries: on a renderer it has not learned, every tick of an axis is off by
-    the same fraction of a pixel. The marks themselves do not lie, but they are
-    snapped to the pixel grid by the renderer while the true position is not, so
-    a single mark is only good to half a pixel. So the marks are used for what
-    they are good for, the common offset: when at least three ticks of an axis
-    have a mark or a gridline within reach and those marks agree on one shift
-    beyond the snapping noise, every tick of the axis moves by the median shift,
-    and the network's sub-pixel placement is kept. Otherwise nothing moves.
+    Returns (a, b, inliers_mask, resid_mad). `b` is 1 for a pure-shift fit
+    (always safe), returned when the data cannot pin a slope. Otherwise the full
+    affine fit is returned, with outliers dropped at 2.5 * MAD or 0.5 px,
+    whichever is larger. If fewer than 3 inliers remain or the residual MAD
+    exceeds `resid_tol`, returns (None, None, None, None).
+
+    `slope_tol` is the half-width of the trusted-slope window around 1.0:
+    a fitted `|b - 1| > slope_tol` is taken as a sign that the data cannot
+    identify the slope and the function returns a pure-shift fit instead.
+    """
+    n = len(pos_net)
+    if n < 3:
+        return None, None, None, None
+
+    def _shift_only(mask):
+        if mask.sum() < 3:
+            return None
+        d = marks[mask] - pos_net[mask]
+        w = weights[mask]
+        wsum = float(w.sum()) or 1.0
+        a = float((d * w).sum() / wsum)
+        resid = marks - (a + pos_net)
+        mad = float(np.median(np.abs(resid[mask])))
+        return a, 1.0, mask, mad
+
+    inliers = np.ones(n, bool)
+    full = None
+    for _ in range(3):
+        if inliers.sum() < 3:
+            break
+        p = pos_net[inliers]
+        m = marks[inliers]
+        w = weights[inliers]
+        A = np.column_stack([np.ones(len(p)), p])
+        try:
+            WA = A * w[:, None]
+            AtWA = WA.T @ A
+            AtWm = WA.T @ m
+            a, b = np.linalg.solve(AtWA, AtWm)
+        except np.linalg.LinAlgError:
+            break
+        resid = marks - (float(a) + float(b) * pos_net)
+        mad = float(np.median(np.abs(resid[inliers]))) if inliers.any() else 0.0
+        tol = max(2.5 * mad, 0.5)
+        new_in = np.abs(resid) <= tol
+        full = (float(a), float(b), inliers.copy(), mad)
+        if np.array_equal(new_in, inliers):
+            break
+        if new_in.sum() < 3:
+            break
+        inliers = new_in
+
+    if full is None:
+        return _shift_only(inliers) or (None, None, None, None)
+    a, b, mask, mad = full
+    # A fitted slope outside the identifiability window is noise; fall back to
+    # the (always safe) pure-shift fit over the same inliers.
+    if abs(b - 1.0) > slope_tol or mad > resid_tol:
+        shifted = _shift_only(mask)
+        if shifted is None:
+            return None, None, None, None
+        a_s, b_s, m_s, mad_s = shifted
+        if mad_s > resid_tol:
+            return None, None, None, None
+        return a_s, b_s, m_s, mad_s
+    return a, b, mask, mad
+
+
+def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift: float = 0.45,
+                 max_spread: float = 0.45, resid_tol: float = 0.35, affine_min_marks: int | None = None) -> Extraction:
+    """Correct an axis's ticks by one affine map fit to all drawn marks or gridlines on the axis.
+
+    The network places a tick from everything around it, labels included, and
+    the drawn tick mark or gridline is one more observation of where that tick
+    actually sits. For a sparse axis with three or four marks the slope of
+    network-against-mark is poorly identified; the fit then degenerates to a
+    pure median shift and every tick moves by that shift, as before. For five
+    or more marks the full affine `mark = a + b * pos_net` is fitted by
+    iteratively reweighted least squares, outliers rejected at 2.5 * MAD or
+    0.5 px (whichever is larger), and the slope accepted only when `|b - 1|`
+    stays within an identifiability window that tightens with sqrt(N). When
+    the slope leaves that window, the fit falls back to shift-only on the
+    same inliers; nothing is applied when the residual MAD exceeds the
+    tolerance (`resid_tol`) after either branch.
+
+    Why joint fitting helps: a single pixel-snapped mark is good to about half
+    a pixel. Averaging N marks' positions brings the shift down toward
+    `0.5 / sqrt(N)` px; a scale correction, when the network's tick spacing
+    drifts across the axis (a per-chart artefact of heatmap decoding at low
+    resolution), is only visible to the joint fit.
 
     Two places are searched for a line: a narrow band hugging the axis on the
     outside, where a tick mark is and a label's padding keeps glyphs out, and
@@ -858,6 +939,12 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift
     the outside is the side the label sits on, and a gridline runs across the
     span of the other axis's ticks. The frame, when found, only widens that span.
     """
+    # The slope term of the joint fit is the b-DOF. On data where the network
+    # already matches the ticks up to the pixel-snap floor it has nothing to
+    # fit and absorbs noise; the T3R2_SHIFT_ONLY env var pins the fit to b=1
+    # so the ablation can be measured without rebuilding the branch.
+    if affine_min_marks is None:
+        affine_min_marks = 10**9 if int(os.environ.get("T3R2_SHIFT_ONLY", "0")) else 5
     g = img.astype(np.float32).mean(-1)
     H, W = g.shape
     if ex.plot_area is not None:
@@ -876,7 +963,7 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift
 
     for key in ("xticks", "yticks"):
         ticks = getattr(ex, key)
-        shifts = []
+        marks_data = []  # (pos_net, mark_pos, strength) over ticks with a drawn mark
         for t in ticks:
             p = t["pos"]
             lo, hi = int(np.floor(p - search - 1)), int(np.ceil(p + search + 1))
@@ -928,16 +1015,42 @@ def refine_ticks(img: np.ndarray, ex: Extraction, search: float = 2.0, min_shift
                     best = _pick_line(prof, lo, p, search, best)
             if best is not None:
                 t["mark"] = best[1]
-                shifts.append(best[1] - p)
-        if len(shifts) < 3:
+                t["mark_strength"] = best[0]
+                marks_data.append((p, best[1], best[0]))
+        if len(marks_data) < 3:
             continue
-        sh = np.array(shifts)
-        med = float(np.median(sh))
-        if abs(med) < min_shift or float(np.median(np.abs(sh - med))) > max_spread:
+        pos_net = np.array([d[0] for d in marks_data], float)
+        marks = np.array([d[1] for d in marks_data], float)
+        strength = np.array([d[2] for d in marks_data], float)
+        a_fit = b_fit = None
+        # Slope identifiability tightens with sqrt(N): a 3-4 mark axis cannot
+        # pin a slope at all, so b is forced to 1 and only the shift is read;
+        # a 5+ mark axis is given a slope window that scales as 1/sqrt(N).
+        n_marks = len(marks_data)
+        if n_marks >= affine_min_marks:
+            slope_tol = max(0.004, min(0.015, 0.015 * math.sqrt(5.0 / n_marks)))
+            a_fit, b_fit, inliers, mad = _affine_from_marks(
+                pos_net, marks, strength, slope_tol=slope_tol, resid_tol=resid_tol)
+        else:
+            a_fit, b_fit, inliers, mad = _affine_from_marks(
+                pos_net, marks, strength, slope_tol=0.0, resid_tol=resid_tol)
+        if a_fit is None:
+            continue
+        pos_all = np.array([t["pos"] for t in ticks], float)
+        implied = np.abs((a_fit + b_fit * pos_all) - pos_all)
+        if float(np.max(implied)) < min_shift:
+            # The fitted correction is within sub-pixel noise; leave the
+            # network's placement untouched, as before.
+            continue
+        # One last spread check preserves the behaviour that an axis whose
+        # drawn marks disagree past the pixel-snap noise cannot be trusted
+        # to pull every tick by one map.
+        resid = marks - (a_fit + b_fit * pos_net)
+        if float(np.median(np.abs(resid[inliers]))) > max_spread:
             continue
         for t in ticks:
             t["pos_net"] = t["pos"]
-            t["pos"] = t["pos"] + med
+            t["pos"] = float(a_fit + b_fit * t["pos"])
             if key == "yticks":
                 t["anchor"] = [t["anchor"][0], t["pos"]]
             else:
