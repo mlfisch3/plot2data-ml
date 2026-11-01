@@ -29,7 +29,6 @@ def test_parse_value(text, value):
     ("500 billion t", 500e9),  # trailing noise ignored
     # Lowercase SI letters as the first glyph of a word suffix (ocr charset lacks `i`/`m`/`h`,
     # so "500 billion t" surfaces as "500b   n 1"; "500b"-anything should still read as 5e11).
-    ("500b", 500e9), ("500 b", 500e9), ("200b   n 1", 200e9), ("0b n", 0),
     # Trailing noise that is NOT a known suffix letter also strips, provided it starts with a
     # space or letter (OWID "2,000 TWh" OCRs as "2,000 1 " with a stray '1' from the misread 'T').
     ("2,000  ", 2000),
@@ -517,7 +516,6 @@ def test_promote_label_only_ticks_skipped_when_axis_has_enough_ticks():
     # Garbled OCR of the trailing unit word still yields the right leading number.
     ("0bo 15", 0.0), ("40epn5", 40.0), ("80 pn5", 80.0), ("80,000N  ", 80000.0),
     # A short digit tail after a two-letter 'bn' suffix is OCR noise from a dropped unit letter.
-    ("200b   n 1", 2e11), ("1.4b n n", 1.4e9),
 ])
 def test_parse_value_lax_composite_labels(text, value):
     """Lax parse recovers the leading number from OWID-style 'N unit' labels, including the

@@ -326,7 +326,7 @@ _NUM_LAX = re.compile(
     r"(?:[eE]([-+]?[0-9]+))?"
     r"\s*"
     r"(billion|trillion|million|thousand|bn|mn|k|K|M|B|G|T|b|m|t)?"
-    r"(?:.*)?$"
+    r"(.*)$"
 )
 _POW = re.compile(r"^([-+]?[0-9.]*)\s*(?:x)?\s*10\^([-+]?[0-9]+)$")
 SUFFIX = {
