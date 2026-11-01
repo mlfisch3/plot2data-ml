@@ -190,14 +190,21 @@ def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[flo
         return 1.0, 0.0, None
     x0, y0, x1, y1 = ex.plot_area
     w, h = x1 - x0, y1 - y0
+    # matplotlib (and Chart.js) print the offset annotation flush with the axis spine - a few
+    # characters wide, left-aligned to the y-axis or right-aligned to the x-axis. Boxes that
+    # land well inside the strip-end search region but far from the actual spine are legend
+    # or title text that happens to contain a `1eN`-looking glyph sequence; reading one of those
+    # as the chart's multiplier scales every y value by 10^N. The spine margin cuts those out
+    # of both the loose-label candidates and the pixel-level end search.
+    spine_margin = max(40.0, 0.1 * w)
     cands: list[tuple[float, list[int]]] = []
     for b in ex.loose_labels:
         cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
         # The text's centre is outside the plot; its box may touch or overlap the edge by a few px
         # (Chart.js prints the multiplier right on the top edge).
-        if axis == "y" and cy < y0 and y0 - cy < 0.15 * h + 30 and (abs(cx - x0) < 0.25 * w or abs(cx - x1) < 0.25 * w):
+        if axis == "y" and cy < y0 and y0 - cy < 0.15 * h + 30 and min(abs(cx - x0), abs(cx - x1)) < spine_margin:
             cands.append((abs(cx - x0) + (y0 - cy), b))
-        if axis == "x" and cy > y1 and cy - y1 < 0.2 * h + 40 and cx > x1 - 0.3 * w:
+        if axis == "x" and cy > y1 and cy - y1 < 0.2 * h + 40 and cx > x1 - spine_margin:
             cands.append((abs(cx - x1) + (cy - y1), b))
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     # Loose labels first: they are what the net surfaced as separate text pieces.
@@ -208,9 +215,17 @@ def axis_factor(reader, img: np.ndarray, ex: Extraction, axis: str) -> tuple[flo
             return got[0], got[1], text.replace(" ", "")
     # Explicit source-pixel search at the axis end: catches multipliers whose sem component is
     # missing or absorbed into another label. Each candidate is grown by a few pixels before the
-    # reader sees it so leading/trailing glyphs are not cut.
+    # reader sees it so leading/trailing glyphs are not cut. The same spine-margin bound applies
+    # here so FRED chart title and legend glyphs that happen to decode as `1e3` cannot pass.
     H, W = img.shape[:2]
     for b in _end_search(img, ex, axis):
+        cx, cy = (b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0
+        if axis == "y":
+            if min(abs(cx - x0), abs(cx - x1)) > spine_margin:
+                continue
+        else:
+            if abs(cx - x1) > spine_margin:
+                continue
         pad_x, pad_y = 3, 2
         pb = [max(0, b[0] - pad_x), max(0, b[1] - pad_y),
               min(W, b[2] + pad_x), min(H, b[3] + pad_y)]

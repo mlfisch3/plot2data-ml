@@ -400,3 +400,42 @@ def test_needs_axis_fallback_fires_only_when_label_boxes_are_mostly_unclaimed():
     assert not _needs_axis_fallback(frame, boxes, full_peaks, horizontal=False)
     one_peak = [(100.0, 65.0, 0.5)]
     assert _needs_axis_fallback(frame, boxes, one_peak, horizontal=False)
+
+
+def test_axis_factor_rejects_a_fake_multiplier_far_from_the_spine():
+    # fred-dgs10-dgs2: no `1eN` multiplier is printed on the chart, but `_end_search`'s wide
+    # scan picks up legend glyph sequences near the top of the plot. The spine-margin filter
+    # in `axis_factor` must reject matches whose x-centre is well away from either axis spine,
+    # otherwise a bogus `1e3` from the chart title / legend text multiplies every y value by 1000.
+    import numpy as np
+    from p2d.extract import Extraction
+    from p2d.pipeline import axis_factor
+
+    class FakeReader:
+        """Always decodes whatever crop it is given as `1e3`. Mocks the OCR noise that trips
+        up the FRED chart in the real pipeline."""
+        def __call__(self, *_args, **_kw):
+            raise RuntimeError("tests should go through read_crops, not call the reader directly")
+
+    def fake_read_crops(_reader, crops):
+        return [("1e3", 0.0)] * len(crops)
+
+    import p2d.pipeline as pipe_mod
+    orig_read = pipe_mod.read_crops
+    pipe_mod.read_crops = fake_read_crops
+    try:
+        # Plot area at (73, 62, 1079, 539): the FRED chart's layout. A loose label whose centre
+        # sits ~221 px from the left spine (well past 0.1*w = 100) must not count.
+        img = np.full((623, 1100, 3), 255, np.uint8)
+        far_box = [281.0, 13.0, 308.0, 26.0]
+        ex = Extraction(M=np.eye(2, 3), plot_area=[73.0, 62.0, 1079.0, 539.0], loose_labels=[far_box])
+        scale, shift, text = axis_factor(FakeReader(), img, ex, "y")
+        assert (scale, shift, text) == (1.0, 0.0, None)
+        # A box right at the left spine (within 20 px of x0) still fires, so the matplotlib
+        # offset-annotation case keeps working.
+        near_box = [78.0, 13.0, 110.0, 26.0]
+        ex = Extraction(M=np.eye(2, 3), plot_area=[73.0, 62.0, 1079.0, 539.0], loose_labels=[near_box])
+        scale, shift, text = axis_factor(FakeReader(), img, ex, "y")
+        assert scale == 1000.0 and shift == 0.0 and text == "1e3"
+    finally:
+        pipe_mod.read_crops = orig_read
