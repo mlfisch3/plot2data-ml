@@ -126,6 +126,31 @@ def test_arithmetic_progression_beats_a_log_fit_that_absorbs_a_misplaced_label()
     assert reads[5].source == "outlier"
 
 
+def test_sub_decade_log_never_wins_when_a_linear_fit_also_explains_the_labels():
+    # 03-women-men-percent in the real set: six year labels with the current year drawn at the
+    # right edge (1970, 1980, 1990, 2000, 2010, 2021). Over a 50-year window log10(year) is near
+    # linear, so a log fit through two years happens to inlier the other four within half a pixel
+    # of the linear fit's inliers; the specific tick positions matter. The real-world positions
+    # (fractional, from the detection head) are such that NO linear pair inliers all six at
+    # tol_px=3 - the best linear fit has to drop one tick as an outlier, or force "2020" via
+    # expected_text (which pays a steep ctc penalty vs the actual "2021" greedy). Log, in
+    # contrast, inliers all six because log10's slight curvature over 50 years happens to make
+    # up for the single-pixel jitter the detections sit on. Without a sub-decade physical sanity
+    # check, log wins even though no chart author would draw a log axis across a 1.03x range.
+    # The crucial trigger is the "2021" tick having enough log-prob mass on "2020" that the
+    # expected-text branch accepts the forced value, which turns linear's score from
+    # (5-chosen - outlier_cost + prog + step) into (5-chosen + weak_extra + prog + step), the
+    # weak_extra bringing linear below log 6-chosen's score.
+    reads = [tick(29.034, "1970"), tick(80.861, "1980"), tick(132.389, "1990"),
+             tick(183.828, "2000"), tick(235.835, "2010"),
+             tick(288.055, "2021", {3: ("0", -6.0)})]
+    f = decode_axis(reads, tol_px=3.0)
+    assert f is not None
+    assert f.scale == "linear", f"expected linear, got {f.scale} (b={f.b}, inliers={f.inliers})"
+    # The axis is read at ~0.19 years/px (the real chart is a 50-year span over ~260 px).
+    assert 0.15 < f.b < 0.25
+
+
 def test_years_are_linear_even_when_log_fits_them_too():
     # Over a short range log10 is nearly straight, so the fit cannot tell; the values can.
     reads = [tick(100, "1960"), tick(200, "1980"), tick(300, "2000")]

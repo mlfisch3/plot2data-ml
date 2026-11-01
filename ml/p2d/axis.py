@@ -376,6 +376,17 @@ def decode_axis(reads: list[TickRead], tol_px: float = 3.0, hint: str | None = N
         all_values = list(values.values()) + [v for _, v, _ in extra.values()]
         if progression(all_values, h.scale):
             score += prog_bonus
+        if h.scale == "log":
+            # A log axis spans decades by construction: tick labels run through powers of ten
+            # (optionally with 2x and 5x intra-decade ticks), and a locator that emits labels all
+            # within one decade is a linear axis. Year labels (1970, 1980, ..., 2021) are near-
+            # linear in log over a short range and so can inlier a log fit by coincidence; the
+            # 2-tick tiebreaker already requires `max/min >= 10` via `log_like`, extend the same
+            # physical sanity to multi-tick fits so a near-flat log slope can never beat a true
+            # linear fit whose values live within a single decade.
+            pos_vals = [v for v in all_values if v > 0]
+            if pos_vals and max(pos_vals) / min(pos_vals) < 10 - 1e-9:
+                score -= prog_bonus
         if h.scale == "linear" and spacing > 0:
             # Tick locators (matplotlib, Chart.js, D3) only emit nice steps - 1, 2, 2.5, 5 x 10^k.
             # On a sparse axis (two chosen labels, no third confirming), a 2-tick fit whose
