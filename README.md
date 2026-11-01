@@ -3,8 +3,40 @@
 Extract numerical data from an image of a plot, with a network trained on synthetic charts doing the reading.
 
 This repository continues from the classical `plot2data` engine as a separate lineage.
-The learned pipeline is in [`ml/`](ml/README.md), with its measured results in [`ml/RESULTS.md`](ml/RESULTS.md).
-The browser app described below, and its classical engine, are inherited unchanged; the engine is kept as the baseline the learned pipeline is measured against, and the app is where the learned models will run.
+
+- The learned pipeline is in [`ml/`](ml/README.md); design in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), measured scoreboard in [`ml/RESULTS.md`](ml/RESULTS.md).
+- The five-round research contest that produced the current pipeline is written up in [`docs/CONTEST.md`](docs/CONTEST.md).
+- A static project website with 15 real extraction examples lives on branch `site/showcase` (see end of this file).
+- The browser app described below, and its classical engine, are inherited unchanged; the engine is kept as the baseline the learned pipeline is measured against, and the app is where the learned models will run.
+
+## Running the learned extractor
+
+```sh
+cd ml
+source ../.venv/bin/activate
+
+# local test bench (drop a chart, see the overlay and the extracted numbers)
+python -m p2d.serve --ckpt runs/t5r2-clutter/best.pt --ocr runs/ocr1/best.pt
+# then open http://localhost:8417
+
+# one-shot command line (image in, overlay PNG + CSV out)
+python -m p2d.pipeline chart.png \
+   --ckpt runs/t5r2-clutter/best.pt \
+   --ocr runs/ocr1/best.pt \
+   --csv out.csv \
+   --overlay out.png
+```
+
+Both CLIs default to `--tta shift` for the extra half-pixel-shift forward pass that pulls sub-threshold text (e.g. small multipliers) above threshold; pass `--tta off` to drop it.
+
+Headline accuracy on today's `main`:
+
+- Synthetic matplotlib 200: `line_found` **69%**, median line RMS **0.28%** of full scale.
+- Synthetic Plotly 150 (held out): `line_found` **82%**, median line RMS 0.20%.
+- Chart.js corpus (18 charts, 25 series, out-of-distribution renderer): worst case **0.56%** (down from 61% pre-contest).
+- Real-world benchmark (110 published charts with their data): **50%** within 0.5%, 59% within 1%, 20 charts failed.
+
+See `ml/RESULTS.md` for the full tables, and `docs/CONTEST.md` for how the research contest got there in five rounds.
 
 ---
 

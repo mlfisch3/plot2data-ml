@@ -3,6 +3,8 @@
 This directory replaces the hand-tuned detection stages of the classical engine (`../src/engine/`) with a network trained on synthetic charts.
 Charts are cheap to make and every number that drew them is known, so the training data is unlimited and its labels are exact.
 
+Full technical writeup in [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md); the five-round research contest that produced the current pipeline is documented in [`../docs/CONTEST.md`](../docs/CONTEST.md); measured scoreboard in [`RESULTS.md`](RESULTS.md).
+
 ## The idea in one paragraph
 
 A plotting library is a function from numbers to pixels.
@@ -37,29 +39,50 @@ python -m p2d.train --data data/mpl-v1 --val data/mpl-val --run runs/v1 --iters 
 python -m p2d.ocr train --data data/mpl-v1 --val data/mpl-val --run runs/ocr1
 ```
 
+The current production checkpoints:
+- Backbone: `runs/t5r2-clutter/best.pt` (round-2 clutter fine-tune of round-1's chartjs training; see `docs/CONTEST.md`).
+- Tick reader: `runs/ocr1/best.pt` (unchanged across the contest; 98.8% exact on validation labels).
+
 ## Measuring
 
 All errors are a percentage of the plot's full height, the unit of `../ACCURACY.md`.
 As there, the RMS over every column and the error at turning points are reported separately, because a plot has few peaks and many columns and an average hides clipped peaks.
 
+Scoreboard (same commands RESULTS.md and docs/CONTEST.md quote):
+
 ```sh
-python -m p2d.evaluate --ckpt runs/v1/best.pt --data data/mpl-val                  # pixel geometry only
-python -m p2d.evaluate --ckpt runs/v1/best.pt --data data/mpl-val --refine         # with source-pixel refinement
-python -m p2d.evaluate --ckpt runs/v1/best.pt --data data/mpl-val --oracle-ticks   # end to end, true tick values
-python -m p2d.evaluate --ckpt runs/v1/best.pt --data data/mpl-val --ocr runs/ocr1/best.pt   # fully end to end
-python -m p2d.eval_corpus --ckpt runs/v1/best.pt --ocr runs/ocr1/best.pt           # the Chart.js corpus, out of distribution
-python -m p2d.eval_calib --ckpt runs/v1/best.pt --ocr runs/ocr1/best.pt --data data/mpl-val   # calibration only
-python -m p2d.eval_real --ckpt runs/v1/best.pt --ocr runs/ocr1/best.pt             # ../examples/real, against hand-measured anchors
+CKPT=runs/t5r2-clutter/best.pt
+OCR=runs/ocr1/best.pt
+LOCK=/home/drd/PROJECT/CLAUDE/PLOT2DATA/ml/out/gpu.lock
+flock $LOCK python -m p2d.evaluate   --ckpt $CKPT --data data/mpl-val    --limit 200 --ocr $OCR --tta shift
+flock $LOCK python -m p2d.evaluate   --ckpt $CKPT --data data/plotly-v1  --limit 150 --ocr $OCR --tta shift
+flock $LOCK python -m p2d.eval_corpus --ckpt $CKPT --ocr $OCR --tta shift
+flock $LOCK python -m p2d.eval_real   --ckpt $CKPT --ocr $OCR --tta shift
+flock $LOCK python -m p2d.eval_t5real --ckpt $CKPT --ocr $OCR --data data/t5-real-100 --tta shift
+# single-chart sanity check against hand-measured ticks on real screenshots:
+flock $LOCK python -m p2d.evaluate --ckpt $CKPT --data data/mpl-val --limit 60 --refine --viz out/viz --json out/rows.json
+# classical engine baseline over the same validation set:
 node --experimental-strip-types ../tools/run-classical.ts data/mpl-val out/classical-val.json 300
-python -m p2d.score_classical --data data/mpl-val --pred out/classical-val.json    # the classical engine, same metric
+python -m p2d.score_classical --data data/mpl-val --pred out/classical-val.json
 ```
+
+Pass `--oracle-ticks` to use true tick values and isolate pixel geometry from label reading.
 
 ## Trying it
 
 ```sh
-python -m p2d.serve --ckpt runs/v2/best.pt --ocr runs/ocr1/best.pt   # http://localhost:8417: drop or paste a screenshot
-python -m p2d.pipeline chart.png --ckpt runs/v2/best.pt --ocr runs/ocr1/best.pt --csv out.csv --overlay out.png
+# local test bench; drop a chart image to see the overlay, axes read, series table and CSV
+python -m p2d.serve --ckpt runs/t5r2-clutter/best.pt --ocr runs/ocr1/best.pt
+# visit http://localhost:8417
+
+# command line: one image in, overlay + CSV out
+python -m p2d.pipeline chart.png --ckpt runs/t5r2-clutter/best.pt --ocr runs/ocr1/best.pt --csv out.csv --overlay out.png
+
+# both CLIs default to --tta shift (round-2's half-pixel-shift fusion); pass --tta off to disable.
 ```
+
+The server runs locally; nothing is uploaded.
+See `../docs/ARCHITECTURE.md` section 5 for deployment paths including the planned browser-side ONNX runtime.
 
 ## Results
 

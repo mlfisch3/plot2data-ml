@@ -93,7 +93,7 @@ document.onpaste = (e) => { for (const it of e.clipboardData.items) if (it.type.
 """
 
 
-def make_handler(net, reader):
+def make_handler(net, reader, tta: str | None = "shift"):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes, ctype: str) -> None:
             self.send_response(code)
@@ -121,7 +121,7 @@ def make_handler(net, reader):
                 except ValueError:
                     step = None
             try:
-                res = run(net, reader, img)
+                res = run(net, reader, img, tta=tta)
                 if step:
                     res.series = to_data(res.ex, res.xfit, res.yfit, step_px=step)
                 with tempfile.NamedTemporaryFile("r", suffix=".csv", delete=False) as tmp:
@@ -162,10 +162,12 @@ def main() -> None:
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--ocr", required=True)
     ap.add_argument("--port", type=int, default=8417)
+    ap.add_argument("--tta", default="shift", help="network pass fusion: 'shift' (default), 'off', or any key tta.passes_for understands")
     a = ap.parse_args()
     net, reader = load_net(a.ckpt), load_reader(a.ocr)
+    tta = None if a.tta in (None, "", "off", "none") else a.tta
     print(f"http://localhost:{a.port}", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(net, reader)).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(net, reader, tta=tta)).serve_forever()
 
 
 if __name__ == "__main__":

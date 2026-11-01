@@ -406,9 +406,11 @@ def main() -> None:
     ap.add_argument("--csv", help="write the extracted series here")
     ap.add_argument("--overlay", help="write the extraction drawn over the image here")
     ap.add_argument("--step-px", type=float, default=None, help="sampling step for curves (default: automatic)")
+    ap.add_argument("--tta", default="shift", help="network pass fusion: 'shift' (default), 'off', or any key tta.passes_for understands")
     a = ap.parse_args()
     img = cv2.imread(a.image)[..., ::-1].copy()
-    res = run(load_net(a.ckpt), load_reader(a.ocr), img)
+    tta = None if a.tta in (None, "", "off", "none") else a.tta
+    res = run(load_net(a.ckpt), load_reader(a.ocr), img, tta=tta)
     if a.step_px:
         res.series = to_data(res.ex, res.xfit, res.yfit, step_px=a.step_px)
     if a.csv:
