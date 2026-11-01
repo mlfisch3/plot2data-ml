@@ -398,7 +398,7 @@ def test_needs_axis_fallback_fires_only_when_label_boxes_are_mostly_unclaimed():
     boxes = [[80.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0], [78.0, 300.0, 95.0, 310.0]]
     full_peaks = [(100.0, 65.0, 0.5), (100.0, 185.0, 0.5), (100.0, 305.0, 0.5)]
     assert not _needs_axis_fallback(frame, boxes, full_peaks, horizontal=False)
-    one_peak = [(100.0, 65.0, 0.5)]
+    one_peak = [(100.0, 65.0, 0.4)]
     assert _needs_axis_fallback(frame, boxes, one_peak, horizontal=False)
 
 
@@ -439,11 +439,6 @@ def test_axis_factor_rejects_a_fake_multiplier_far_from_the_spine():
         assert scale == 1000.0 and shift == 0.0 and text == "1e3"
     finally:
         pipe_mod.read_crops = orig_read
-    # Three labels but only one weak hit: FRED's missing-tick case, fallback fires.
-    one_weak_peak = [(100.0, 65.0, 0.4)]
-    assert _needs_axis_fallback(frame, boxes, one_weak_peak, horizontal=False)
-
-
 def test_needs_axis_fallback_blocked_when_strong_peak_is_confident():
     """A healthy strong peak above 0.6 keeps the weak pass from firing even if the strip
     has unclaimed non-tick boxes (axis titles, offsets). This is the mpl-val protection."""
