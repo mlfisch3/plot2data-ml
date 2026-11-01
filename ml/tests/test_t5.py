@@ -156,3 +156,38 @@ def test_real_bench_pkg_shim_loads_loader_without_relative_imports():
     t = mod.load_truth({"kind": "owid"}, p)
     assert set(t) == {"France"}
     os.unlink(p)
+
+
+def test_scoring_converts_date_axis_days_to_years():
+    """A FRED-style sp500 chart's x labels are dates and the extraction's x is in days-since-1970;
+    the truth is in decimal years, so the scorer must convert before interpolating."""
+    import datetime as dt
+    import numpy as np
+    from p2d.eval_t5real import score_chart
+
+    # Truth in decimal years, two overlapping years of data.
+    tx = np.linspace(2024.0, 2025.0, 13)
+    ty = np.linspace(100.0, 200.0, 13)
+    truth = {"s": (tx, ty)}
+
+    # Extraction x in days since 1970 (what parse_date / resolve produce for "2024-01" labels).
+    def _year_to_days(y):
+        y_i = int(y)
+        start = dt.date(y_i, 1, 1)
+        end = dt.date(y_i + 1, 1, 1)
+        off = (y - y_i) * (end - start).days
+        return (start - dt.date(1970, 1, 1)).days + off
+
+    px = np.array([_year_to_days(x) for x in tx])
+    py = ty.copy() + 1.0  # a 1-unit offset so RMS is nonzero and we can tell units apart
+
+    class Res:
+        series = [{"line": np.column_stack([px, py])}]
+        date_axes = {"x": True, "y": False}
+
+    rows = score_chart({"q": ""}, truth, Res())
+    # yspan = 100, offset 1 -> ~1% RMS. If the days->years conversion were skipped, cov would be ~0
+    # (days vs years differ by ~1000x on the x axis). The small sampling-grid misalignment adds
+    # a modest extra RMS, so a loose tolerance is enough to tell the conversion ran.
+    assert rows[0]["cover"] >= 0.9
+    assert 0.9 <= rows[0]["rms_pct"] <= 1.5

@@ -253,6 +253,154 @@ def cluster_embeddings(e: np.ndarray, weight: np.ndarray, radius: float = 1.5, m
     return lab
 
 
+def _axis_labels_in_strip(boxes: list[list[float]], frame: list[float] | None, horizontal: bool) -> list[list[float]]:
+    """The subset of label boxes that sit in `axis`'s label strip (left of plot for y, below for x)."""
+    if frame is None:
+        return []
+    fx0, fy0, fx1, fy1 = frame
+    fw = max(1.0, fx1 - fx0)
+    fh = max(1.0, fy1 - fy0)
+    out = []
+    for b in boxes:
+        bx0, by0, bx1, by1 = b
+        cx = 0.5 * (bx0 + bx1)
+        cy = 0.5 * (by0 + by1)
+        bw = bx1 - bx0
+        bh = by1 - by0
+        if horizontal:
+            if cy <= fy1 - 1 or cy > fy1 + 0.2 * fh + 60:
+                continue
+            if by0 > fy1 + max(40, 3 * bh):
+                continue
+            if cx < fx0 - 2 or cx > fx1 + 2:
+                continue
+        else:
+            if cx >= fx0 - 1 or cx < fx0 - 0.25 * fw - 60:
+                continue
+            if bx1 < fx0 - max(40, 3 * bw):
+                continue
+            if cy < fy0 - 2 or cy > fy1 + 2:
+                continue
+        out.append(b)
+    return out
+
+
+def _needs_axis_fallback(frame: list[float] | None, boxes: list[list[float]],
+                         pk_strong: list[tuple[float, float, float]], horizontal: bool) -> bool:
+    """Would the strong peaks claim all the axis-strip label boxes? If not, run the weak pass."""
+    strip = _axis_labels_in_strip(boxes, frame, horizontal)
+    if not strip:
+        return False
+    unclaimed = 0
+    for b in strip:
+        c = 0.5 * (b[0] + b[2]) if horizontal else 0.5 * (b[1] + b[3])
+        if not any(abs((px if horizontal else py) - c) < 6 for px, py, _ in pk_strong):
+            unclaimed += 1
+    # Fire when at least 2 label boxes have no strong peak at their position: a run-of-the-mill
+    # chart whose heat already caught every label stays with the strong-only path.
+    return unclaimed >= 2
+
+
+def _peak_has_label(x: float, y: float, boxes: list[list[float]], horizontal: bool,
+                    frame: list[float] | None) -> bool:
+    """A tick peak is kept at the lower threshold only when it aligns with a label in the axis strip."""
+    strip = _axis_labels_in_strip(boxes, frame, horizontal)
+    for b in strip:
+        if horizontal:
+            if b[0] - 3 <= x <= b[2] + 3 and y >= b[1] - 20 and y <= b[1] + 10:
+                return True
+        else:
+            if b[1] - 3 <= y <= b[3] + 3 and x >= b[2] - 10 and x <= b[2] + 20:
+                return True
+    return False
+
+
+def _promote_label_only_ticks(ex: Extraction, boxes: list[list[float]], claimed: list[list[float]],
+                              frame: list[float] | None, Mi: np.ndarray) -> None:
+    """Add virtual ticks at label-box centres where the tick heatmap missed them.
+
+    FRED and other web renderers draw axis labels without visible tick marks, which
+    starves the YTICK / XTICK heat on real-world screenshots: it crosses the 0.3 peak
+    threshold at only one or two of the labels and the rest are lost. The semantic
+    tick-label layer still sees them, so an unclaimed label box positioned where an
+    axis label belongs (left of the plot for a y label, below the plot for an x label)
+    becomes a tick at its own centre. refine_labels then re-measures the label on
+    the source pixels; the OCR reads it; the axis decoder picks it up.
+
+    All inputs are in canvas coordinates; `Mi` maps canvas back to source for the
+    stored tick anchor and label box.
+    """
+    if frame is None:
+        return
+    fx0, fy0, fx1, fy1 = frame
+    fw = max(1.0, fx1 - fx0)
+    fh = max(1.0, fy1 - fy0)
+    for key, horizontal in (("xticks", True), ("yticks", False)):
+        existing_pos = [t["pos"] for t in getattr(ex, key)]
+        promoted: list[tuple[float, list[float]]] = []  # (pos_src, canvas_box)
+        for b in boxes:
+            if any(b[0] >= c[0] - 1 and b[2] <= c[2] + 1 and b[1] >= c[1] - 1 and b[3] <= c[3] + 1 for c in claimed):
+                continue
+            bx0, by0, bx1, by1 = b
+            cx = 0.5 * (bx0 + bx1)
+            cy = 0.5 * (by0 + by1)
+            bw = bx1 - bx0
+            bh = by1 - by0
+            if horizontal:
+                # x label: sits below the plot, horizontally inside it, close to the axis line.
+                if cy <= fy1 - 1 or cy > fy1 + 0.2 * fh + 60:
+                    continue
+                if by0 > fy1 + max(40, 3 * bh):
+                    continue
+                if cx < fx0 - 2 or cx > fx1 + 2:
+                    continue
+                anchor_cv = (cx, fy1)
+                pos_cv = cx
+            else:
+                # y label: sits left of the plot, vertically inside it, not deep enough to be a title.
+                if cx >= fx0 - 1 or cx < fx0 - 0.25 * fw - 60:
+                    continue
+                if bx1 < fx0 - max(40, 3 * bw):
+                    continue
+                if cy < fy0 - 2 or cy > fy1 + 2:
+                    continue
+                anchor_cv = (fx0, cy)
+                pos_cv = cy
+            # Deduplicate: if another promoted box shares a row/column, keep the one closer to the
+            # axis (its box sits in the real label strip, not an axis title piece further out).
+            dup = None
+            for i, (p, bc) in enumerate(promoted):
+                if abs(p - pos_cv) < 4:
+                    dup = i
+                    break
+            if dup is not None:
+                p, bc = promoted[dup]
+                if horizontal:
+                    # Prefer the box closer to the axis line (smaller cy).
+                    bc_cy = 0.5 * (bc[1] + bc[3])
+                    if cy < bc_cy:
+                        promoted[dup] = (pos_cv, b)
+                else:
+                    bc_cx = 0.5 * (bc[0] + bc[2])
+                    # Prefer the box closer to the axis line (larger cx; axis is on the left).
+                    if cx > bc_cx:
+                        promoted[dup] = (pos_cv, b)
+                continue
+            promoted.append((pos_cv, b))
+        for pos_cv, b in promoted:
+            # Dedupe against ticks that already came from the heat.
+            src = apply(Mi, [[0.5 * (b[0] + b[2]) if horizontal else fx0,
+                              fy1 if horizontal else 0.5 * (b[1] + b[3])]])[0]
+            pos_src = float(src[0] if horizontal else src[1])
+            if any(abs(pos_src - p) < 4 for p in existing_pos):
+                continue
+            q = apply(Mi, [[b[0], b[1]], [b[2], b[3]]])
+            lb_src = [q[0, 0], q[0, 1], q[1, 0], q[1, 1]]
+            getattr(ex, key).append(dict(pos=pos_src, anchor=src.tolist(), score=0.0, label_box=lb_src))
+            existing_pos.append(pos_src)
+            claimed.append(b)
+
+
 def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: float = 0.25,
             marker_thr: float = 0.3) -> Extraction:
     heat, sem, emb = out["heat"], out["sem"], out["emb"]
@@ -266,7 +414,20 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
     boxes = label_boxes(sem)
     claimed: list[list[float]] = []
     for ch, key in ((H_XTICK, "xticks"), (H_YTICK, "yticks")):
-        pk = peaks(heat[ch], 0.3, nms=3)
+        # Primary peaks (strong detections). FRED-style web renderers draw labels without
+        # visible tick marks, so a lower threshold is tried as a secondary pass, with each
+        # weak peak kept only if it lines up with a tick-label box.
+        pk_strong = peaks(heat[ch], 0.3, nms=3)
+        pk = list(pk_strong)
+        if _needs_axis_fallback(frame, boxes, pk_strong, key == "xticks"):
+            weak = peaks(heat[ch], 0.1, nms=3)
+            for (x, y, sc) in weak:
+                if sc >= 0.3:
+                    continue  # already in pk_strong
+                if any(abs(x - sx) < 4 and abs(y - sy) < 4 for sx, sy, _ in pk_strong):
+                    continue
+                if _peak_has_label(x, y, boxes, key == "xticks", frame):
+                    pk.append((x, y, sc))
         for (x, y, sc), lb in zip(pk, group_labels(pk, boxes, key == "xticks")):
             src = apply(Mi, [[x, y]])[0]
             if lb is not None:
@@ -275,6 +436,11 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
                 lb = [q[0, 0], q[0, 1], q[1, 0], q[1, 1]]
             getattr(ex, key).append(dict(pos=float(src[0] if key == "xticks" else src[1]), anchor=src.tolist(),
                                          score=sc, label_box=lb))
+
+    # Final fallback: promote unclaimed label boxes positioned like axis labels to virtual
+    # ticks. Covers charts where even the weak-peak pass found nothing on an axis (no tick
+    # marks drawn and the heatmap collapses to noise).
+    _promote_label_only_ticks(ex, boxes, claimed, frame, Mi)
 
     # Label text no tick took: where an axis multiplier ("1e6") or offset is printed.
     for b in boxes:

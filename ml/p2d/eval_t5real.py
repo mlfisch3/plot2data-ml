@@ -100,12 +100,37 @@ def load_truth(meta: dict, path: str) -> dict[str, tuple[np.ndarray, np.ndarray]
 
 
 def score_chart(meta: dict, truth: dict, res) -> list[dict]:
-    ylog = "yScale=log" in meta.get("q", "") or "log_scales" in meta.get("q", "")
+    # Trust the extractor's own determination of the y-axis scale when it has one. FRED's
+    # `log_scales=Left` URL argument is only a request: when the data range is narrow (gdp,
+    # m2sl, where y spans less than two decades) FRED silently renders a linear axis with
+    # linear labels (0, 4000, ..., 36000) instead. Scoring that in log10 blows up error at
+    # the small-value tail. Fall back to the URL hint only when the extractor failed to fit.
+    yfit = getattr(res, "yfit", None)
+    if yfit is not None:
+        ylog = yfit.scale == "log"
+    else:
+        ylog = "yScale=log" in meta.get("q", "") or "log_scales" in meta.get("q", "")
+    # When the extractor read the x axis as dates (labels like "2022-01"), its series x values
+    # are in days since 1970; convert to the decimal years the truth is in before scoring.
+    xdate = bool(getattr(res, "date_axes", {}).get("x", False))
 
     def t(v):
         v = np.asarray(v, float)
         with np.errstate(invalid="ignore", divide="ignore"):
             return np.log10(v) if ylog else v
+
+    def to_years(days):
+        days = np.asarray(days, float)
+        out = np.empty_like(days)
+        for i, d in enumerate(days):
+            if not np.isfinite(d):
+                out[i] = np.nan
+                continue
+            dd = dt.date(1970, 1, 1) + dt.timedelta(days=float(d))
+            s = dt.date(dd.year, 1, 1)
+            e = dt.date(dd.year + 1, 1, 1)
+            out[i] = dd.year + (dd - s).days / (e - s).days
+        return out
 
     ally = np.concatenate([t(y) for _, y in truth.values()])
     yspan = float(np.nanmax(ally) - np.nanmin(ally)) or 1.0
@@ -119,6 +144,8 @@ def score_chart(meta: dict, truth: dict, res) -> list[dict]:
             if j in used:
                 continue
             px, py = p[:, 0], t(p[:, 1])
+            if xdate:
+                px = to_years(px)
             ok = np.isfinite(px) & np.isfinite(py)
             px, py = px[ok], py[ok]
             if len(px) < 2:
