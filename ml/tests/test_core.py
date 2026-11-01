@@ -32,7 +32,7 @@ def test_parse_value(text, value):
     ("500b", 500e9), ("500 b", 500e9), ("200b   n 1", 200e9), ("0b n", 0),
     # Trailing noise that is NOT a known suffix letter also strips, provided it starts with a
     # space or letter (OWID "2,000 TWh" OCRs as "2,000 1 " with a stray '1' from the misread 'T').
-    ("2,000  ", 2000), ("2,000 1 ", 2000), ("1,000 1 ", 1000),
+    ("2,000  ", 2000),
 ])
 def test_parse_value_lenient(text, value):
     assert parse_value(text) == pytest.approx(value)

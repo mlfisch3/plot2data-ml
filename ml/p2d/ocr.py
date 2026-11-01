@@ -317,7 +317,7 @@ _NUM = re.compile(
     r"(?:[eE]([-+]?[0-9]+))?"
     r"\s*"
     r"(billion|trillion|million|thousand|bn|mn|k|K|M|B|G|T|b|m|t)?"
-    r"(?:[a-zA-Z \.][a-zA-Z0-9 \.]*)?"
+    r"(?:\s+[a-zA-Z\.][a-zA-Z \.]*)?"
     r"%?\s*\)?$"
 )
 _NUM_LAX = re.compile(
