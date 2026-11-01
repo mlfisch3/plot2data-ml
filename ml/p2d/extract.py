@@ -287,18 +287,45 @@ def _axis_labels_in_strip(boxes: list[list[float]], frame: list[float] | None, h
 
 def _needs_axis_fallback(frame: list[float] | None, boxes: list[list[float]],
                          pk_strong: list[tuple[float, float, float]], horizontal: bool) -> bool:
-    """Would the strong peaks claim all the axis-strip label boxes? If not, run the weak pass."""
+    """Would the strong peaks claim all the axis-strip label boxes? If not, run the weak pass.
+
+    All of these must hold, together, for the weak-peak fallback to fire:
+      - the strip has at least two label boxes with no strong peak at them,
+      - the strong pass is itself clearly struggling: either the best heat peak
+        on this axis sits below 0.5 (FRED's missing-tick case), or it sits in
+        the 0.5-0.6 soft band AND the strong pass already caught at least three
+        strip labels (dexuseu-style, where more ticks are needed to shrink the
+        OCR window). A healthy detector on an mpl-val chart has peaks around
+        0.7-0.8 or has 1-2 strong hits with no other strong signal, and
+      - at least half the axis's strong peaks live in the strip. On a web
+        screenshot where the YTICK/XTICK heat really covers the axis, every
+        strong peak lines up with a label; on an mpl-val chart with a noisy
+        heat channel the strong peaks are scattered across the plot and only
+        a few sit on the strip, so a weak pass on top only turns the noise
+        into ticks.
+    Without the score and strip-share gates, mpl-val's noisy, 2-tick or
+    axis-title cases drag in false ticks although every real tick was already
+    found.
+    """
     strip = _axis_labels_in_strip(boxes, frame, horizontal)
     if not strip:
         return False
     unclaimed = 0
+    strong_in_strip = 0
     for b in strip:
         c = 0.5 * (b[0] + b[2]) if horizontal else 0.5 * (b[1] + b[3])
-        if not any(abs((px if horizontal else py) - c) < 6 for px, py, _ in pk_strong):
+        if any(abs((px if horizontal else py) - c) < 6 for px, py, _ in pk_strong):
+            strong_in_strip += 1
+        else:
             unclaimed += 1
-    # Fire when at least 2 label boxes have no strong peak at their position: a run-of-the-mill
-    # chart whose heat already caught every label stays with the strong-only path.
-    return unclaimed >= 2
+    if unclaimed < 2:
+        return False
+    max_strong = max((s for _, _, s in pk_strong), default=0.0)
+    if not (max_strong < 0.5 or (max_strong < 0.6 and strong_in_strip >= 3)):
+        return False
+    if len(pk_strong) > 0 and strong_in_strip * 2 < len(pk_strong):
+        return False
+    return True
 
 
 def _peak_has_label(x: float, y: float, boxes: list[list[float]], horizontal: bool,
@@ -336,6 +363,12 @@ def _promote_label_only_ticks(ex: Extraction, boxes: list[list[float]], claimed:
     fw = max(1.0, fx1 - fx0)
     fh = max(1.0, fy1 - fy0)
     for key, horizontal in (("xticks", True), ("yticks", False)):
+        # Only promote virtual ticks when the heat-based passes left this axis short
+        # of a fit: on a healthy chart, the strong (and weak-aligned) passes already
+        # caught every real tick, so any remaining strip boxes are axis titles,
+        # offset indicators or stray labels, not missed ticks.
+        if len(getattr(ex, key)) >= 2:
+            continue
         existing_pos = [t["pos"] for t in getattr(ex, key)]
         promoted: list[tuple[float, list[float]]] = []  # (pos_src, canvas_box)
         for b in boxes:
