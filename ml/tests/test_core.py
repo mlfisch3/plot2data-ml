@@ -294,3 +294,80 @@ def test_tta_fuses_passes_back_into_the_primary_canvas():
     assert abs(hx - cx) <= 1 and abs(hy - cy) <= 1
     # Three passes fused: the primary (exactly 1 at the peak), the shifted and the scaled ones.
     assert 0.3 < out["heat"][0].max() <= 1.0
+
+
+def test_axis_labels_in_strip_classifies_y_labels_only():
+    """A FRED-style y label strip (left of the plot) is picked up; title text further left is not."""
+    from p2d.extract import _axis_labels_in_strip
+
+    frame = (100.0, 50.0, 500.0, 400.0)
+    y_labels = [[80.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0], [78.0, 300.0, 95.0, 310.0]]  # three stacked
+    title = [[15.0, 180.0, 28.0, 240.0]]  # a narrow axis-title piece far to the left
+    x_label = [[200.0, 410.0, 230.0, 420.0]]  # below the plot (an x label)
+    y_strip = _axis_labels_in_strip(y_labels + title + x_label, frame, horizontal=False)
+    assert [b for b in y_labels] == y_strip
+    x_strip = _axis_labels_in_strip(y_labels + title + x_label, frame, horizontal=True)
+    assert x_strip == x_label
+
+
+def test_promote_label_only_ticks_adds_virtual_ticks_from_unclaimed_y_labels():
+    """A chart with no visible tick marks: the semantic layer still catches the y labels."""
+    from p2d.extract import Extraction, _promote_label_only_ticks, inv_affine
+
+    M = np.eye(2, 3)
+    Mi = inv_affine(M)
+    frame = [100.0, 50.0, 500.0, 400.0]
+    ex = Extraction(M=M, plot_area=list(frame))
+    # No real ticks found on either axis; the y strip has three label boxes.
+    boxes = [[80.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0], [78.0, 300.0, 95.0, 310.0]]
+    claimed: list[list[float]] = []
+    _promote_label_only_ticks(ex, boxes, claimed, frame, Mi)
+    assert len(ex.yticks) == 3
+    for t, b in zip(sorted(ex.yticks, key=lambda t: t["pos"]), boxes):
+        assert t["pos"] == pytest.approx(0.5 * (b[1] + b[3]), abs=0.5)
+        assert t["label_box"] == b
+
+
+def test_promote_label_only_ticks_does_not_duplicate_an_existing_tick():
+    """A heat peak at a label's y position already claims it; no virtual tick is added there."""
+    from p2d.extract import Extraction, _promote_label_only_ticks, inv_affine
+
+    M = np.eye(2, 3)
+    Mi = inv_affine(M)
+    frame = [100.0, 50.0, 500.0, 400.0]
+    ex = Extraction(M=M, plot_area=list(frame))
+    ex.yticks = [dict(pos=185.0, anchor=[100.0, 185.0], score=0.5,
+                      label_box=[78.0, 180.0, 95.0, 190.0])]
+    boxes = [[80.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0], [78.0, 300.0, 95.0, 310.0]]
+    claimed = [[78.0, 180.0, 95.0, 190.0]]
+    _promote_label_only_ticks(ex, boxes, claimed, frame, Mi)
+    # One real tick already there; two new virtual ticks added for the top and bottom labels.
+    assert len(ex.yticks) == 3
+    positions = sorted(t["pos"] for t in ex.yticks)
+    assert positions[0] == pytest.approx(65.0, abs=0.5)
+    assert positions[1] == pytest.approx(185.0, abs=0.5)
+    assert positions[2] == pytest.approx(305.0, abs=0.5)
+
+
+def test_peak_has_label_rejects_a_peak_far_from_any_label():
+    """The weak-peak pass only keeps peaks that line up with a tick label."""
+    from p2d.extract import _peak_has_label
+
+    frame = (100.0, 50.0, 500.0, 400.0)
+    boxes = [[80.0, 60.0, 95.0, 70.0], [78.0, 300.0, 95.0, 310.0]]
+    # x is the peak's canvas x; y is the peak's canvas y.
+    assert _peak_has_label(100.0, 65.0, boxes, horizontal=False, frame=frame)
+    assert _peak_has_label(100.0, 305.0, boxes, horizontal=False, frame=frame)
+    assert not _peak_has_label(100.0, 180.0, boxes, horizontal=False, frame=frame)  # no label at 180
+
+
+def test_needs_axis_fallback_fires_only_when_label_boxes_are_mostly_unclaimed():
+    """Strong peaks at every label: no fallback. Few peaks for many labels: fire."""
+    from p2d.extract import _needs_axis_fallback
+
+    frame = (100.0, 50.0, 500.0, 400.0)
+    boxes = [[80.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0], [78.0, 300.0, 95.0, 310.0]]
+    full_peaks = [(100.0, 65.0, 0.5), (100.0, 185.0, 0.5), (100.0, 305.0, 0.5)]
+    assert not _needs_axis_fallback(frame, boxes, full_peaks, horizontal=False)
+    one_peak = [(100.0, 65.0, 0.5)]
+    assert _needs_axis_fallback(frame, boxes, one_peak, horizontal=False)
