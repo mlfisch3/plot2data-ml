@@ -391,7 +391,7 @@ def test_peak_has_label_rejects_a_peak_far_from_any_label():
 
 
 def test_needs_axis_fallback_fires_only_when_label_boxes_are_mostly_unclaimed():
-    """Strong peaks at every label: no fallback. Few peaks for many labels: fire."""
+    """Strong peaks at every label: no fallback. Few weak peaks for many labels: fire."""
     from p2d.extract import _needs_axis_fallback
 
     frame = (100.0, 50.0, 500.0, 400.0)
@@ -439,3 +439,76 @@ def test_axis_factor_rejects_a_fake_multiplier_far_from_the_spine():
         assert scale == 1000.0 and shift == 0.0 and text == "1e3"
     finally:
         pipe_mod.read_crops = orig_read
+    # Three labels but only one weak hit: FRED's missing-tick case, fallback fires.
+    one_weak_peak = [(100.0, 65.0, 0.4)]
+    assert _needs_axis_fallback(frame, boxes, one_weak_peak, horizontal=False)
+
+
+def test_needs_axis_fallback_blocked_when_strong_peak_is_confident():
+    """A healthy strong peak above 0.6 keeps the weak pass from firing even if the strip
+    has unclaimed non-tick boxes (axis titles, offsets). This is the mpl-val protection."""
+    from p2d.extract import _needs_axis_fallback
+
+    frame = (100.0, 50.0, 500.0, 400.0)
+    boxes = [[80.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0], [78.0, 300.0, 95.0, 310.0]]
+    # The strong pass found one tick at score 0.8 (healthy detector), the two other
+    # strip boxes are stray strip text, not missed ticks.
+    confident_peak = [(100.0, 65.0, 0.8)]
+    assert not _needs_axis_fallback(frame, boxes, confident_peak, horizontal=False)
+
+
+def test_needs_axis_fallback_soft_band_requires_three_strong_hits():
+    """Max heat in [0.5, 0.6) is a soft band: dexuseu-style charts (three ticks caught,
+    more needed to shrink the refine window) fire, 2-tick mpl-val cases stay out."""
+    from p2d.extract import _needs_axis_fallback
+
+    frame = (100.0, 50.0, 500.0, 400.0)
+    # Five label boxes, three with strong hits in the 0.5-0.6 band.
+    boxes = [
+        [78.0, 60.0, 95.0, 70.0],
+        [78.0, 120.0, 95.0, 130.0],
+        [78.0, 180.0, 95.0, 190.0],
+        [78.0, 240.0, 95.0, 250.0],
+        [78.0, 300.0, 95.0, 310.0],
+    ]
+    three_strong = [(100.0, 65.0, 0.55), (100.0, 125.0, 0.55), (100.0, 185.0, 0.55)]
+    assert _needs_axis_fallback(frame, boxes, three_strong, horizontal=False)
+    # Two strong hits in the same band do not open the gate: this is the 9000118
+    # 2-tick mpl-val case, where the real axis already has every tick it should.
+    two_strong = [(100.0, 65.0, 0.55), (100.0, 185.0, 0.55)]
+    assert not _needs_axis_fallback(frame, boxes, two_strong, horizontal=False)
+
+
+def test_needs_axis_fallback_blocked_when_strong_peaks_scatter_outside_strip():
+    """A noisy heat channel: half the strong peaks sit far from the strip. Firing a
+    weak pass only turns the noise into ticks, so the gate stays shut even when
+    there are unclaimed labels at low heat."""
+    from p2d.extract import _needs_axis_fallback
+
+    frame = (100.0, 50.0, 500.0, 400.0)
+    boxes = [[78.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0], [78.0, 300.0, 95.0, 310.0]]
+    # Three strong peaks: one in the strip (near x=100, which is fx0), two scattered
+    # across the plot interior (x=250, x=400 are both >50 px right of the axis).
+    scattered = [(100.0, 65.0, 0.4), (250.0, 150.0, 0.4), (400.0, 220.0, 0.4)]
+    assert not _needs_axis_fallback(frame, boxes, scattered, horizontal=False)
+
+
+def test_promote_label_only_ticks_skipped_when_axis_has_enough_ticks():
+    """Virtual-tick promotion stops once the heat passes have already filled an axis.
+    This stops stray strip text from being promoted on healthy mpl-val charts."""
+    from p2d.extract import Extraction, _promote_label_only_ticks, inv_affine
+
+    M = np.eye(2, 3)
+    Mi = inv_affine(M)
+    frame = [100.0, 50.0, 500.0, 400.0]
+    ex = Extraction(M=M, plot_area=list(frame))
+    # Already two y ticks from strong pass; axis is well-covered.
+    ex.yticks = [
+        dict(pos=65.0, anchor=[100.0, 65.0], score=0.7, label_box=[80.0, 60.0, 95.0, 70.0]),
+        dict(pos=185.0, anchor=[100.0, 185.0], score=0.7, label_box=[78.0, 180.0, 95.0, 190.0]),
+    ]
+    # Another unclaimed strip box exists but should not become a tick.
+    boxes = [[80.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0], [78.0, 300.0, 95.0, 310.0]]
+    claimed = [[80.0, 60.0, 95.0, 70.0], [78.0, 180.0, 95.0, 190.0]]
+    _promote_label_only_ticks(ex, boxes, claimed, frame, Mi)
+    assert len(ex.yticks) == 2
