@@ -317,7 +317,7 @@ _NUM = re.compile(
     r"(?:[eE]([-+]?[0-9]+))?"
     r"\s*"
     r"(billion|trillion|million|thousand|bn|mn|k|K|M|B|G|T|b|m|t)?"
-    r"(?:\s+[a-zA-Z\.][a-zA-Z \.]*)?"
+    r"(\s+[a-zA-Z\.][a-zA-Z \.]*)?"
     r"%?\s*\)?$"
 )
 _NUM_LAX = re.compile(
@@ -381,6 +381,11 @@ def parse_value(s: str, lax: bool = False) -> float | None:
         if not tail or (not tail[0].isalpha() and not (m.group(4) in ("bn", "M", "B", "G", "T"))):
             return None
     sign, digits, exp, suf = m.groups()[:4]
+    # Strict path: if the regex absorbed a trailing-noise clause but no suffix, we matched by
+    # backtracking around the optional suffix - that is garbage ("0 births", "10 years").
+    # Reject so lax can handle it.
+    if not lax and not suf and len(m.groups()) >= 5 and m.group(5):
+        return None
     # In lax mode, a single-letter SI prefix (k/K/M/B/G/T) that touches a letter tail is
     # almost always the first letter of a unit word ("kWh" is kilowatt-hour, not kilo-); the
     # two-letter "bn" is unambiguously billion so stays.
