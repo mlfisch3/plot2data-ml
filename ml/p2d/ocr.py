@@ -305,19 +305,12 @@ def read_crops(model: TickReader, crops: list[np.ndarray], device: str | None = 
     return [decode(l) for l in read_logits(model, crops, device)]
 
 
-# Numeric parse. The strict pattern recognises standard tick-label shapes
-# (1,000  -2.5  45%  $1.2M  3e5  10^3  2x10^4). Lenient trailing noise and
-# word-form SI suffixes handle OWID-style labels - "500 billion t", "25 t",
-# "$1 billion", "2,000 TWh" - whose OCR reads are noisy enough that the strict
-# regex would reject them. The ocr charset lacks `i`/`m`/`h`/`W` so OWID words
-# come through as fragments: "500 billion t" reads as `500b   n 1`, "25 t" as
-# `25t` or `25 t`, "2,000 TWh" as `2,000 1 `. The suffix table carries the
-# intended magnitude for the pieces the ocr actually emits.
-#
-# Trailing-noise rule: letters/spaces/dots after the recognised body are ignored.
-# Digits after the body are NOT dropped (a plain "151" stays 151): we accept a
-# trailing digit tail only if it is preceded by a space or a letter, which is
-# the shape OCR noise takes ("500b   n 1", "2,000 1 ").
+# Numeric parse. Strict recognises standard tick-label shapes (1,000 -2.5 45%
+# $1.2M 3e5 10^3 2x10^4). `_NUM` includes OWID-style word suffixes (billion,
+# trillion, million, thousand, bn, mn, plus single-letter SI). Lax allows any
+# tail after the suffix and is the fallback for OWID-garbled OCR ("0bo 15"
+# from "0 births", "80,000c kw" from "80,000 kWh", "500b   n 1" from
+# "500 billion t"); the caller opts in only when strict yielded nothing.
 _NUM = re.compile(
     r"^\(?([-+]?)\$?\s*"
     r"([0-9][0-9,]*\.?[0-9]*|\.[0-9]+)"
@@ -326,6 +319,14 @@ _NUM = re.compile(
     r"(billion|trillion|million|thousand|bn|mn|k|K|M|B|G|T|b|m|t)?"
     r"(?:[a-zA-Z \.][a-zA-Z0-9 \.]*)?"
     r"%?\s*\)?$"
+)
+_NUM_LAX = re.compile(
+    r"^\(?([-+]?)\$?\s*"
+    r"([0-9][0-9,]*\.?[0-9]*|\.[0-9]+)"
+    r"(?:[eE]([-+]?[0-9]+))?"
+    r"\s*"
+    r"(billion|trillion|million|thousand|bn|mn|k|K|M|B|G|T|b|m|t)?"
+    r"(?:.*)?$"
 )
 _POW = re.compile(r"^([-+]?[0-9.]*)\s*(?:x)?\s*10\^([-+]?[0-9]+)$")
 SUFFIX = {
@@ -337,11 +338,14 @@ SUFFIX = {
 }
 
 
-def parse_value(s: str) -> float | None:
+def parse_value(s: str, lax: bool = False) -> float | None:
     """Printed tick text to a number: 1,000  -2.5  45%  $1.2M  3e5  10^3  2x10^4.
 
-    Also handles OWID-style noise: "500 billion t" (ocr `500b   n 1`) -> 5e11;
-    "25 t" -> 25; "$1 billion" -> 1e9; "2,000 TWh" (ocr `2,000 1 `) -> 2000.
+    Also handles OWID-style noise via the strict regex's trailing-noise clause:
+    "500 billion t" (ocr `500b   n 1`) -> 5e11; "25 t" -> 25; "$1 billion" -> 1e9.
+    `lax` is a final fallback that drops all tail restrictions ("0bo 15" -> 0,
+    "80,000c kw" -> 80000); the caller opts in only when strict yielded nothing,
+    to avoid poisoning an axis with half-noisy labels.
     """
     t = s.replace("\u2212", "-").replace("\u2013", "-").strip()
     if not t:
@@ -362,9 +366,26 @@ def parse_value(s: str) -> float | None:
         except (ValueError, OverflowError):
             return None
     m = _NUM.match(t)
+    tail = ""
     if not m:
-        return None
-    sign, digits, exp, suf = m.groups()
+        if not lax:
+            return None
+        m = _NUM_LAX.match(t)
+        if not m:
+            return None
+        tail = m.group(5) or ""
+        # The tail must start with a letter: "0bo 15" is a unit-tail OCR of "0 births", while
+        # a continuation of digits ("1 50") is almost never one label and must not be matched
+        # as the leading number alone. A clear SI suffix anchors the match enough that a
+        # short trailing-digit tail (OCR often adds a "1" for a dropped "t") is still noise.
+        if not tail or (not tail[0].isalpha() and not (m.group(4) in ("bn", "M", "B", "G", "T"))):
+            return None
+    sign, digits, exp, suf = m.groups()[:4]
+    # In lax mode, a single-letter SI prefix (k/K/M/B/G/T) that touches a letter tail is
+    # almost always the first letter of a unit word ("kWh" is kilowatt-hour, not kilo-); the
+    # two-letter "bn" is unambiguously billion so stays.
+    if tail and suf and suf != "bn" and tail[0].isalpha():
+        suf = None
     parts = digits.split(",")
     if len(parts) > 1 and not all(len(p) == 3 for p in parts[1:-1] + [parts[-1].split(".")[0]]):
         return None

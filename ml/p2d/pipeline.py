@@ -35,7 +35,13 @@ class Result:
 
 
 def read_ticks(reader, img: np.ndarray, ticks: list[dict]) -> list[TickRead]:
-    """Read every tick's label: the greedy text, and the top-k readings for the joint decode."""
+    """Read every tick's label: the greedy text, and the top-k readings for the joint decode.
+
+    Lax parsing (leading number from "0bo 15" style OCR noise of "0 births") kicks in only
+    when NO label strict-parsed: an axis whose readable labels say "1.2bn" + "1.4bn" fits
+    cleanly from those two and must not be swamped by lax parses of "200 n n" neighbours
+    that would read as 200 instead of 2e8.
+    """
     boxes = [(t["pos"], t["label_box"]) for t in ticks if t["label_box"] is not None]
     if reader is None or not boxes:
         return []
@@ -45,6 +51,18 @@ def read_ticks(reader, img: np.ndarray, ticks: list[dict]) -> list[TickRead]:
     for (pos, _), lp in zip(boxes, read_logits(reader, crops)):
         text, conf = decode(lp)
         out.append(TickRead(pos, text, conf, parse_value(text), lp, candidates(lp)))
+    strict_n = sum(r.value is not None for r in out)
+    if strict_n < 2:
+        lax_vals = [parse_value(r.text, lax=True) for r in out]
+        if sum(v is not None for v in lax_vals) > strict_n:
+            for r, v in zip(out, lax_vals):
+                r.value = v
+                # Drop logits so fit_axis is used over decode_axis: the joint decoder builds
+                # its hypotheses from the beam-search candidates whose values are strict; a
+                # lax axis has none, and the simpler fitter handles outliers well enough from
+                # the per-tick leading number.
+                r.logits = None
+                r.cands = []
     return out
 
 
@@ -319,10 +337,16 @@ def run(net, reader, img: np.ndarray, oracle_ticks: dict | None = None, refine: 
             # "1e9" above). A chart whose own tick labels already parse to large magnitudes is not
             # a multiplier chart; the strip search caught title or year text and the OCR noise
             # matched the multiplier regex (owid-military: "1e1"; owid-solar-pv: "1e55"). Keep the
-            # offset-annotation win by letting the factor through when labels are small.
+            # offset-annotation win by letting the factor through when labels are small. Also skip
+            # a factor whose own magnitude is at most the labels': mpl uses "x10^k" only when the
+            # labels would otherwise print with 'k' trailing zeros, so a 0-to-90 axis with a
+            # spurious "1e1" from end_search text (owid-life-expectancy-4: "ld" from "would") is
+            # certainly noise.
             if scale != 1.0 and reads:
                 max_abs_val = max((abs(r.value) for r in reads if r.value is not None), default=0.0)
                 if max_abs_val > 1000:
+                    continue
+                if scale > 1.0 and max_abs_val >= scale:
                     continue
             factors[name] = text
             if name == "x":

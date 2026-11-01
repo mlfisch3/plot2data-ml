@@ -434,6 +434,48 @@ def _promote_label_only_ticks(ex: Extraction, boxes: list[list[float]], claimed:
             claimed.append(b)
 
 
+def _drop_offside_ticks(ex: Extraction) -> None:
+    """Drop ticks whose anchor sits on the minority side of the plot.
+
+    OWID line charts write the series name at the right end of each line
+    ("World", "China", ...). The YTICK heat sometimes fires at the ending point
+    of a line, and `label_from_source` then reads the country name as a y label,
+    poisoning the axis fit. The real y labels of such a chart cluster at one
+    plot edge; a stray anchor at the opposite edge is almost always this
+    end-label artefact. A real twin-axis chart has >=2 ticks on each side, so
+    the drop only triggers when the minority has 1 or 2 ticks against >=3 on
+    the other side.
+
+    Anchors are in source coordinates like `plot_area`; a tick counts as on the
+    "high" side when its perpendicular anchor coord is past the plot's midpoint.
+    """
+    if ex.plot_area is None:
+        return
+    px0, py0, px1, py1 = ex.plot_area
+    for key, horizontal in (("xticks", True), ("yticks", False)):
+        ticks = getattr(ex, key)
+        if len(ticks) < 4:
+            continue
+        # perp coord of each anchor: y for x-ticks (above vs below the plot), x for y-ticks.
+        if horizontal:
+            lo, hi = py0, py1
+            perp = np.array([t["anchor"][1] for t in ticks])
+        else:
+            lo, hi = px0, px1
+            perp = np.array([t["anchor"][0] for t in ticks])
+        mid = 0.5 * (lo + hi)
+        low = perp < mid
+        nlow = int(low.sum())
+        nhigh = len(ticks) - nlow
+        if nlow >= 3 and nhigh in (1, 2):
+            keep_mask = low
+        elif nhigh >= 3 and nlow in (1, 2):
+            keep_mask = ~low
+        else:
+            continue
+        setattr(ex, key, [t for t, k in zip(ticks, keep_mask) if k])
+
+
 def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: float = 0.25,
             marker_thr: float = 0.3) -> Extraction:
     heat, sem, emb = out["heat"], out["sem"], out["emb"]
@@ -474,6 +516,13 @@ def extract(out: dict, M: np.ndarray, img: np.ndarray | None = None, line_thr: f
     # ticks. Covers charts where even the weak-peak pass found nothing on an axis (no tick
     # marks drawn and the heatmap collapses to noise).
     _promote_label_only_ticks(ex, boxes, claimed, frame, Mi)
+
+    # Drop ticks whose anchor sits on the minority side of the plot: OWID direct-label
+    # end-text ("World" at the right end of a line) fires a weak YTICK peak on the far side
+    # of the axis labels, which then reads a country name and poisons the calibration. A
+    # genuine twin-axis chart has multiple ticks on each side, so a lone minority anchor
+    # against a majority on the other side is almost always this artefact.
+    _drop_offside_ticks(ex)
 
     # Label text no tick took: where an axis multiplier ("1e6") or offset is printed.
     for b in boxes:
