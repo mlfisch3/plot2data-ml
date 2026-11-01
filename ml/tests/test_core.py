@@ -20,7 +20,36 @@ def test_parse_value(text, value):
     assert parse_value(text) == pytest.approx(value)
 
 
-@pytest.mark.parametrize("text", ["", "1,00", "abc", "Jan"])
+@pytest.mark.parametrize("text,value", [
+    # OWID "25 t" style labels and their OCR variants (lowercase 't' is a tonne unit, scale 1).
+    ("25 t", 25), ("25t", 25), ("0 t", 0), ("15 t", 15),
+    # Word-form SI suffixes - OWID "500 billion t", "$1 billion".
+    ("500 billion", 500e9), ("1 billion", 1e9), ("$1 billion", 1e9),
+    ("500 million", 500e6), ("500 thousand", 500e3), ("500 trillion", 500e12),
+    ("500 billion t", 500e9),  # trailing noise ignored
+    # Lowercase SI letters as the first glyph of a word suffix (ocr charset lacks `i`/`m`/`h`,
+    # so "500 billion t" surfaces as "500b   n 1"; "500b"-anything should still read as 5e11).
+    ("500b", 500e9), ("500 b", 500e9), ("200b   n 1", 200e9), ("0b n", 0),
+    # Trailing noise that is NOT a known suffix letter also strips, provided it starts with a
+    # space or letter (OWID "2,000 TWh" OCRs as "2,000 1 " with a stray '1' from the misread 'T').
+    ("2,000  ", 2000), ("2,000 1 ", 2000), ("1,000 1 ", 1000),
+])
+def test_parse_value_lenient(text, value):
+    assert parse_value(text) == pytest.approx(value)
+
+
+@pytest.mark.parametrize("text,value", [
+    # Plain numeric strings must stay as themselves even after lenient-suffix support -
+    # the trailing-digit tail in "151" is a real digit, not an OCR'd 't'.
+    ("151", 151), ("201", 201), ("251", 251), ("5001", 5001), ("15.1", 15.1),
+    # Multi-char suffixes still land on their intended scale.
+    ("$1T", 1e12), ("$800B", 800e9), ("1.5k", 1500),
+])
+def test_parse_value_strict_unchanged(text, value):
+    assert parse_value(text) == pytest.approx(value)
+
+
+@pytest.mark.parametrize("text", ["", "1,00", "abc", "Jan", "Marne 1", "Mc"])
 def test_parse_value_rejects(text):
     assert parse_value(text) is None
 

@@ -207,3 +207,46 @@ def test_two_tick_axis_still_picks_sensible_fit_when_both_steps_are_nice():
     assert f is not None and f.scale == "linear"
     assert f.to_value(100) == pytest.approx(6, abs=1e-6)
     assert f.to_value(500) == pytest.approx(0, abs=1e-6)
+
+
+def test_tick_values_offset_from_step_grid_lose_to_aligned_alternative():
+    # owid-co2-per-capita y-axis: labels "5 t", "10 t", "15 t", "20 t", "25 t" with the lowercase
+    # 't' misread as a digit '1'. The beam carries both the misread "N1" and the stripped "N"
+    # for every tick. Both readings form a nice-step linear progression (step 50 vs step 5), but
+    # the step-50 fit's values are consistently offset by +1 from k*50 - the signature of OCR
+    # trailing-digit noise. The alignment-to-step prior in `decode_axis` lets the aligned step-5
+    # fit win when the per-tick CTC gap is comparable to the real-chart gap (around 0.3 nats).
+    # Here we hand-craft the candidate lists to keep this test independent of beam-decoder noise.
+    pos = [530, 430, 330, 230, 130]  # bottom to top, 100 px apart
+    pairs = [("51", 51, "5", 5), ("101", 101, "10", 10), ("151", 151, "15", 15),
+             ("201", 201, "20", 20), ("251", 251, "25", 25)]
+    reads = []
+    for p, (big, bv, sm, sv) in zip(pos, pairs):
+        lp_big, lp_sm = -0.3, -1.0  # beam LPs: big is ahead per tick, matching real-OCR gap
+        # Any logits array is fine as long as it is finite; `cands` is what `decode_axis` reads.
+        logits = np.full((8, len(CHARS) + 1), -12.0)
+        logits -= np.log(np.exp(logits).sum(1, keepdims=True))
+        tr = TickRead(p, big, 1.0, bv, logits, [(big, lp_big, float(bv)), (sm, lp_sm, float(sv))])
+        reads.append(tr)
+    f = decode_axis(reads)
+    assert f is not None and f.scale == "linear"
+    # Fit should give step 5 (values 5, 10, 15, 20, 25), not step 50 (values 51, 101, 151, 201, 251).
+    assert f.to_value(530) == pytest.approx(5, abs=1e-6)
+    assert f.to_value(130) == pytest.approx(25, abs=1e-6)
+
+
+def test_billion_scale_fit_survives_the_keep_hyps_cut_against_two_tick_small_values():
+    # owid-cumulative-co2 y-axis: five billion-scale ticks ("100 billion t", "200 billion t", ...,
+    # "500 billion t") plus one spurious small-value tick ("0" from OCR noise). The billion-scale
+    # readings have deeply negative CTC log-prob (long noisy text), so a 2-tick small-value fit
+    # has higher per-tick confidence; the dedup-by-value + widened keep_hyps + progression bonus
+    # keep the 5-tick billion fit in the pool and let it win on inlier count.
+    pos = [530, 430, 330, 230, 130]
+    reads = [tick(p, s) for p, s in zip(pos, ["100b n", "200b n", "300b n", "400b n", "500b n"])]
+    # Plus one noise tick with value "5" at pos 630 (what used to be the OCR'd "0 t" bottom tick).
+    reads.append(tick(630, "5"))
+    f = decode_axis(reads)
+    assert f is not None and f.scale == "linear"
+    # The axis should map pos 130 to about 500e9 and pos 530 to about 100e9.
+    assert f.to_value(130) == pytest.approx(5e11, rel=0.02)
+    assert f.to_value(530) == pytest.approx(1e11, rel=0.02)

@@ -305,22 +305,55 @@ def read_crops(model: TickReader, crops: list[np.ndarray], device: str | None = 
     return [decode(l) for l in read_logits(model, crops, device)]
 
 
-_NUM = re.compile(r"^\(?([-+]?)\$?([0-9][0-9,]*\.?[0-9]*|\.[0-9]+)(?:[eE]([-+]?[0-9]+))?(k|K|M|B|bn|G|T)?%?\)?$")
+# Numeric parse. The strict pattern recognises standard tick-label shapes
+# (1,000  -2.5  45%  $1.2M  3e5  10^3  2x10^4). Lenient trailing noise and
+# word-form SI suffixes handle OWID-style labels - "500 billion t", "25 t",
+# "$1 billion", "2,000 TWh" - whose OCR reads are noisy enough that the strict
+# regex would reject them. The ocr charset lacks `i`/`m`/`h`/`W` so OWID words
+# come through as fragments: "500 billion t" reads as `500b   n 1`, "25 t" as
+# `25t` or `25 t`, "2,000 TWh" as `2,000 1 `. The suffix table carries the
+# intended magnitude for the pieces the ocr actually emits.
+#
+# Trailing-noise rule: letters/spaces/dots after the recognised body are ignored.
+# Digits after the body are NOT dropped (a plain "151" stays 151): we accept a
+# trailing digit tail only if it is preceded by a space or a letter, which is
+# the shape OCR noise takes ("500b   n 1", "2,000 1 ").
+_NUM = re.compile(
+    r"^\(?([-+]?)\$?\s*"
+    r"([0-9][0-9,]*\.?[0-9]*|\.[0-9]+)"
+    r"(?:[eE]([-+]?[0-9]+))?"
+    r"\s*"
+    r"(billion|trillion|million|thousand|bn|mn|k|K|M|B|G|T|b|m|t)?"
+    r"(?:[a-zA-Z \.][a-zA-Z0-9 \.]*)?"
+    r"%?\s*\)?$"
+)
 _POW = re.compile(r"^([-+]?[0-9.]*)\s*(?:x)?\s*10\^([-+]?[0-9]+)$")
-SUFFIX = {"k": 1e3, "K": 1e3, "M": 1e6, "B": 1e9, "bn": 1e9, "G": 1e9, "T": 1e12}
+SUFFIX = {
+    "k": 1e3, "K": 1e3, "thousand": 1e3,
+    "m": 1e6, "M": 1e6, "mn": 1e6, "million": 1e6,
+    "b": 1e9, "B": 1e9, "G": 1e9, "bn": 1e9, "billion": 1e9,
+    "T": 1e12, "trillion": 1e12,
+    "t": 1.0,  # tonne: unit, no scale
+}
 
 
 def parse_value(s: str) -> float | None:
-    """Printed tick text to a number: 1,000  -2.5  45%  $1.2M  3e5  10^3  2x10^4."""
-    t = s.strip().replace(" ", "").replace("\u2212", "-").replace("\u2013", "-")
+    """Printed tick text to a number: 1,000  -2.5  45%  $1.2M  3e5  10^3  2x10^4.
+
+    Also handles OWID-style noise: "500 billion t" (ocr `500b   n 1`) -> 5e11;
+    "25 t" -> 25; "$1 billion" -> 1e9; "2,000 TWh" (ocr `2,000 1 `) -> 2000.
+    """
+    t = s.replace("\u2212", "-").replace("\u2013", "-").strip()
     if not t:
         return None
     neg = False
-    if t.startswith("-$"):
-        neg, t = True, t[2:]
+    # "-$1,200" and "- $1,200" strip the leading sign+currency so the body regex matches.
+    if t.startswith(("-$", "- $")):
+        neg = True
+        t = t[1:].lstrip().lstrip("$")
     # "0^3" is a "10^3" whose "1" was cropped off; nothing else prints like that.
-    t = re.sub(r"^0\^", "10^", t)
-    m = _POW.match(t)
+    t_pow = re.sub(r"^0\^", "10^", t.replace(" ", ""))
+    m = _POW.match(t_pow)
     if m:
         mant = m.group(1)
         try:

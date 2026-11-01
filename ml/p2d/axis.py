@@ -281,9 +281,21 @@ def _search(reads: list[TickRead], idx: list[int], tol_px: float, outlier_cost: 
                             score += tl[c]
                         else:
                             score -= outlier_cost
-                    key = (scale, tuple(sorted(chosen.items())))
-                    if key not in hyps:
-                        hyps[key] = _Hyp(scale, {k: (tt[c], float(tl[c]), float(tv[c])) for k, c in chosen.items()}, score)
+                    # Reward hypotheses that explain more of the readings beyond the seed pair.
+                    # For noisy label text (owid "500 billion t" surfaces as `500b   n 1` with CTC
+                    # log-prob around -7, worse than the per-tick outlier cost of 7), the extra
+                    # inliers are the strongest signal that the fit is right; without this nudge
+                    # a crisp 2-tick fit on a stray `0`/`5` noise reading outranks the real
+                    # 5-tick billion-scale fit and crowds it out of keep_hyps.
+                    if len(chosen) > 2:
+                        score += 1.0 * (len(chosen) - 2)
+                    # Dedup by (scale, tick -> value): different beam alternatives that resolve
+                    # to the same value map produce the same fit, so keeping both wastes the
+                    # keep_hyps budget on near-duplicates.
+                    key = (scale, tuple(sorted((k, round(tv[c], 6)) for k, c in chosen.items())))
+                    cand_hyp = _Hyp(scale, {k: (tt[c], float(tl[c]), float(tv[c])) for k, c in chosen.items()}, score)
+                    if key not in hyps or hyps[key].score < cand_hyp.score:
+                        hyps[key] = cand_hyp
     out = sorted(hyps.values(), key=lambda h: -h.score)
     return out[:keep]
 
@@ -394,12 +406,26 @@ def decode_axis(reads: list[TickRead], tol_px: float = 3.0, hint: str | None = N
             # and the right beam alternative (whose step IS nice) is only a few log-prob behind.
             # Weight the nice-step prior strongly in that regime; keep the mild +1 bonus for
             # three-or-more-tick fits, where RANSAC inlier counts already dominate.
-            is_nice = nice_step(abs(fit.b) * spacing)
+            step = abs(fit.b) * spacing
+            is_nice = nice_step(step)
             sparse = len(h.chosen) <= 2 and not extra
             if is_nice:
                 score += 5.0 if sparse else 1.0
             elif sparse:
                 score -= 3.0
+            # Alignment-to-step prior: tick locators emit labels at integer multiples of the
+            # step, so values should land on the k*step grid. A fit whose values are consistently
+            # offset by a small amount (owid-co2-per-capita: OCR reads "25 t" as "251", giving
+            # the step-50 fit values 51/101/151/201/251 - all offset by +1 from a step-50 grid)
+            # is a strong signature of OCR noise and should lose to a cleanly-aligned alternative
+            # with slightly worse CTC log-prob. Needs three or more values to be meaningful.
+            if is_nice and step > 0 and len(all_values) >= 3:
+                offs = np.array([v - step * round(v / step) for v in all_values], float)
+                mean_rel = abs(float(np.mean(offs)) / step)
+                if mean_rel < 0.012:
+                    score += 2.0
+                elif mean_rel > 0.015:
+                    score -= 3.0
         final.append((score, h, fit, extra))
     if not final:
         return None
