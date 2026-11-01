@@ -306,12 +306,22 @@ def read_crops(model: TickReader, crops: list[np.ndarray], device: str | None = 
 
 
 _NUM = re.compile(r"^\(?([-+]?)\$?([0-9][0-9,]*\.?[0-9]*|\.[0-9]+)(?:[eE]([-+]?[0-9]+))?(k|K|M|B|bn|G|T)?%?\)?$")
+_NUM_LAX = re.compile(r"^\(?([-+]?)\$?([0-9][0-9,]*\.?[0-9]*|\.[0-9]+)(?:[eE]([-+]?[0-9]+))?(k|K|M|B|bn|G|T)?%?\)?(.*)$")
 _POW = re.compile(r"^([-+]?[0-9.]*)\s*(?:x)?\s*10\^([-+]?[0-9]+)$")
 SUFFIX = {"k": 1e3, "K": 1e3, "M": 1e6, "B": 1e9, "bn": 1e9, "G": 1e9, "T": 1e12}
 
 
-def parse_value(s: str) -> float | None:
-    """Printed tick text to a number: 1,000  -2.5  45%  $1.2M  3e5  10^3  2x10^4."""
+def parse_value(s: str, lax: bool = False) -> float | None:
+    """Printed tick text to a number: 1,000  -2.5  45%  $1.2M  3e5  10^3  2x10^4.
+
+    `lax` extracts a leading number from garbled OCR of composite labels: OWID writes
+    "0 births", "80,000 kWh" or "1 billion t" and the OCR returns "0bo 15" / "80,000c kw"
+    / "1b   n t". The leading number is almost always right. Lax mode accepts a match
+    whose text continues with a letter tail (not more digits, which would be a mashed
+    pair of labels). Lax is off by default because any-tail parsing poisons an axis that
+    has a mix of readable "1.2bn" and unreadable "200 n n"; the caller turns it on only
+    when STRICT yielded nothing.
+    """
     t = s.strip().replace(" ", "").replace("\u2212", "-").replace("\u2013", "-")
     if not t:
         return None
@@ -329,9 +339,26 @@ def parse_value(s: str) -> float | None:
         except (ValueError, OverflowError):
             return None
     m = _NUM.match(t)
+    tail = ""
     if not m:
-        return None
-    sign, digits, exp, suf = m.groups()
+        if not lax:
+            return None
+        m = _NUM_LAX.match(t)
+        if not m:
+            return None
+        tail = m.group(5) or ""
+        # The tail must start with a letter: "0bo 15" is a unit-tail OCR of "0 births", while
+        # a continuation of digits ("1 50") is almost never one label and must not be matched
+        # as the leading number alone. A clear SI suffix anchors the match enough that a
+        # short trailing-digit tail (OCR often adds a "1" for a dropped "t") is still noise.
+        if not tail or (not tail[0].isalpha() and not (m.group(4) in ("bn", "M", "B", "G", "T"))):
+            return None
+    sign, digits, exp, suf = m.groups()[:4]
+    # In lax mode, a single-letter SI prefix (k/K/M/B/G/T) that touches a letter tail is
+    # almost always the first letter of a unit word ("kWh" is kilowatt-hour, not kilo-); the
+    # two-letter "bn" is unambiguously billion so stays.
+    if tail and suf and suf != "bn" and tail[0].isalpha():
+        suf = None
     parts = digits.split(",")
     if len(parts) > 1 and not all(len(p) == 3 for p in parts[1:-1] + [parts[-1].split(".")[0]]):
         return None
