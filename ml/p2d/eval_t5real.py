@@ -53,8 +53,8 @@ def _float(s: str) -> float:
 
 def load_truth(meta: dict, path: str) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """name -> (x, y) arrays, x in years (decimal for dates), NaN-free, sorted."""
-    text = open(path, encoding="utf-8", errors="replace").read()
     kind = meta["kind"]
+    text = open(path, encoding="utf-8", errors="replace").read() if (kind != "inline" and os.path.exists(path)) else ""
     out: dict[str, list[tuple[float, float]]] = {}
     if kind == "owid":
         rows = list(csv.DictReader(io.StringIO(text)))
@@ -87,6 +87,53 @@ def load_truth(meta: dict, path: str) -> dict[str, tuple[np.ndarray, np.ndarray]
         for r in rows:
             out.setdefault("average", []).append((_float(r["decimal date"]), _float(r["average"])))
             out.setdefault("deseasonalized", []).append((_float(r["decimal date"]), _float(r["deseasonalized"])))
+    elif kind == "noaa2":
+        # Columns `year,month,decimal,average,average_unc,trend,trend_unc` (ch4/n2o/sf6).
+        lines = [ln for ln in text.splitlines() if ln and not ln.startswith("#")]
+        rows = list(csv.DictReader(io.StringIO("\n".join(lines))))
+        for r in rows:
+            if not r.get("decimal"):
+                continue
+            out.setdefault("average", []).append((_float(r["decimal"]), _float(r["average"])))
+            out.setdefault("trend", []).append((_float(r["decimal"]), _float(r["trend"])))
+    elif kind == "noaa-annual":
+        # Columns `year,mean,unc` (co2_annmean_mlo and friends).
+        lines = [ln for ln in text.splitlines() if ln and not ln.startswith("#")]
+        rows = list(csv.DictReader(io.StringIO("\n".join(lines))))
+        for r in rows:
+            y = r.get("year") or r.get("Year")
+            if not y:
+                continue
+            m = r.get("mean") or r.get("Mean")
+            out.setdefault("mean", []).append((_float(y), _float(m) if m else np.nan))
+    elif kind == "noaa-growth":
+        # Columns `year,ann inc,unc` (co2_gr_mlo).
+        lines = [ln for ln in text.splitlines() if ln and not ln.startswith("#")]
+        rows = list(csv.DictReader(io.StringIO("\n".join(lines))))
+        for r in rows:
+            y = r.get("year") or r.get("Year")
+            if not y:
+                continue
+            v = r.get("ann inc") or r.get("ann_inc") or r.get("growth") or next(iter(v for k, v in r.items() if k not in ("year", "unc")), None)
+            out.setdefault("ann_inc", []).append((_float(y), _float(v) if v else np.nan))
+    elif kind == "inline":
+        # Truth is in the metadata JSON itself: `truth`: [{name, x, y}].
+        # The CSV file is a copy for provenance only; we ignore it here.
+        # x may be numeric or ISO date strings; dates are converted to decimal years.
+        def _x(v):
+            if isinstance(v, (int, float)):
+                return float(v)
+            s = str(v).strip()
+            if "-" in s and len(s) >= 7:
+                try:
+                    return _year(s if len(s) == 10 else s + "-15")
+                except Exception:
+                    return _float(s)
+            return _float(s)
+        for s in meta.get("truth", []):
+            xs = [_x(v) for v in s["x"]]
+            ys = [_float(v) if isinstance(v, str) else float(v) for v in s["y"]]
+            out[s["name"]] = list(zip(xs, ys))
     else:
         raise ValueError(kind)
     truth = {}

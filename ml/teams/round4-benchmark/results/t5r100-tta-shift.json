@@ -1,0 +1,2442 @@
+[
+ {
+  "id": "bls-cpi-energy",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "CPI energy",
+    "rms_pct": 0.722856881541019,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "bls-cpi-food",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "CPI food",
+    "rms_pct": 0.08365845500748492,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "bls-cpi-u",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "CPI",
+    "rms_pct": 0.22972211894893513,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "bls-labor-force",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "LFPR",
+    "rms_pct": 0.8616360158349415,
+    "cover": 0.99994989825966
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "bls-payems-recent",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "payrolls (K)",
+    "rms_pct": 0.8645280784262395,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "bls-unrate-15y",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "UNRATE",
+    "rms_pct": 0.1389685888164829,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "bls-unrate-teens",
+  "found": 2,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "teens",
+    "rms_pct": 0.31617443538270434,
+    "cover": 0.9969572509464204
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "bls-unrate-women",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "UNRATE women",
+    "rms_pct": 0.2550057577612908,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-awhman-thick",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "AWHMAN",
+    "rms_pct": 3.377032256943271,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "y axis: only two ticks read: linear/log decided from the labels"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-bogmbase",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "BOGMBASE",
+    "rms_pct": 1.2941745910103193,
+    "cover": 0.9982205806805906
+   }
+  ],
+  "warnings": [
+   "y axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-cpi-cpifood",
+  "found": 2,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "CPIAUCSL",
+    "rms_pct": 1.0942999386496206,
+    "cover": 0.9115205652279506
+   },
+   {
+    "series": "CPIFABSL",
+    "rms_pct": 0.8940158765891921,
+    "cover": 0.7175896307193955
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-cpi-two",
+  "found": 5,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "CPIAUCSL",
+    "rms_pct": 0.86852467225052,
+    "cover": 1.0
+   },
+   {
+    "series": "CPILFESL",
+    "rms_pct": 0.8128865501733936,
+    "cover": 0.6964235267168594
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-cpiaucsl-2000",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "CPIAUCSL",
+    "rms_pct": 0.22257447546828418,
+    "cover": 0.9979857528521403
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-dcoilwti-dcoilbrent",
+  "found": 4,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "DCOILWTICO",
+    "rms_pct": 2.756383101255469,
+    "cover": 1.0
+   },
+   {
+    "series": "DCOILBRENTEU",
+    "rms_pct": 2.1592668355031317,
+    "cover": 0.9887323631937254
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-dexuseu",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DEXUSEU",
+    "rms_pct": 383.27408700883666,
+    "cover": 0.1797841798554358
+   }
+  ],
+  "warnings": [
+   "y axis: only two ticks read: linear/log decided from the labels",
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-dff-2000",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DFF",
+    "rms_pct": 2.6853620921269803,
+    "cover": 0.9963805856433531
+   }
+  ],
+  "warnings": [
+   "y axis: only two ticks read: linear/log decided from the labels"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-dgs10-daily",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DGS10",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "fred-dgs10-dgs2",
+  "found": 5,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "DGS10",
+    "rms_pct": 24621.12229755452,
+    "cover": 0.061679876471981344
+   },
+   {
+    "series": "DGS2",
+    "rms_pct": 32752.284080022473,
+    "cover": 0.7132979262969095
+   }
+  ],
+  "warnings": [
+   "y axis: values scaled by the printed '1e3'",
+   "y axis: only two ticks read: linear/log decided from the labels"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-dgs2-2010",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DGS2",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "fred-dgs30-full",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DGS30",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-dpoilbrent",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DCOILBRENTEU",
+    "rms_pct": 4.599254512029867,
+    "cover": 0.9998679486750017
+   }
+  ],
+  "warnings": [
+   "y axis: only two ticks read: linear/log decided from the labels"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-drccl-cards",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DRCCLACBS",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "fred-fedfunds-small",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "FEDFUNDS",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "fred-gdp-log",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "GDP",
+    "rms_pct": 5.622359183818497,
+    "cover": 0.9953633486915094
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-houst-2010",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "HOUST",
+    "rms_pct": 1.0112284605583306,
+    "cover": 0.9991764011860116
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-houst-thick",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "HOUST",
+    "rms_pct": 71.68286996382561,
+    "cover": 0.998038823479975
+   }
+  ],
+  "warnings": [
+   "y axis: only two ticks read: linear/log decided from the labels"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-indpro-wide",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "INDPRO",
+    "rms_pct": 0.6522867548253467,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-m2sl-full",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "M2SL",
+    "rms_pct": 0.607949421828049,
+    "cover": 0.9987673735701275
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-m2sl-log",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "M2SL",
+    "rms_pct": 6.23561846340405,
+    "cover": 0.9987761602809712
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-mich-infl",
+  "found": 2,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "MICH",
+    "rms_pct": 2.2968585836907174,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-mortgage-tiny",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "MORTGAGE30US",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "fred-nasdaq",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "NASDAQCOM",
+    "rms_pct": 1.88196393605681,
+    "cover": 0.997787864564433
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-ngdp-realgdp",
+  "found": 2,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "GDP",
+    "rms_pct": 1.1545412066249459,
+    "cover": 0.9996009083141916
+   },
+   {
+    "series": "GDPC1",
+    "rms_pct": 0.2592027547849331,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "x axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-oil-2015",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DCOILWTICO",
+    "rms_pct": 2.4406717456180003,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-oil-full",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "DCOILWTICO",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-payems",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "PAYEMS",
+    "rms_pct": 0.4846372437336023,
+    "cover": 0.9979249169919643
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-pcepi",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "PCEPI",
+    "rms_pct": 0.13529532717832526,
+    "cover": 0.9996377554308762
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-permit-houses",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "PERMIT",
+    "rms_pct": 1.5690791587109632,
+    "cover": 0.9999561033548345
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-recprous",
+  "found": 3,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "RECPROUSM156N",
+    "rms_pct": 24.429940938214244,
+    "cover": 0.9977959023173486
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-retail-wide",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "RSXFS",
+    "rms_pct": 0.4996727407393312,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-sp500-5y",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "SP500",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-sp500-small",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "SP500",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "fred-sp500",
+  "found": 3,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "SP500",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-t10y2y",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "T10Y2Y",
+    "rms_pct": 3.4726415089808413,
+    "cover": 0.9993173273867922
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-t10y3m-recess",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "T10Y3M",
+    "rms_pct": 4.069452585336228,
+    "cover": 0.9994800183536958
+   }
+  ],
+  "warnings": [
+   "y axis: only two ticks read: linear/log decided from the labels"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-tb3ms-small",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "TB3MS",
+    "rms_pct": 29.721139193820246,
+    "cover": 0.9983829133596193
+   }
+  ],
+  "warnings": [
+   "y axis: only two ticks read: linear/log decided from the labels"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-tcu-caputil",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "TCU",
+    "rms_pct": 1.6001854212241466,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-unemp-black-white",
+  "found": 2,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "LNS14000003",
+    "rms_pct": 1.915311516846522,
+    "cover": 1.0
+   },
+   {
+    "series": "LNS14000006",
+    "rms_pct": 2.5927831262993806,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-unrate-civpart",
+  "found": 2,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "UNRATE",
+    "rms_pct": 1.5191890738092189,
+    "cover": 1.0
+   },
+   {
+    "series": "CIVPART",
+    "rms_pct": 0.2999532363914326,
+    "cover": 0.9946281395171029
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-unrate-dark",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "UNRATE",
+    "rms_pct": 1.9220329358077222,
+    "cover": 0.9998588201117938
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-unrate-dark2",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "UNRATE",
+    "rms_pct": 2.161230126739097,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-unrate",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "UNRATE",
+    "rms_pct": 2.645436196767133,
+    "cover": 0.9996190887457638
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-vix",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "VIXCLS",
+    "rms_pct": 7.194800730266748,
+    "cover": 0.9969589503203103
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "fred-walcl-log",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "WALCL",
+    "rms_pct": 0.9368927808130393,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "giss-global-mean",
+  "found": 5,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "No_Smoothing",
+    "rms_pct": 1.936852970742524,
+    "cover": 1.0
+   },
+   {
+    "series": "Lowess(5)",
+    "rms_pct": 0.2907426267967953,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "giss-hemispheric",
+  "found": 4,
+  "truth": 14,
+  "rows": [
+   {
+    "series": "Glob",
+    "rms_pct": 1.971793667246239,
+    "cover": 0.9980451692511811
+   },
+   {
+    "series": "NHem",
+    "rms_pct": 1.197220082849022,
+    "cover": 0.9999997266254829
+   },
+   {
+    "series": "SHem",
+    "rms_pct": 3.962175690101987,
+    "cover": 0.9961023692927703
+   },
+   {
+    "series": "24N-90N",
+    "rms_pct": 4.660523197712378,
+    "cover": 0.30314857728126454
+   },
+   {
+    "series": "24S-24N",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "90S-24S",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "64N-90N",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "44N-64N",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "24N-44N",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "EQU-24N",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "24S-EQU",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "44S-24S",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "64S-44S",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "90S-64S",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "giss-land-only",
+  "found": 6,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "No_Smoothing",
+    "rms_pct": 4.911576420978086,
+    "cover": 0.9919818397882817
+   },
+   {
+    "series": "Lowess(5)",
+    "rms_pct": 3.9571436468503967,
+    "cover": 0.9998815851807618
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "giss-lat-bands",
+  "found": 8,
+  "truth": 14,
+  "rows": [
+   {
+    "series": "Glob",
+    "rms_pct": 54.0701867250176,
+    "cover": 1.0
+   },
+   {
+    "series": "NHem",
+    "rms_pct": 54.44154386919383,
+    "cover": 0.7497426297224373
+   },
+   {
+    "series": "SHem",
+    "rms_pct": 52.74722185113505,
+    "cover": 0.6880414017986791
+   },
+   {
+    "series": "24N-90N",
+    "rms_pct": 52.809240162882055,
+    "cover": 0.6388285057665363
+   },
+   {
+    "series": "24S-24N",
+    "rms_pct": 53.32202758852975,
+    "cover": 0.6421681126799128
+   },
+   {
+    "series": "90S-24S",
+    "rms_pct": 55.28095009486498,
+    "cover": 0.6311783362762197
+   },
+   {
+    "series": "64N-90N",
+    "rms_pct": 52.95425521277895,
+    "cover": 0.39399740235413794
+   },
+   {
+    "series": "44N-64N",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "24N-44N",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "EQU-24N",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "24S-EQU",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "44S-24S",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "64S-44S",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "90S-64S",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: 27 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "giss-seasonal",
+  "found": 53,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "Anomaly",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "x axis: only two ticks read: linear/log decided from the labels",
+   "x axis: 10 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "giss-us-temp",
+  "found": 4,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "Annual_Mean",
+    "rms_pct": 1.965492379836577,
+    "cover": 0.9977820455837493
+   },
+   {
+    "series": "Lowess(5)",
+    "rms_pct": 0.1908811762443448,
+    "cover": 0.9999995830607799
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "noaa-ch4-growth",
+  "found": 4,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "ann_inc",
+    "rms_pct": 15.825536172054754,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "noaa-ch4-monthly",
+  "found": 6,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "average",
+    "rms_pct": 0.057128913124829976,
+    "cover": 0.10077123526618793
+   },
+   {
+    "series": "trend",
+    "rms_pct": 0.025273134676804334,
+    "cover": 0.10334274770542155
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "noaa-co2-mlo-trend",
+  "found": 7,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "average",
+    "rms_pct": 0.05664898768463543,
+    "cover": 0.08268579876205054
+   },
+   {
+    "series": "deseasonalized",
+    "rms_pct": 0.027575527239345563,
+    "cover": 0.08309954381450621
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "noaa-co2-mlo",
+  "found": 3,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "average",
+    "rms_pct": 0.6131114816861319,
+    "cover": 1.0
+   },
+   {
+    "series": "deseasonalized",
+    "rms_pct": 88.44504836285894,
+    "cover": 0.04020479039956131
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "noaa-n2o-growth",
+  "found": 6,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "ann_inc",
+    "rms_pct": 26.34976856027757,
+    "cover": 0.9995694741249395
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "noaa-n2o-monthly",
+  "found": 6,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "average",
+    "rms_pct": 0.040496990301110765,
+    "cover": 0.17347285555876352
+   },
+   {
+    "series": "trend",
+    "rms_pct": 0.05205793774033792,
+    "cover": 0.17028482640761178
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "noaa-sf6-monthly",
+  "found": 4,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "average",
+    "rms_pct": 0.09921122408513379,
+    "cover": 0.14981323803541013
+   },
+   {
+    "series": "trend",
+    "rms_pct": 0.06010007148054483,
+    "cover": 0.1497244293605403
+   }
+  ],
+  "warnings": [
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-annual-co2-log",
+  "found": 7,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "Germany",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "India",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "United States",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "log",
+  "yscale": "-"
+ },
+ {
+  "id": "owid-child-mort-world",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "World",
+    "rms_pct": 0.8211443368240935,
+    "cover": 0.9949408729466143
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "log",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-child-mortality",
+  "found": 5,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "Brazil",
+    "rms_pct": 0.08334190588962,
+    "cover": 0.9862209584989883
+   },
+   {
+    "series": "India",
+    "rms_pct": 2.215705670714708,
+    "cover": 0.9883336834678164
+   },
+   {
+    "series": "World",
+    "rms_pct": 0.08792679020862341,
+    "cover": 0.9651242402166308
+   }
+  ],
+  "warnings": [
+   "x axis: 3 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-co-emissions-per-capita",
+  "found": 8,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 29.069519106991915,
+    "cover": 0.5614393604023832
+   },
+   {
+    "series": "India",
+    "rms_pct": 8.036686901855084,
+    "cover": 0.09397652269036195
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 69.66624853994684,
+    "cover": 0.04191794294175936
+   },
+   {
+    "series": "United States",
+    "rms_pct": 113.54045489412714,
+    "cover": 0.8422243241601876
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "log",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-co2-per-capita",
+  "found": 8,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 10.202213868892793,
+    "cover": 0.4132538838891444
+   },
+   {
+    "series": "India",
+    "rms_pct": 37.710782265245115,
+    "cover": 0.6497555223574266
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 69.2056711253169,
+    "cover": 0.041923839467538145
+   },
+   {
+    "series": "United States",
+    "rms_pct": 109.91701616076264,
+    "cover": 0.9262342983885182
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "log",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-crude-birth-rate",
+  "found": 7,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.2549363702304647,
+    "cover": 0.9984380811505748
+   },
+   {
+    "series": "Japan",
+    "rms_pct": 0.19797586698375916,
+    "cover": 0.9999273019785405
+   },
+   {
+    "series": "Nigeria",
+    "rms_pct": 0.07374623220686356,
+    "cover": 0.9948722111033501
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 0.11709590071334683,
+    "cover": 0.9755123403397815
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-crude-death-rate",
+  "found": 5,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.5299258442962586,
+    "cover": 0.9997566496904007
+   },
+   {
+    "series": "Japan",
+    "rms_pct": 0.29781456009766466,
+    "cover": 0.9997566496904007
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 0.26563703148490514,
+    "cover": 0.9997566496904007
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "log",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-cumulative-co2",
+  "found": 4,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 18.339949824666597,
+    "cover": 0.994123405725207
+   },
+   {
+    "series": "Germany",
+    "rms_pct": 8.845777856972296,
+    "cover": 1.0
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 11.747298977062897,
+    "cover": 0.4635312058343396
+   },
+   {
+    "series": "United States",
+    "rms_pct": 49.36237364941287,
+    "cover": 0.5083299350843394
+   }
+  ],
+  "warnings": [
+   "x axis: 3 tick label(s) disagreed with the rest and were ignored",
+   "y axis: only two ticks read: linear/log decided from the labels",
+   "y axis: 6 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-energy-mix",
+  "found": 14,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "United States",
+    "rms_pct": 118.33495833703178,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 10 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "log",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-energy-per-capita",
+  "found": 3,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "India",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "United States",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "owid-fertility-rate",
+  "found": 6,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "India",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "Nigeria",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "United States",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "log",
+  "yscale": "-"
+ },
+ {
+  "id": "owid-gdp-per-cap-5",
+  "found": 8,
+  "truth": 5,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.09702123511875557,
+    "cover": 0.9858477571388059
+   },
+   {
+    "series": "Germany",
+    "rms_pct": 0.11961630489032819,
+    "cover": 0.9302782381844477
+   },
+   {
+    "series": "India",
+    "rms_pct": 0.11575531723564232,
+    "cover": 0.9882134610132003
+   },
+   {
+    "series": "Japan",
+    "rms_pct": 0.08221670241041056,
+    "cover": 0.9882134610132003
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.08236301054455239,
+    "cover": 0.8506756242539852
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "log"
+ },
+ {
+  "id": "owid-gdp-per-cap-us",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "United States",
+    "rms_pct": 0.14274051983303343,
+    "cover": 0.9992429833875186
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-gdp-per-capita-log",
+  "found": 6,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.08069443464469163,
+    "cover": 0.9945360427991871
+   },
+   {
+    "series": "India",
+    "rms_pct": 0.18897530691465497,
+    "cover": 1.0
+   },
+   {
+    "series": "Nigeria",
+    "rms_pct": 0.09029300676080078,
+    "cover": 0.9896998754361188
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.10243663273346143,
+    "cover": 0.9842359182353059
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "log"
+ },
+ {
+  "id": "owid-ghg-emissions",
+  "found": 3,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.15442823795963304,
+    "cover": 0.9888725765180367
+   },
+   {
+    "series": "India",
+    "rms_pct": 0.03954722830963586,
+    "cover": 0.9951213763696518
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.11046148211433617,
+    "cover": 0.987310376555132
+   }
+  ],
+  "warnings": [
+   "y axis: values scaled by the printed '1e0'",
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-internet",
+  "found": 9,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "Brazil",
+    "rms_pct": 0.09035535572072408,
+    "cover": 0.7566068478204215
+   },
+   {
+    "series": "India",
+    "rms_pct": 0.23946401214023663,
+    "cover": 0.9285078509363952
+   },
+   {
+    "series": "Nigeria",
+    "rms_pct": 0.17204028096956722,
+    "cover": 0.8388409233973495
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.15353026443440246,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-life-expectancy-4",
+  "found": 6,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "India",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "Japan",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "Nigeria",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "y axis: values scaled by the printed '1e1'",
+   "x axis: 1 tick label(s) disagreed with the rest and were ignored",
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "owid-life-expectancy-gbr",
+  "found": 2,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "United Kingdom",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "owid-life-expectancy-many",
+  "found": 9,
+  "truth": 5,
+  "rows": [
+   {
+    "series": "India",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "Japan",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "Russia",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "South Africa",
+    "rms_pct": NaN,
+    "cover": 0.0
+   },
+   {
+    "series": "United States",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: could not calibrate from the tick labels"
+  ],
+  "xscale": "linear",
+  "yscale": "-"
+ },
+ {
+  "id": "owid-literacy",
+  "found": 5,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "India",
+    "rms_pct": 0.9390692591787789,
+    "cover": 1.0
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 0.11180648077215125,
+    "cover": 1.0
+   },
+   {
+    "series": "World",
+    "rms_pct": 0.22874343734554597,
+    "cover": 0.9116344228479545
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-maternal-mortality",
+  "found": 8,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "India",
+    "rms_pct": 0.15056445273284233,
+    "cover": 0.9966816408305477
+   },
+   {
+    "series": "Japan",
+    "rms_pct": 5.488779168131889,
+    "cover": 1.0
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 5.344262996682555,
+    "cover": 0.5257232102399714
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.533903500455119,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 3 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-military",
+  "found": 3,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 82.43104947730716,
+    "cover": 1.0
+   },
+   {
+    "series": "Russia",
+    "rms_pct": 108.91605566242646,
+    "cover": 0.9880715618780869
+   },
+   {
+    "series": "United States",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "x axis: 8 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 5 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-population-3",
+  "found": 3,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.06340133522686785,
+    "cover": 0.9892431780270969
+   },
+   {
+    "series": "India",
+    "rms_pct": 0.08893589528373948,
+    "cover": 0.9747320176900731
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.12103269818479494,
+    "cover": 0.9857193351197509
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 4 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-population-world",
+  "found": 2,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "World",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: only two ticks read: linear/log decided from the labels",
+   "y axis: 3 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-primary-energy",
+  "found": 3,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.11798974525138095,
+    "cover": 0.9979443533241427
+   },
+   {
+    "series": "India",
+    "rms_pct": 0.09750682960266271,
+    "cover": 0.9696761622555717
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.10124482246227147,
+    "cover": 0.9963521100363664
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "log"
+ },
+ {
+  "id": "owid-renewables",
+  "found": 6,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.32556710366684316,
+    "cover": 0.9979764968439554
+   },
+   {
+    "series": "Germany",
+    "rms_pct": 0.3089010024939792,
+    "cover": 0.970441110778724
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 0.27664293958244257,
+    "cover": 0.9657304694741773
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.1655737702342153,
+    "cover": 0.9953787078463734
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-share-elec-renew",
+  "found": 7,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.42739045660194225,
+    "cover": 0.9949826127457868
+   },
+   {
+    "series": "Germany",
+    "rms_pct": 0.23379623119225854,
+    "cover": 0.9784424791266246
+   },
+   {
+    "series": "World",
+    "rms_pct": 0.17531148144990868,
+    "cover": 0.9992468239432692
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored",
+   "y axis: 1 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-share-poverty",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "World",
+    "rms_pct": 0.1473151865761449,
+    "cover": 0.9926325360569239
+   }
+  ],
+  "warnings": [
+   "y axis: values scaled by the printed '1e0'",
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-share-ren-energy",
+  "found": 6,
+  "truth": 3,
+  "rows": [
+   {
+    "series": "Germany",
+    "rms_pct": 0.6219038795708226,
+    "cover": 0.9926248998082239
+   },
+   {
+    "series": "United Kingdom",
+    "rms_pct": 1.5979326664082127,
+    "cover": 0.9926248998082239
+   },
+   {
+    "series": "World",
+    "rms_pct": 0.18042467769541298,
+    "cover": 0.9847673834050319
+   }
+  ],
+  "warnings": [
+   "y axis: values scaled by the printed '1e0'",
+   "x axis: 3 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-share-urban-single",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "World",
+    "rms_pct": 0.129659043450418,
+    "cover": 0.9954519110887667
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "owid-solar-pv",
+  "found": 2,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "World",
+    "rms_pct": 0.08218230865419941,
+    "cover": 0.9975064653463421
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "log"
+ },
+ {
+  "id": "owid-urban-share",
+  "found": 7,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "China",
+    "rms_pct": 0.128772243075532,
+    "cover": 0.9957915102978798
+   },
+   {
+    "series": "India",
+    "rms_pct": 0.13320113683963258,
+    "cover": 1.0
+   },
+   {
+    "series": "Nigeria",
+    "rms_pct": 0.19306871435769815,
+    "cover": 0.8269739693888186
+   },
+   {
+    "series": "United States",
+    "rms_pct": 0.08517628355509965,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [
+   "x axis: 2 tick label(s) disagreed with the rest and were ignored"
+  ],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-forest-share",
+  "found": 5,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "BRA",
+    "rms_pct": 0.09965278370485264,
+    "cover": 1.0
+   },
+   {
+    "series": "IDN",
+    "rms_pct": 0.1404561495111457,
+    "cover": 0.896393927831348
+   },
+   {
+    "series": "COD",
+    "rms_pct": 0.09951205464349487,
+    "cover": 1.0
+   },
+   {
+    "series": "RUS",
+    "rms_pct": 0.183208127842183,
+    "cover": 0.8853368654832039
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-gdp-5",
+  "found": 6,
+  "truth": 5,
+  "rows": [
+   {
+    "series": "USA",
+    "rms_pct": 0.10505336686175142,
+    "cover": 0.9997651917723802
+   },
+   {
+    "series": "CHN",
+    "rms_pct": 17.223034370857068,
+    "cover": 0.9147551763108578
+   },
+   {
+    "series": "JPN",
+    "rms_pct": 0.1100002184527362,
+    "cover": 0.7241992456405639
+   },
+   {
+    "series": "DEU",
+    "rms_pct": 4.650595143248588,
+    "cover": 0.8265169324140865
+   },
+   {
+    "series": "IND",
+    "rms_pct": 0.8189047601611922,
+    "cover": 0.20660661985585088
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-gdp-log-10",
+  "found": 5,
+  "truth": 5,
+  "rows": [
+   {
+    "series": "USA",
+    "rms_pct": 0.23487625107542495,
+    "cover": 1.0
+   },
+   {
+    "series": "CHN",
+    "rms_pct": 0.16055405043674745,
+    "cover": 1.0
+   },
+   {
+    "series": "IND",
+    "rms_pct": 0.03677237582382333,
+    "cover": 1.0
+   },
+   {
+    "series": "BRA",
+    "rms_pct": 0.03706683222821859,
+    "cover": 1.0
+   },
+   {
+    "series": "NGA",
+    "rms_pct": 0.012006206277225739,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "log"
+ },
+ {
+  "id": "wb-gdp-usa",
+  "found": 2,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "USA",
+    "rms_pct": 0.17004197076091837,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-inflation-emerging",
+  "found": 4,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "BRA",
+    "rms_pct": 22.77329085094648,
+    "cover": 0.941710451514232
+   },
+   {
+    "series": "RUS",
+    "rms_pct": 0.2748329753005858,
+    "cover": 0.28622916858524405
+   },
+   {
+    "series": "TUR",
+    "rms_pct": 1.4781905133342197,
+    "cover": 0.06348198301593234
+   },
+   {
+    "series": "ARG",
+    "rms_pct": NaN,
+    "cover": 0.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-inflation-us",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "USA",
+    "rms_pct": 0.2760746899964668,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-life-exp-eu",
+  "found": 5,
+  "truth": 5,
+  "rows": [
+   {
+    "series": "DEU",
+    "rms_pct": 0.1984537898699,
+    "cover": 0.9791075618996636
+   },
+   {
+    "series": "FRA",
+    "rms_pct": 0.27352039102509523,
+    "cover": 1.0
+   },
+   {
+    "series": "ITA",
+    "rms_pct": 0.481468429433917,
+    "cover": 0.9875545261422758
+   },
+   {
+    "series": "ESP",
+    "rms_pct": 0.36212157310734455,
+    "cover": 0.9899370461088424
+   },
+   {
+    "series": "GBR",
+    "rms_pct": 0.2109657653694219,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-life-exp-world",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "WLD",
+    "rms_pct": 0.0924566000456984,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-pop-africa",
+  "found": 4,
+  "truth": 4,
+  "rows": [
+   {
+    "series": "NGA",
+    "rms_pct": 0.015331153615496564,
+    "cover": 1.0
+   },
+   {
+    "series": "ETH",
+    "rms_pct": 0.022317375883060975,
+    "cover": 1.0
+   },
+   {
+    "series": "EGY",
+    "rms_pct": 0.01901471087307474,
+    "cover": 1.0
+   },
+   {
+    "series": "ZAF",
+    "rms_pct": 0.020052014750610442,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-pop-china-india",
+  "found": 2,
+  "truth": 2,
+  "rows": [
+   {
+    "series": "CHN",
+    "rms_pct": 0.057626583617059385,
+    "cover": 1.0
+   },
+   {
+    "series": "IND",
+    "rms_pct": 0.06527316986874784,
+    "cover": 1.0
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ },
+ {
+  "id": "wb-pop-world",
+  "found": 1,
+  "truth": 1,
+  "rows": [
+   {
+    "series": "WLD",
+    "rms_pct": 0.14030914116314452,
+    "cover": 0.9977794910766009
+   }
+  ],
+  "warnings": [],
+  "xscale": "linear",
+  "yscale": "linear"
+ }
+]
