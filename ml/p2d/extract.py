@@ -779,7 +779,9 @@ def snap_vertices(f: dict, vpk: list[tuple[float, float, float]]) -> None:
 
 
 def drop_duplicates(lines: list[dict], min_cols: int = 12, tol: float = 3.0, min_q: float = 0.35,
-                    window: int = 4) -> list[dict]:
+                    window: int = 4, parallel_corr: float = 0.99,
+                    parallel_overlap: float = 0.7,
+                    parallel_diff_frac: float = 0.025) -> list[dict]:
     """Drop traces that are too short or too faint to be a series, or that run inside a longer one.
 
     A thick or jagged stroke leaves runs beside the chain that took it - the far
@@ -787,13 +789,28 @@ def drop_duplicates(lines: list[dict], min_cols: int = 12, tol: float = 3.0, min
     valleys. Such a trace stays inside the envelope of the longer trace (its
     extent over a few neighbouring columns), so that is the test. Text beside a
     line can chain up into a scrap, which the ridge confidence gives away.
+
+    A very noisy line with a thick stroke can produce a second chain that
+    follows the SAME curve a few pixels off, drifting outside the local
+    envelope at turning points. The envelope test misses it, but the twin
+    sits within a fraction of the primary's y-range and its smoothed
+    y-trajectory is near-perfectly correlated with the primary. That is the
+    parallel-curve test: it needs BOTH high correlation and pixel-level
+    proximity to fire, so two real series with the same shape at different
+    y-levels (common on multi-series matplotlib charts) do not get merged.
     """
     lines = [f for f in lines if len(f["cols"]) >= min_cols and f.get("q", 1.0) >= min_q]
     lines.sort(key=lambda f: -len(f["cols"]))
     kept: list[dict] = []
+    # Shields: every chain that already lost its duel is kept here only to
+    # still shadow later ghosts. In the noisy-sinusoid case the fringe chain
+    # is a wide umbrella over short cluster-1 fragments: dropping the fringe
+    # from `kept` without using it as a shield would let those fragments
+    # survive as spurious series.
+    shields: list[dict] = []
     for f in lines:
         dup = False
-        for g in kept:
+        for g in kept + shields:
             inside = (f["cols"] >= g["cols"][0]) & (f["cols"] <= g["cols"][-1])
             if inside.mean() < 0.6:
                 continue
@@ -804,9 +821,60 @@ def drop_duplicates(lines: list[dict], min_cols: int = 12, tol: float = 3.0, min
             if ((y >= lo - tol) & (y <= hi + tol)).mean() >= 0.7:
                 dup = True
                 break
-        if not dup:
+            if inside.mean() >= parallel_overlap and _parallel_curve(
+                    f, g, inside, parallel_corr, parallel_diff_frac):
+                dup = True
+                break
+        if dup:
+            shields.append(f)
+        else:
             kept.append(f)
     return kept
+
+
+def _parallel_curve(f: dict, g: dict, inside: np.ndarray, min_corr: float,
+                    diff_frac: float, smooth_k: int = 5) -> bool:
+    """True when f traces the same underlying curve as g over their shared x-range.
+
+    Two conditions must hold: (1) smoothed Pearson correlation of the two
+    y-trajectories at matched cols is at least `min_corr`, and (2) the median
+    absolute smoothed-y difference is at most `diff_frac` of g's y-range.
+    The smoothing (running median radius k) collapses per-column noise so a
+    secondary chain through a thick, jittery line body still correlates with
+    the primary. The second condition rules out two series with the same
+    shape at well-separated y-levels: those sit at correlation 1 but tens of
+    pixels apart.
+    """
+    cf = f["cols"][inside].astype(np.int64)
+    yf = f["ys"][inside]
+    cg = g["cols"].astype(np.int64)
+    yg = g["ys"]
+    # Shared cols as the intersection of integer col-indices
+    gi = np.searchsorted(cg, cf)
+    gi = np.clip(gi, 0, len(cg) - 1)
+    exact = cg[gi] == cf
+    if exact.sum() < 20:
+        return False
+    yfm = yf[exact]
+    ygm = yg[gi[exact]]
+    # Smooth both with a running median of radius k.
+    def _smooth(a: np.ndarray, k: int) -> np.ndarray:
+        n = len(a)
+        return np.array([np.median(a[max(0, i - k): i + k + 1]) for i in range(n)])
+    sfm = _smooth(yfm, smooth_k)
+    sgm = _smooth(ygm, smooth_k)
+    # Pearson over smoothed arrays. Guard against zero-variance (a flat ghost).
+    v = sfm.std() * sgm.std()
+    if v < 1e-6:
+        return False
+    r = float(np.corrcoef(sfm, sgm)[0, 1])
+    if r < min_corr:
+        return False
+    # Pixel-level proximity, measured against g's own y-range so a thin plot
+    # with a 50-px range does not pull in a 20-px-off twin.
+    g_range = float(yg.max() - yg.min())
+    med_diff = float(np.median(np.abs(sfm - sgm)))
+    return med_diff <= diff_frac * max(g_range, 50.0)
 
 
 def merge_by_colour(series: list[Series], img, tol: float = 45.0) -> list[Series]:

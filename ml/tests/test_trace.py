@@ -98,3 +98,106 @@ def test_merge_leaves_slope_consistent():
     o = merged[0]
     s = np.diff(o["ys"]) / np.diff(o["cols"])
     assert np.all(np.abs(s - 0.4) < 0.05)
+
+
+# ---------------------------------------------------------------------------
+# drop_duplicates: parallel-curve test for noisy twin traces
+# ---------------------------------------------------------------------------
+
+
+def _wiggly(c0: int, c1: int, offset: float = 0.0, seed: int = 0) -> dict:
+    """A noisy sinusoid chain over [c0, c1], shifted by `offset` in y."""
+    rng = np.random.default_rng(seed)
+    cols = np.arange(c0, c1 + 1, dtype=float)
+    base = 100.0 + 60.0 * np.sin(cols * 0.03) + offset
+    ys = base + rng.normal(0.0, 3.0, size=len(cols))
+    return {"cols": cols, "ys": ys, "emb": np.zeros(8, dtype=float), "ks": [0], "q": 0.75,
+            "spans": [(int(y), int(y) + 1) for y in ys]}
+
+
+def test_drop_duplicates_catches_parallel_twin_noisy_trace():
+    from p2d.extract import drop_duplicates
+    # A primary chain and a near-copy a few pixels off, both tracing the same curve.
+    primary = _wiggly(0, 800, offset=0.0, seed=1)
+    twin = _wiggly(50, 780, offset=4.0, seed=2)
+    kept = drop_duplicates([primary, twin])
+    assert len(kept) == 1
+    # The longer survives.
+    assert len(kept[0]["cols"]) == len(primary["cols"])
+
+
+def test_drop_duplicates_keeps_two_truly_separate_series():
+    from p2d.extract import drop_duplicates
+    # Same column range but y curves are well apart - two real series.
+    rng = np.random.default_rng(3)
+    cols = np.arange(0, 800, dtype=float)
+    y1 = 100.0 + 20.0 * np.sin(cols * 0.03) + rng.normal(0.0, 2.0, size=len(cols))
+    y2 = 300.0 + 20.0 * np.sin(cols * 0.03 + 1.3) + rng.normal(0.0, 2.0, size=len(cols))
+    def make(ys, k):
+        return {"cols": cols.copy(), "ys": ys, "emb": np.zeros(8), "ks": [k], "q": 0.75,
+                "spans": [(int(y), int(y) + 1) for y in ys]}
+    kept = drop_duplicates([make(y1, 0), make(y2, 1)])
+    # Both must survive: they trace different curves 200 px apart.
+    assert len(kept) == 2
+
+
+def test_drop_duplicates_keeps_disjoint_segments():
+    from p2d.extract import drop_duplicates
+    # Two chains that cover disjoint x-ranges stay apart even if their shapes are similar.
+    rng = np.random.default_rng(4)
+    def seg(c0, c1):
+        cols = np.arange(c0, c1 + 1, dtype=float)
+        ys = 100.0 + 30.0 * np.sin(cols * 0.03) + rng.normal(0.0, 2.0, size=len(cols))
+        return {"cols": cols, "ys": ys, "emb": np.zeros(8), "ks": [0], "q": 0.75,
+                "spans": [(int(y), int(y) + 1) for y in ys]}
+    kept = drop_duplicates([seg(0, 300), seg(500, 800)])
+    assert len(kept) == 2
+
+
+def test_parallel_curve_rejects_short_overlap():
+    from p2d.extract import _parallel_curve
+    # 10 shared points is too few to trust a correlation.
+    a = {"cols": np.arange(0, 100, dtype=float), "ys": np.sin(np.arange(100) * 0.1)}
+    b = {"cols": np.arange(90, 110, dtype=float), "ys": np.sin(np.arange(90, 110) * 0.1)}
+    inside = (b["cols"] >= a["cols"][0]) & (b["cols"] <= a["cols"][-1])
+    assert _parallel_curve(b, a, inside, min_corr=0.9, diff_frac=0.1) is False
+
+
+def test_parallel_curve_detects_same_curve_at_offset():
+    from p2d.extract import _parallel_curve
+    rng = np.random.default_rng(5)
+    cols = np.arange(0, 400, dtype=float)
+    ya = 100.0 + 20.0 * np.sin(cols * 0.05) + rng.normal(0.0, 1.5, size=len(cols))
+    yb = 100.0 + 20.0 * np.sin(cols * 0.05) + 5.0 + rng.normal(0.0, 1.5, size=len(cols))
+    a = {"cols": cols, "ys": ya}
+    b = {"cols": cols.copy(), "ys": yb}
+    inside = np.ones(len(cols), dtype=bool)
+    assert _parallel_curve(b, a, inside, min_corr=0.9, diff_frac=0.3) is True
+
+
+def test_parallel_curve_rejects_different_curves():
+    from p2d.extract import _parallel_curve
+    rng = np.random.default_rng(6)
+    cols = np.arange(0, 400, dtype=float)
+    ya = 100.0 + 20.0 * np.sin(cols * 0.05) + rng.normal(0.0, 1.5, size=len(cols))
+    # Different-phase sinusoid: not a parallel copy.
+    yb = 100.0 + 20.0 * np.sin(cols * 0.05 + 2.0) + rng.normal(0.0, 1.5, size=len(cols))
+    a = {"cols": cols, "ys": ya}
+    b = {"cols": cols.copy(), "ys": yb}
+    inside = np.ones(len(cols), dtype=bool)
+    assert _parallel_curve(b, a, inside, min_corr=0.9, diff_frac=0.1) is False
+
+
+def test_parallel_curve_rejects_same_shape_far_apart():
+    # Two sinusoids of the same shape 100 px apart in y: correlated r=1 but far.
+    from p2d.extract import _parallel_curve
+    rng = np.random.default_rng(7)
+    cols = np.arange(0, 400, dtype=float)
+    ya = 100.0 + 20.0 * np.sin(cols * 0.05) + rng.normal(0.0, 1.0, size=len(cols))
+    yb = 300.0 + 20.0 * np.sin(cols * 0.05) + rng.normal(0.0, 1.0, size=len(cols))
+    a = {"cols": cols, "ys": ya}
+    b = {"cols": cols.copy(), "ys": yb}
+    inside = np.ones(len(cols), dtype=bool)
+    # a's y-range is ~40 px. 200 px separation vs that is a huge diff_frac,
+    # so even with correlation 1 the gate must stay closed.
+    assert _parallel_curve(b, a, inside, min_corr=0.9, diff_frac=0.05) is False
