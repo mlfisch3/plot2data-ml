@@ -27,3 +27,7 @@ __pycache__/
 ml/data/
 ml/runs/
 ml/out/
+
+# user test files
+ml/test_plot.png
+ml/test_data.csv
